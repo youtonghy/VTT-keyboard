@@ -1,0 +1,18 @@
+{
+  "app": {
+    "title": "欢迎使用 Tauri + React",
+    "subtitle": "点击 Tauri、Vite 和 React 的标志了解更多。"
+  },
+  "greeting": {
+    "placeholder": "输入名字...",
+    "button": "问候",
+    "resultLabel": "结果"
+  },
+  "language": {
+    "label": "语言",
+    "options": {
+      "en": "English",
+      "zh-CN": "简体中文"
+    }
+  }
+}

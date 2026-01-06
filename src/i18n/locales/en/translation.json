@@ -1,0 +1,18 @@
+{
+  "app": {
+    "title": "Welcome to Tauri + React",
+    "subtitle": "Click on the Tauri, Vite, and React logos to learn more."
+  },
+  "greeting": {
+    "placeholder": "Enter a name...",
+    "button": "Greet",
+    "resultLabel": "Result"
+  },
+  "language": {
+    "label": "Language",
+    "options": {
+      "en": "English",
+      "zh-CN": "Simplified Chinese"
+    }
+  }
+}
