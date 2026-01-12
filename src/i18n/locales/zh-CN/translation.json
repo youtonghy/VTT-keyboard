@@ -1,12 +1,121 @@
 {
   "app": {
-    "title": "欢迎使用 Tauri + React",
-    "subtitle": "点击 Tauri、Vite 和 React 的标志了解更多。"
+    "title": "语音键盘设置",
+    "subtitle": "按住快捷键录音，松开自动转写并粘贴。",
+    "loading": "正在加载设置..."
   },
-  "greeting": {
-    "placeholder": "输入名字...",
-    "button": "问候",
-    "resultLabel": "结果"
+  "nav": {
+    "general": "通用",
+    "shortcut": "快捷键",
+    "recording": "录音",
+    "speech": "转写",
+    "text": "文本处理",
+    "triggers": "触发词"
+  },
+  "general": {
+    "title": "外观与语言",
+    "description": "控制主题模式与界面语言。",
+    "theme": "主题模式",
+    "themeSystem": "跟随系统",
+    "themeLight": "日间",
+    "themeDark": "夜间",
+    "language": "界面语言"
+  },
+  "data": {
+    "title": "配置导入导出",
+    "description": "导入或导出明文设置文件。",
+    "import": "导入配置",
+    "export": "导出配置",
+    "importSuccess": "配置导入成功",
+    "importError": "配置导入失败",
+    "exportSuccess": "配置导出成功",
+    "exportError": "配置导出失败"
+  },
+  "shortcut": {
+    "title": "全局快捷键",
+    "description": "按住开始录音，松开结束录音。",
+    "key": "快捷键",
+    "capture": "捕获快捷键",
+    "capturing": "正在捕获...",
+    "captureHint": "点击后按下组合键，必须包含修饰键",
+    "requireModifier": "快捷键必须包含修饰键",
+    "captureSuccess": "已更新为 {{shortcut}}",
+    "registerError": "快捷键注册失败：{{error}}",
+    "unregisterError": "快捷键卸载失败，请检查权限",
+    "conflict": "快捷键冲突：{{shortcut}}",
+    "startError": "开始录音失败：{{error}}",
+    "stopError": "结束录音失败：{{error}}"
+  },
+  "recording": {
+    "title": "录音设置",
+    "description": "控制录音分段长度。",
+    "segmentSeconds": "分段秒数"
+  },
+  "openai": {
+    "apiBase": "API 基础地址",
+    "apiKey": "API Key"
+  },
+  "speech": {
+    "title": "语音转写",
+    "description": "配置 OpenAI 语音转写参数。",
+    "model": "转写模型",
+    "language": "语言（ISO-639-1）",
+    "prompt": "提示词",
+    "responseFormat": "输出格式",
+    "temperature": "温度",
+    "chunkingStrategy": "分段策略",
+    "timestampGranularities": "时间戳粒度（逗号分隔）",
+    "include": "附加输出（逗号分隔）",
+    "knownSpeakerNames": "说话人名称（逗号分隔）",
+    "knownSpeakerReferences": "说话人样本（逗号分隔）",
+    "stream": "启用流式"
+  },
+  "text": {
+    "title": "文本处理",
+    "description": "配置 OpenAI 文本生成参数。",
+    "model": "文本模型",
+    "instructions": "系统指令",
+    "temperature": "温度",
+    "maxOutputTokens": "最大输出 Tokens",
+    "topP": "Top P"
+  },
+  "triggers": {
+    "title": "触发词规则",
+    "description": "按顺序执行每张触发词卡片。",
+    "enabled": "启用卡片",
+    "autoApply": "默认启用（无触发词也执行）",
+    "keyword": "触发词关键词",
+    "variables": "变量范围（英文逗号分隔）",
+    "promptTemplate": "提示词模板",
+    "example": "示例触发词",
+    "descriptionLabel": "说明",
+    "add": "新增触发词",
+    "remove": "删除",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "newTitle": "自定义触发词",
+    "defaultKeyword": "翻译为",
+    "defaultTemplate": "请将以下内容翻译为{value}。",
+    "defaultVariables": "英文",
+    "defaultExample": "翻译为英文",
+    "defaultDescription": "示例：翻译为英文",
+    "validationVariables": "触发词变量范围不能为空：{{title}}",
+    "validationKeyword": "触发词关键词不能为空：{{title}}"
+  },
+  "actions": {
+    "save": "保存设置",
+    "saveSuccess": "设置已保存",
+    "saveError": "保存失败"
+  },
+  "tray": {
+    "showSettings": "打开设置",
+    "quit": "退出"
+  },
+  "status": {
+    "recording": "正在录音",
+    "transcribing": "正在转写",
+    "completed": "已完成",
+    "error": "已中断"
   },
   "language": {
     "label": "语言",

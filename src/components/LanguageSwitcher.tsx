@@ -5,8 +5,8 @@ export function LanguageSwitcher() {
   const { t, i18n } = useTranslation();
 
   return (
-    <div className="row language-switcher">
-      <span className="language-label">{t("language.label")}:</span>
+    <div className="language-switcher">
+      <span>{t("language.label")}</span>
       {languageOptions.map((option) => (
         <button
           key={option.code}

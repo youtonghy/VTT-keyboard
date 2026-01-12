@@ -1,12 +1,121 @@
 {
   "app": {
-    "title": "Welcome to Tauri + React",
-    "subtitle": "Click on the Tauri, Vite, and React logos to learn more."
+    "title": "Voice Keyboard Settings",
+    "subtitle": "Hold the shortcut to record, release to transcribe and paste.",
+    "loading": "Loading settings..."
   },
-  "greeting": {
-    "placeholder": "Enter a name...",
-    "button": "Greet",
-    "resultLabel": "Result"
+  "nav": {
+    "general": "General",
+    "shortcut": "Shortcut",
+    "recording": "Recording",
+    "speech": "Transcription",
+    "text": "Text",
+    "triggers": "Triggers"
+  },
+  "general": {
+    "title": "Appearance & Language",
+    "description": "Control theme mode and UI language.",
+    "theme": "Theme",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "language": "Language"
+  },
+  "data": {
+    "title": "Import & Export",
+    "description": "Import or export settings as JSON.",
+    "import": "Import",
+    "export": "Export",
+    "importSuccess": "Import completed",
+    "importError": "Import failed",
+    "exportSuccess": "Export completed",
+    "exportError": "Export failed"
+  },
+  "shortcut": {
+    "title": "Global Shortcut",
+    "description": "Hold to record, release to stop.",
+    "key": "Shortcut",
+    "capture": "Capture Shortcut",
+    "capturing": "Capturing...",
+    "captureHint": "Click then press a combo with modifier keys",
+    "requireModifier": "Shortcut must include a modifier",
+    "captureSuccess": "Updated to {{shortcut}}",
+    "registerError": "Failed to register shortcut: {{error}}",
+    "unregisterError": "Failed to unregister shortcut",
+    "conflict": "Shortcut conflict: {{shortcut}}",
+    "startError": "Failed to start recording: {{error}}",
+    "stopError": "Failed to stop recording: {{error}}"
+  },
+  "recording": {
+    "title": "Recording",
+    "description": "Configure audio segmentation length.",
+    "segmentSeconds": "Segment Seconds"
+  },
+  "openai": {
+    "apiBase": "API Base URL",
+    "apiKey": "API Key"
+  },
+  "speech": {
+    "title": "Speech to Text",
+    "description": "Configure OpenAI transcription parameters.",
+    "model": "Model",
+    "language": "Language (ISO-639-1)",
+    "prompt": "Prompt",
+    "responseFormat": "Response Format",
+    "temperature": "Temperature",
+    "chunkingStrategy": "Chunking Strategy",
+    "timestampGranularities": "Timestamp Granularities (comma separated)",
+    "include": "Include (comma separated)",
+    "knownSpeakerNames": "Known Speaker Names (comma separated)",
+    "knownSpeakerReferences": "Known Speaker References (comma separated)",
+    "stream": "Enable Streaming"
+  },
+  "text": {
+    "title": "Text",
+    "description": "Configure OpenAI text generation parameters.",
+    "model": "Model",
+    "instructions": "Instructions",
+    "temperature": "Temperature",
+    "maxOutputTokens": "Max Output Tokens",
+    "topP": "Top P"
+  },
+  "triggers": {
+    "title": "Trigger Rules",
+    "description": "Run trigger cards from top to bottom.",
+    "enabled": "Enable Card",
+    "autoApply": "Auto apply without keyword",
+    "keyword": "Keyword",
+    "variables": "Variable Range (comma separated)",
+    "promptTemplate": "Prompt Template",
+    "example": "Example",
+    "descriptionLabel": "Description",
+    "add": "Add Trigger",
+    "remove": "Remove",
+    "moveUp": "Move Up",
+    "moveDown": "Move Down",
+    "newTitle": "Custom Trigger",
+    "defaultKeyword": "translate to",
+    "defaultTemplate": "Translate the following content to {value}.",
+    "defaultVariables": "English",
+    "defaultExample": "translate to English",
+    "defaultDescription": "Example: translate to English",
+    "validationVariables": "Variable range cannot be empty: {{title}}",
+    "validationKeyword": "Keyword cannot be empty: {{title}}"
+  },
+  "actions": {
+    "save": "Save Settings",
+    "saveSuccess": "Settings saved",
+    "saveError": "Save failed"
+  },
+  "tray": {
+    "showSettings": "Open Settings",
+    "quit": "Quit"
+  },
+  "status": {
+    "recording": "Recording",
+    "transcribing": "Transcribing",
+    "completed": "Completed",
+    "error": "Interrupted"
   },
   "language": {
     "label": "Language",
