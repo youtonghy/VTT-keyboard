@@ -60,13 +60,13 @@ impl RecorderService {
     pub fn start(&self) -> Result<(), RecorderError> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let _ = self.sender.send(RecorderCommand::Start(reply_tx));
-        reply_rx.recv().unwrap_or_else(|_| Err(RecorderError::NotRecording))
+        reply_rx.recv().unwrap_or(Err(RecorderError::NotRecording))
     }
 
     pub fn stop(&self) -> Result<RecordedAudio, RecorderError> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let _ = self.sender.send(RecorderCommand::Stop(reply_tx));
-        reply_rx.recv().unwrap_or_else(|_| Err(RecorderError::NotRecording))
+        reply_rx.recv().unwrap_or(Err(RecorderError::NotRecording))
     }
 }
 

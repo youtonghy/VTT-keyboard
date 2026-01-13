@@ -32,13 +32,12 @@ fn send_paste_shortcut() -> Result<(), String> {
         enigo.key_down(Key::Meta);
         enigo.key_click(Key::Layout('v'));
         enigo.key_up(Key::Meta);
-        return Ok(());
     }
     #[cfg(not(target_os = "macos"))]
     {
         enigo.key_down(Key::Control);
         enigo.key_click(Key::Layout('v'));
         enigo.key_up(Key::Control);
-        return Ok(());
     }
+    Ok(())
 }

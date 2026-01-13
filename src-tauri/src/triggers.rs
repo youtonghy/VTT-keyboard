@@ -71,7 +71,7 @@ pub fn apply_triggers(
 
 fn split_sentences(input: &str) -> Vec<String> {
     input
-        .split(|ch| ch == ',' || ch == '，')
+        .split([',', '，'])
         .map(|part| part.trim().to_string())
         .filter(|part| !part.is_empty())
         .collect()
