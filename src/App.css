@@ -340,47 +340,6 @@ button.secondary {
   gap: 12px;
 }
 
-:root.status-mode {
-  background: transparent;
-}
-
-:root.status-mode body {
-  background: transparent;
-}
-
-.status-page {
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.status-window {
-  min-width: 200px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  color: #ffffff;
-  font-weight: 600;
-  text-align: center;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
-}
-
-.status-window.recording {
-  background: #ef4444;
-}
-
-.status-window.transcribing {
-  background: #3b82f6;
-}
-
-.status-window.completed {
-  background: #10b981;
-}
-
-.status-window.error {
-  background: #f59e0b;
-}
-
 @media (max-width: 900px) {
   .settings-layout {
     grid-template-columns: 1fr;
