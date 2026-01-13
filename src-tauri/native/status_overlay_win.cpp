@@ -1,8 +1,10 @@
-#define WIN32_LEAN_AND_MEAN
+// Note: Do NOT define WIN32_LEAN_AND_MEAN before windows.h
+// GDI+ requires COM headers (IStream, etc.) that LEAN_AND_MEAN excludes
 #define UNICODE
 #define _UNICODE
 
 #include <windows.h>
+#include <objidl.h>    // Required for IStream (used by GDI+)
 #include <gdiplus.h>
 #include <string>
 #include <thread>
