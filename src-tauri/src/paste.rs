@@ -1,6 +1,5 @@
-use enigo::{Enigo, KeyboardControllable, Key};
-use tauri::AppHandle;
-use tauri_plugin_clipboard_manager::ClipboardExt;
+use arboard::Clipboard;
+use enigo::{Enigo, Key, KeyboardControllable};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,15 +10,17 @@ pub enum PasteError {
     Paste(String),
 }
 
-pub fn write_text(app: &AppHandle, text: &str) -> Result<(), PasteError> {
-    app.clipboard()
-        .write_text(text.to_string())
+pub fn write_text(text: &str) -> Result<(), PasteError> {
+    let mut clipboard =
+        Clipboard::new().map_err(|err| PasteError::Clipboard(err.to_string()))?;
+    clipboard
+        .set_text(text.to_string())
         .map_err(|err| PasteError::Clipboard(err.to_string()))?;
     Ok(())
 }
 
-pub fn write_and_paste(app: &AppHandle, text: &str) -> Result<(), PasteError> {
-    write_text(app, text)?;
+pub fn write_and_paste(text: &str) -> Result<(), PasteError> {
+    write_text(text)?;
     send_paste_shortcut().map_err(|err| PasteError::Paste(err.to_string()))?;
     Ok(())
 }

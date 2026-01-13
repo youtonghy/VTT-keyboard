@@ -3,26 +3,18 @@ use hound::{SampleFormat, WavSpec, WavWriter};
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Error)]
 pub enum AudioProcessingError {
-    #[error("无法获取缓存目录: {0}")]
-    Path(String),
     #[error("无法写入录音文件: {0}")]
     Io(String),
 }
 
 pub fn write_segments(
-    app: &AppHandle,
     audio: &RecordedAudio,
     segment_seconds: u64,
 ) -> Result<Vec<PathBuf>, AudioProcessingError> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|err| AudioProcessingError::Path(err.to_string()))?
-        .join("recordings");
+    let dir = std::env::temp_dir().join("vtt-keyboard").join("recordings");
     fs::create_dir_all(&dir).map_err(|err| AudioProcessingError::Io(err.to_string()))?;
 
     let total_samples = audio.samples.len();

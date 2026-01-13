@@ -4,17 +4,16 @@ mod paste;
 mod processing;
 mod recorder;
 mod settings;
+mod status_native;
 mod triggers;
 
 use recorder::RecorderService;
 use settings::{Settings, SettingsStore};
 use std::fs;
-use tauri::{
-    Manager, PhysicalPosition, PhysicalSize, Position, Size, State, WebviewUrl,
-    WebviewWindowBuilder, WindowEvent,
-};
+use tauri::{Manager, State, WindowEvent};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
+
 
 #[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +22,7 @@ struct TrayLabels {
     quit: String,
 }
 
-struct AppState {
+pub(crate) struct AppState {
     recorder: RecorderService,
     settings_store: SettingsStore,
 }
@@ -67,21 +66,21 @@ fn import_settings(state: State<AppState>, path: String) -> Result<Settings, Str
 }
 
 #[tauri::command]
-fn start_recording(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
+fn start_recording(state: State<AppState>) -> Result<(), String> {
     state.recorder.start().map_err(|err| err.to_string())?;
-    processing::emit_status(&app, "recording");
+    processing::emit_status("recording");
     Ok(())
 }
 
 #[tauri::command]
-fn stop_recording(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
+fn stop_recording(state: State<AppState>) -> Result<(), String> {
     let audio = state.recorder.stop().map_err(|err| err.to_string())?;
-    processing::emit_status(&app, "transcribing");
+    processing::emit_status("transcribing");
     let store = state.settings_store.clone();
     std::thread::spawn(move || {
-        if let Err(err) = processing::handle_recording(&app, &store, audio) {
+        if let Err(err) = processing::handle_recording(&store, audio) {
             eprintln!("录音处理失败: {err}");
-            processing::emit_status(&app, "error");
+            processing::emit_status("error");
         }
     });
     Ok(())
@@ -121,38 +120,13 @@ fn set_tray_menu(app: tauri::AppHandle, labels: TrayLabels) -> Result<(), String
     Ok(())
 }
 
-fn create_status_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let url = WebviewUrl::App("index.html#status".into());
-    let window = WebviewWindowBuilder::new(app, "status", url)
-        .title("status")
-        .decorations(false)
-        .resizable(false)
-        .skip_taskbar(true)
-        .always_on_top(true)
-        .focused(false)
-        .visible(false)
-        .build()?;
-
-    if let Some(monitor) = window.primary_monitor()? {
-        let size = monitor.size();
-        let work_area = monitor.work_area();
-        let width = (size.width as f64 * 0.32).min(420.0).max(240.0);
-        let height = 56.0;
-        let x = monitor.position().x as f64 + (size.width as f64 - width) / 2.0;
-        let y = if cfg!(target_os = "macos") {
-            monitor.position().y as f64 + size.height as f64 - height - 12.0
-        } else {
-            work_area.position.y as f64 + work_area.size.height as f64 - height - 12.0
-        };
-        let _ = window.set_size(Size::Physical(PhysicalSize::new(width as u32, height as u32)));
-        let _ = window.set_position(Position::Physical(PhysicalPosition::new(x as i32, y as i32)));
-    }
-
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize native status overlay
+    if !status_native::init() {
+        eprintln!("警告：原生状态窗口初始化失败");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -166,8 +140,6 @@ pub fn run() {
                 recorder: RecorderService::new(),
                 settings_store: store,
             });
-
-            create_status_window(&app_handle)?;
 
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
@@ -191,5 +163,8 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Cleanup native status overlay
+    status_native::cleanup();
 }
 
