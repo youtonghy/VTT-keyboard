@@ -6,9 +6,14 @@ use crate::settings::{SettingsError, SettingsStore};
 use crate::status_native::{self, StatusType};
 use crate::triggers;
 use std::fs;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
+
+/// Counter to track status show operations, used to prevent race conditions
+/// when hiding the status window after a delay.
+static STATUS_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn dev_log(message: &str) {
     #[cfg(debug_assertions)]
@@ -92,13 +97,20 @@ pub fn emit_status(status: &str) {
         _ => return,
     };
 
+    // Increment counter to invalidate any pending hide operations
+    let current_count = STATUS_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
+
     status_native::show(status_type, text);
 
     // Auto-hide after 2 seconds for completed/error states
+    // Only hide if no new status was shown during the delay
     if status_type == StatusType::Completed || status_type == StatusType::Error {
-        thread::spawn(|| {
+        thread::spawn(move || {
             thread::sleep(Duration::from_secs(2));
-            status_native::hide();
+            // Only hide if the counter hasn't changed (no new status was shown)
+            if STATUS_COUNTER.load(Ordering::SeqCst) == current_count {
+                status_native::hide();
+            }
         });
     }
 }
