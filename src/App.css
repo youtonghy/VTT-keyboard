@@ -70,6 +70,10 @@ body {
 }
 
 /* Title Bar */
+*[data-tauri-drag-region] {
+  app-region: drag;
+}
+
 .titlebar {
   height: 40px;
   background: var(--bg-app);
@@ -85,6 +89,14 @@ body {
   z-index: 1000;
   /* Add a subtle bottom border/shadow for separation */
   box-shadow: 0 1px 0 rgba(0,0,0,0.05);
+}
+
+.titlebar-drag-region {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  height: 100%;
+  min-width: 0;
 }
 
 .titlebar-title {

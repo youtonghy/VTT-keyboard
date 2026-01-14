@@ -1,32 +1,35 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import "../App.css"; // Ensure styles are available
 
 export function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
+  const appWindow = useMemo(() => getCurrentWindow(), []);
 
   useEffect(() => {
     const updateState = async () => {
-      setIsMaximized(await getCurrentWindow().isMaximized());
+      setIsMaximized(await appWindow.isMaximized());
     };
-    
-    updateState();
-    const unlisten = getCurrentWindow().listen("tauri://resize", updateState);
-    return () => {
-      unlisten.then(f => f());
-    };
-  }, []);
 
-  const minimize = () => getCurrentWindow().minimize();
+    updateState();
+    const unlisten = appWindow.listen("tauri://resize", updateState);
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [appWindow]);
+
+  const minimize = () => appWindow.minimize();
   const toggleMaximize = async () => {
-    await getCurrentWindow().toggleMaximize();
-    setIsMaximized(!isMaximized);
+    await appWindow.toggleMaximize();
+    setIsMaximized((prev) => !prev);
   };
-  const close = () => getCurrentWindow().close();
+  const close = () => appWindow.close();
 
   return (
-    <div className="titlebar" data-tauri-drag-region>
-      <div className="titlebar-title">VTT Keyboard</div>
+    <div className="titlebar">
+      <div className="titlebar-drag-region" data-tauri-drag-region>
+        <div className="titlebar-title">VTT Keyboard</div>
+      </div>
       <div className="titlebar-controls">
         <button className="titlebar-button" onClick={minimize} title="Minimize">
           <svg width="10" height="1" viewBox="0 0 10 1">

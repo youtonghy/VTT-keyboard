@@ -11,9 +11,10 @@ mod volcengine;
 use recorder::RecorderService;
 use settings::{Settings, SettingsStore};
 use std::fs;
-use tauri::{Manager, State, WindowEvent};
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
-use tauri::tray::TrayIconBuilder;
+use std::sync::Mutex;
+use tauri::{Manager, State, WindowEvent, Wry};
+use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
+use tauri::tray::{TrayIcon, TrayIconBuilder};
 
 
 #[derive(Clone, serde::Deserialize)]
@@ -23,9 +24,17 @@ struct TrayLabels {
     quit: String,
 }
 
+#[derive(Default)]
+struct TrayState {
+    tray: Option<TrayIcon<Wry>>,
+    show_item: Option<MenuItem<Wry>>,
+    quit_item: Option<MenuItem<Wry>>,
+}
+
 pub(crate) struct AppState {
     recorder: RecorderService,
     settings_store: SettingsStore,
+    tray_state: Mutex<TrayState>,
 }
 
 #[tauri::command]
@@ -88,35 +97,67 @@ fn stop_recording(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_tray_menu(app: tauri::AppHandle, labels: TrayLabels) -> Result<(), String> {
-    let show_item = MenuItemBuilder::with_id("show", labels.show_settings)
-        .build(&app)
-        .map_err(|err| err.to_string())?;
-    let quit_item = MenuItemBuilder::with_id("quit", labels.quit)
-        .build(&app)
-        .map_err(|err| err.to_string())?;
-    let menu = MenuBuilder::new(&app)
-        .items(&[&show_item, &quit_item])
-        .build()
-        .map_err(|err| err.to_string())?;
+fn set_tray_menu(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    labels: TrayLabels,
+) -> Result<(), String> {
+    let mut tray_state = state
+        .tray_state
+        .lock()
+        .map_err(|_| "Tray state lock failed".to_string())?;
 
-    TrayIconBuilder::new()
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+    if tray_state.tray.is_none() {
+        let show_item = MenuItemBuilder::with_id("show", labels.show_settings)
+            .build(&app)
+            .map_err(|err| err.to_string())?;
+        let quit_item = MenuItemBuilder::with_id("quit", labels.quit)
+            .build(&app)
+            .map_err(|err| err.to_string())?;
+        let menu = MenuBuilder::new(&app)
+            .items(&[&show_item, &quit_item])
+            .build()
+            .map_err(|err| err.to_string())?;
+        let icon = app
+            .default_window_icon()
+            .ok_or_else(|| "Missing default window icon".to_string())?
+            .clone();
+
+        let tray = TrayIconBuilder::new()
+            .icon(icon)
+            .menu(&menu)
+            .show_menu_on_left_click(true)
+            .on_menu_event(|app, event| match event.id().as_ref() {
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
                 }
-            }
-            "quit" => {
-                app.exit(0);
-            }
-            _ => {}
-        })
-        .build(&app)
-        .map_err(|err| err.to_string())?;
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            })
+            .build(&app)
+            .map_err(|err| err.to_string())?;
+
+        tray_state.tray = Some(tray);
+        tray_state.show_item = Some(show_item);
+        tray_state.quit_item = Some(quit_item);
+        return Ok(());
+    }
+
+    if let Some(show_item) = tray_state.show_item.as_ref() {
+        show_item
+            .set_text(labels.show_settings)
+            .map_err(|err| err.to_string())?;
+    }
+    if let Some(quit_item) = tray_state.quit_item.as_ref() {
+        quit_item
+            .set_text(labels.quit)
+            .map_err(|err| err.to_string())?;
+    }
 
     Ok(())
 }
@@ -139,6 +180,7 @@ pub fn run() {
             app.manage(AppState {
                 recorder: RecorderService::new(),
                 settings_store: store,
+                tray_state: Mutex::new(TrayState::default()),
             });
 
             if let Some(window) = app.get_webview_window("main") {
