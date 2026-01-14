@@ -7,6 +7,7 @@ import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { DrawerNav } from "./components/DrawerNav";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { SettingsCard } from "./components/SettingsCard";
+import { TagInput } from "./components/TagInput";
 import { TitleBar } from "./components/TitleBar";
 import { useSettings } from "./hooks/useSettings";
 import type { Settings } from "./types/settings";
@@ -1032,12 +1033,13 @@ function App() {
                         </label>
                         <label className="field">
                           <span>{t("triggers.variables")}</span>
-                          <input
-                            value={listToString(card.variables)}
-                            onChange={(event) =>
+                          <TagInput
+                            values={card.variables}
+                            placeholder={t("triggers.variablesPlaceholder")}
+                            onChange={(values) =>
                               updateTrigger(card.id, (prev) => ({
                                 ...prev,
-                                variables: parseList(event.target.value),
+                                variables: values,
                               }))
                             }
                           />
