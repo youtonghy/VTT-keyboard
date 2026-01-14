@@ -7,6 +7,7 @@ import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { DrawerNav } from "./components/DrawerNav";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { SettingsCard } from "./components/SettingsCard";
+import { TitleBar } from "./components/TitleBar";
 import { useSettings } from "./hooks/useSettings";
 import type { Settings } from "./types/settings";
 import "./App.css";
@@ -388,702 +389,702 @@ function App() {
 
   if (loading || !draft) {
     return (
-      <main className="container loading">
-        <p>{t("app.loading")}</p>
-      </main>
+      <>
+        <TitleBar />
+        <main className="container loading">
+          <p>{t("app.loading")}</p>
+        </main>
+      </>
     );
   }
 
   return (
-    <main className="container">
-      <header className="page-header">
-        <div>
-          <h1>{t("app.title")}</h1>
-          <p>{t("app.subtitle")}</p>
-        </div>
-      </header>
-      <div className="settings-layout">
-        <DrawerNav
-          items={navItems}
-          activeId={activeSection}
-          onSelect={setActiveSection}
-        />
-        <section className="settings-content">
-          {activeSection === "general" ? (
-            <>
-              <SettingsCard
-                title={t("general.title")}
-                description={t("general.description")}
-              >
-                <label className="field">
-                  <span>{t("general.theme")}</span>
-                  <select
-                    value={draft.appearance.theme}
-                    onChange={(event) =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        appearance: {
-                          ...prev.appearance,
-                          theme: event.target.value,
-                        },
-                      }))
-                    }
-                  >
-                    <option value="system">{t("general.themeSystem")}</option>
-                    <option value="light">{t("general.themeLight")}</option>
-                    <option value="dark">{t("general.themeDark")}</option>
-                  </select>
-                </label>
-                <div className="field">
-                  <span>{t("general.language")}</span>
-                  <LanguageSwitcher />
-                </div>
-              </SettingsCard>
-              <SettingsCard title={t("data.title")} description={t("data.description")}>
-                <div className="button-row">
-                  <button type="button" onClick={handleImport}>
-                    {t("data.import")}
-                  </button>
-                  <button type="button" onClick={handleExport}>
-                    {t("data.export")}
-                  </button>
-                </div>
-              </SettingsCard>
-            </>
-          ) : null}
-
-          {activeSection === "shortcut" ? (
-            <SettingsCard
-              title={t("shortcut.title")}
-              description={t("shortcut.description")}
-            >
-              <label className="field">
-                <span>{t("shortcut.key")}</span>
-                <input
-                  value={draft.shortcut.key}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      shortcut: { ...prev.shortcut, key: event.target.value },
-                    }))
-                  }
-                />
-              </label>
-              <div className="shortcut-actions">
-                <button
-                  type="button"
-                  onClick={() => setIsCapturing(true)}
-                  disabled={isCapturing}
+    <>
+      <TitleBar />
+      <main className="container">
+        <div className="settings-layout">
+          <DrawerNav
+            items={navItems}
+            activeId={activeSection}
+            onSelect={setActiveSection}
+          />
+          <section className="settings-content">
+            {activeSection === "general" ? (
+              <>
+                <SettingsCard
+                  title={t("general.title")}
+                  description={t("general.description")}
                 >
-                  {isCapturing ? t("shortcut.capturing") : t("shortcut.capture")}
-                </button>
-                <span>{t("shortcut.captureHint")}</span>
-              </div>
-            </SettingsCard>
-          ) : null}
-
-          {activeSection === "recording" ? (
-            <SettingsCard
-              title={t("recording.title")}
-              description={t("recording.description")}
-            >
-              <label className="field">
-                <span>{t("recording.segmentSeconds")}</span>
-                <input
-                  type="number"
-                  min={10}
-                  value={draft.recording.segmentSeconds}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      recording: {
-                        ...prev.recording,
-                        segmentSeconds: Number(event.target.value),
-                      },
-                    }))
-                  }
-                />
-              </label>
-            </SettingsCard>
-          ) : null}
-
-          {activeSection === "speech" ? (
-            <>
-              <SettingsCard
-                title={t("speech.title")}
-                description={t("speech.description")}
-              >
-                <label className="field">
-                  <span>{t("speech.provider")}</span>
-                  <select
-                    value={draft.provider}
-                    onChange={(event) =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        provider: event.target.value as "openai" | "volcengine",
-                      }))
-                    }
-                  >
-                    <option value="openai">OpenAI</option>
-                    <option value="volcengine">{t("speech.volcengine")}</option>
-                  </select>
-                </label>
-              </SettingsCard>
-
-              {draft.provider === "openai" ? (
-                <SettingsCard title="OpenAI">
                   <label className="field">
-                    <span>{t("openai.apiBase")}</span>
-                    <input
-                      value={draft.openai.apiBase}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: { ...prev.openai, apiBase: event.target.value },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("openai.apiKey")}</span>
-                    <input
-                      type="password"
-                      value={draft.openai.apiKey}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: { ...prev.openai, apiKey: event.target.value },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.model")}</span>
-                    <input
-                      value={draft.openai.speechToText.model}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              model: event.target.value,
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.language")}</span>
-                    <input
-                      value={draft.openai.speechToText.language}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              language: event.target.value,
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.prompt")}</span>
-                    <input
-                      value={draft.openai.speechToText.prompt}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              prompt: event.target.value,
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.responseFormat")}</span>
-                    <input
-                      value={draft.openai.speechToText.responseFormat}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              responseFormat: event.target.value,
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.temperature")}</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={draft.openai.speechToText.temperature}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              temperature: Number(event.target.value),
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.chunkingStrategy")}</span>
-                    <input
-                      value={draft.openai.speechToText.chunkingStrategy}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              chunkingStrategy: event.target.value,
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.timestampGranularities")}</span>
-                    <input
-                      value={listToString(draft.openai.speechToText.timestampGranularities)}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              timestampGranularities: parseList(event.target.value),
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.include")}</span>
-                    <input
-                      value={listToString(draft.openai.speechToText.include)}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              include: parseList(event.target.value),
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.knownSpeakerNames")}</span>
-                    <input
-                      value={listToString(draft.openai.speechToText.knownSpeakerNames)}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              knownSpeakerNames: parseList(event.target.value),
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("speech.knownSpeakerReferences")}</span>
-                    <input
-                      value={listToString(draft.openai.speechToText.knownSpeakerReferences)}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              knownSpeakerReferences: parseList(event.target.value),
-                            },
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
-                      checked={draft.openai.speechToText.stream}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          openai: {
-                            ...prev.openai,
-                            speechToText: {
-                              ...prev.openai.speechToText,
-                              stream: event.target.checked,
-                            },
-                          },
-                        }))
-                      }
-                    />
-                    <span>{t("speech.stream")}</span>
-                  </label>
-                </SettingsCard>
-              ) : null}
-
-              {draft.provider === "volcengine" ? (
-                <SettingsCard title={t("speech.volcengine")}>
-                  <label className="field">
-                    <span>{t("volcengine.appId")}</span>
-                    <input
-                      value={draft.volcengine.appId}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          volcengine: { ...prev.volcengine, appId: event.target.value },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("volcengine.accessToken")}</span>
-                    <input
-                      type="password"
-                      value={draft.volcengine.accessToken}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          volcengine: { ...prev.volcengine, accessToken: event.target.value },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("volcengine.language")}</span>
+                    <span>{t("general.theme")}</span>
                     <select
-                      value={draft.volcengine.language}
+                      value={draft.appearance.theme}
                       onChange={(event) =>
                         updateDraft((prev) => ({
                           ...prev,
-                          volcengine: { ...prev.volcengine, language: event.target.value },
+                          appearance: {
+                            ...prev.appearance,
+                            theme: event.target.value,
+                          },
                         }))
                       }
                     >
-                      <option value="zh-CN">{t("volcengine.langZhCN")}</option>
-                      <option value="zh-TW">{t("volcengine.langZhTW")}</option>
-                      <option value="en-US">{t("volcengine.langEnUS")}</option>
-                      <option value="ja-JP">{t("volcengine.langJaJP")}</option>
-                      <option value="ko-KR">{t("volcengine.langKoKR")}</option>
+                      <option value="system">{t("general.themeSystem")}</option>
+                      <option value="light">{t("general.themeLight")}</option>
+                      <option value="dark">{t("general.themeDark")}</option>
                     </select>
                   </label>
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
-                      checked={draft.volcengine.useStreaming}
+                  <div className="field">
+                    <span>{t("general.language")}</span>
+                    <LanguageSwitcher />
+                  </div>
+                </SettingsCard>
+                <SettingsCard title={t("data.title")} description={t("data.description")}>
+                  <div className="button-row">
+                    <button type="button" onClick={handleImport}>
+                      {t("data.import")}
+                    </button>
+                    <button type="button" onClick={handleExport}>
+                      {t("data.export")}
+                    </button>
+                  </div>
+                </SettingsCard>
+              </>
+            ) : null}
+
+            {activeSection === "shortcut" ? (
+              <SettingsCard
+                title={t("shortcut.title")}
+                description={t("shortcut.description")}
+              >
+                <label className="field">
+                  <span>{t("shortcut.key")}</span>
+                  <input
+                    value={draft.shortcut.key}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        shortcut: { ...prev.shortcut, key: event.target.value },
+                      }))
+                    }
+                  />
+                </label>
+                <div className="shortcut-actions">
+                  <button
+                    type="button"
+                    onClick={() => setIsCapturing(true)}
+                    disabled={isCapturing}
+                  >
+                    {isCapturing ? t("shortcut.capturing") : t("shortcut.capture")}
+                  </button>
+                  <span>{t("shortcut.captureHint")}</span>
+                </div>
+              </SettingsCard>
+            ) : null}
+
+            {activeSection === "recording" ? (
+              <SettingsCard
+                title={t("recording.title")}
+                description={t("recording.description")}
+              >
+                <label className="field">
+                  <span>{t("recording.segmentSeconds")}</span>
+                  <input
+                    type="number"
+                    min={10}
+                    value={draft.recording.segmentSeconds}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        recording: {
+                          ...prev.recording,
+                          segmentSeconds: Number(event.target.value),
+                        },
+                      }))
+                    }
+                  />
+                </label>
+              </SettingsCard>
+            ) : null}
+
+            {activeSection === "speech" ? (
+              <>
+                <SettingsCard
+                  title={t("speech.title")}
+                  description={t("speech.description")}
+                >
+                  <label className="field">
+                    <span>{t("speech.provider")}</span>
+                    <select
+                      value={draft.provider}
                       onChange={(event) =>
                         updateDraft((prev) => ({
                           ...prev,
-                          volcengine: { ...prev.volcengine, useStreaming: event.target.checked },
+                          provider: event.target.value as "openai" | "volcengine",
                         }))
                       }
-                    />
-                    <span>{t("volcengine.useStreaming")}</span>
-                  </label>
-                  <label className="field checkbox">
-                    <input
-                      type="checkbox"
-                      checked={draft.volcengine.useFast}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          volcengine: { ...prev.volcengine, useFast: event.target.checked },
-                        }))
-                      }
-                    />
-                    <span>{t("volcengine.useFast")}</span>
+                    >
+                      <option value="openai">OpenAI</option>
+                      <option value="volcengine">{t("speech.volcengine")}</option>
+                    </select>
                   </label>
                 </SettingsCard>
-              ) : null}
-            </>
-          ) : null}
 
-          {activeSection === "text" ? (
-            <SettingsCard title={t("text.title")} description={t("text.description")}>
-              <label className="field">
-                <span>{t("text.model")}</span>
-                <input
-                  value={draft.openai.text.model}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        text: { ...prev.openai.text, model: event.target.value },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("text.instructions")}</span>
-                <input
-                  value={draft.openai.text.instructions}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        text: {
-                          ...prev.openai.text,
-                          instructions: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("text.temperature")}</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={draft.openai.text.temperature}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        text: {
-                          ...prev.openai.text,
-                          temperature: Number(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("text.maxOutputTokens")}</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={draft.openai.text.maxOutputTokens}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        text: {
-                          ...prev.openai.text,
-                          maxOutputTokens: Number(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("text.topP")}</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={draft.openai.text.topP}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        text: {
-                          ...prev.openai.text,
-                          topP: Number(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-            </SettingsCard>
-          ) : null}
-
-          {activeSection === "triggers" ? (
-            <SettingsCard
-              title={t("triggers.title")}
-              description={t("triggers.description")}
-            >
-              <div className="trigger-list">
-                {draft.triggers.map((card, index) => (
-                  <div key={card.id} className="trigger-card">
-                    <div className="trigger-card-header">
+                {draft.provider === "openai" ? (
+                  <SettingsCard title="OpenAI">
+                    <label className="field">
+                      <span>{t("openai.apiBase")}</span>
                       <input
-                        value={card.title}
+                        value={draft.openai.apiBase}
                         onChange={(event) =>
-                          updateTrigger(card.id, (prev) => ({
+                          updateDraft((prev) => ({
                             ...prev,
-                            title: event.target.value,
+                            openai: { ...prev.openai, apiBase: event.target.value },
                           }))
                         }
                       />
-                      <div className="trigger-card-actions">
-                        <button
-                          type="button"
-                          onClick={() => moveTrigger(index, index - 1)}
-                          disabled={index === 0}
-                        >
-                          {t("triggers.moveUp")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveTrigger(index, index + 1)}
-                          disabled={index === draft.triggers.length - 1}
-                        >
-                          {t("triggers.moveDown")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeTrigger(card.id)}
-                          disabled={card.locked}
-                        >
-                          {t("triggers.remove")}
-                        </button>
+                    </label>
+                    <label className="field">
+                      <span>{t("openai.apiKey")}</span>
+                      <input
+                        type="password"
+                        value={draft.openai.apiKey}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: { ...prev.openai, apiKey: event.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.model")}</span>
+                      <input
+                        value={draft.openai.speechToText.model}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                model: event.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.language")}</span>
+                      <input
+                        value={draft.openai.speechToText.language}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                language: event.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.prompt")}</span>
+                      <input
+                        value={draft.openai.speechToText.prompt}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                prompt: event.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.responseFormat")}</span>
+                      <input
+                        value={draft.openai.speechToText.responseFormat}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                responseFormat: event.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.temperature")}</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={draft.openai.speechToText.temperature}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                temperature: Number(event.target.value),
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.chunkingStrategy")}</span>
+                      <input
+                        value={draft.openai.speechToText.chunkingStrategy}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                chunkingStrategy: event.target.value,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.timestampGranularities")}</span>
+                      <input
+                        value={listToString(draft.openai.speechToText.timestampGranularities)}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                timestampGranularities: parseList(event.target.value),
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.include")}</span>
+                      <input
+                        value={listToString(draft.openai.speechToText.include)}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                include: parseList(event.target.value),
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.knownSpeakerNames")}</span>
+                      <input
+                        value={listToString(draft.openai.speechToText.knownSpeakerNames)}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                knownSpeakerNames: parseList(event.target.value),
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("speech.knownSpeakerReferences")}</span>
+                      <input
+                        value={listToString(draft.openai.speechToText.knownSpeakerReferences)}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                knownSpeakerReferences: parseList(event.target.value),
+                              },
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        checked={draft.openai.speechToText.stream}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            openai: {
+                              ...prev.openai,
+                              speechToText: {
+                                ...prev.openai.speechToText,
+                                stream: event.target.checked,
+                              },
+                            },
+                          }))
+                        }
+                      />
+                      <span>{t("speech.stream")}</span>
+                    </label>
+                  </SettingsCard>
+                ) : null}
+
+                {draft.provider === "volcengine" ? (
+                  <SettingsCard title={t("speech.volcengine")}>
+                    <label className="field">
+                      <span>{t("volcengine.appId")}</span>
+                      <input
+                        value={draft.volcengine.appId}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            volcengine: { ...prev.volcengine, appId: event.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("volcengine.accessToken")}</span>
+                      <input
+                        type="password"
+                        value={draft.volcengine.accessToken}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            volcengine: { ...prev.volcengine, accessToken: event.target.value },
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{t("volcengine.language")}</span>
+                      <select
+                        value={draft.volcengine.language}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            volcengine: { ...prev.volcengine, language: event.target.value },
+                          }))
+                        }
+                      >
+                        <option value="zh-CN">{t("volcengine.langZhCN")}</option>
+                        <option value="zh-TW">{t("volcengine.langZhTW")}</option>
+                        <option value="en-US">{t("volcengine.langEnUS")}</option>
+                        <option value="ja-JP">{t("volcengine.langJaJP")}</option>
+                        <option value="ko-KR">{t("volcengine.langKoKR")}</option>
+                      </select>
+                    </label>
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        checked={draft.volcengine.useStreaming}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            volcengine: { ...prev.volcengine, useStreaming: event.target.checked },
+                          }))
+                        }
+                      />
+                      <span>{t("volcengine.useStreaming")}</span>
+                    </label>
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        checked={draft.volcengine.useFast}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            volcengine: { ...prev.volcengine, useFast: event.target.checked },
+                          }))
+                        }
+                      />
+                      <span>{t("volcengine.useFast")}</span>
+                    </label>
+                  </SettingsCard>
+                ) : null}
+              </>
+            ) : null}
+
+            {activeSection === "text" ? (
+              <SettingsCard title={t("text.title")} description={t("text.description")}>
+                <label className="field">
+                  <span>{t("text.model")}</span>
+                  <input
+                    value={draft.openai.text.model}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        openai: {
+                          ...prev.openai,
+                          text: { ...prev.openai.text, model: event.target.value },
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>{t("text.instructions")}</span>
+                  <input
+                    value={draft.openai.text.instructions}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        openai: {
+                          ...prev.openai,
+                          text: {
+                            ...prev.openai.text,
+                            instructions: event.target.value,
+                          },
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>{t("text.temperature")}</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={draft.openai.text.temperature}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        openai: {
+                          ...prev.openai,
+                          text: {
+                            ...prev.openai.text,
+                            temperature: Number(event.target.value),
+                          },
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>{t("text.maxOutputTokens")}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={draft.openai.text.maxOutputTokens}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        openai: {
+                          ...prev.openai,
+                          text: {
+                            ...prev.openai.text,
+                            maxOutputTokens: Number(event.target.value),
+                          },
+                        },
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>{t("text.topP")}</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={draft.openai.text.topP}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        openai: {
+                          ...prev.openai,
+                          text: {
+                            ...prev.openai.text,
+                            topP: Number(event.target.value),
+                          },
+                        },
+                      }))
+                    }
+                  />
+                </label>
+              </SettingsCard>
+            ) : null}
+
+            {activeSection === "triggers" ? (
+              <SettingsCard
+                title={t("triggers.title")}
+                description={t("triggers.description")}
+              >
+                <div className="trigger-list">
+                  {draft.triggers.map((card, index) => (
+                    <div key={card.id} className="trigger-card">
+                      <div className="trigger-card-header">
+                        <input
+                          value={card.title}
+                          onChange={(event) =>
+                            updateTrigger(card.id, (prev) => ({
+                              ...prev,
+                              title: event.target.value,
+                            }))
+                          }
+                        />
+                        <div className="trigger-card-actions">
+                          <button
+                            type="button"
+                            onClick={() => moveTrigger(index, index - 1)}
+                            disabled={index === 0}
+                          >
+                            {t("triggers.moveUp")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveTrigger(index, index + 1)}
+                            disabled={index === draft.triggers.length - 1}
+                          >
+                            {t("triggers.moveDown")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeTrigger(card.id)}
+                            disabled={card.locked}
+                          >
+                            {t("triggers.remove")}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="trigger-card-body">
+                        <label className="field checkbox">
+                          <input
+                            type="checkbox"
+                            checked={card.enabled}
+                            onChange={(event) =>
+                              updateTrigger(card.id, (prev) => ({
+                                ...prev,
+                                enabled: event.target.checked,
+                              }))
+                            }
+                          />
+                          <span>{t("triggers.enabled")}</span>
+                        </label>
+                        <label className="field checkbox">
+                          <input
+                            type="checkbox"
+                            checked={card.autoApply}
+                            onChange={(event) =>
+                              updateTrigger(card.id, (prev) => ({
+                                ...prev,
+                                autoApply: event.target.checked,
+                              }))
+                            }
+                          />
+                          <span>{t("triggers.autoApply")}</span>
+                        </label>
+                        <label className="field">
+                          <span>{t("triggers.keyword")}</span>
+                          <input
+                            value={card.keyword}
+                            onChange={(event) =>
+                              updateTrigger(card.id, (prev) => ({
+                                ...prev,
+                                keyword: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>{t("triggers.variables")}</span>
+                          <input
+                            value={listToString(card.variables)}
+                            onChange={(event) =>
+                              updateTrigger(card.id, (prev) => ({
+                                ...prev,
+                                variables: parseList(event.target.value),
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>{t("triggers.promptTemplate")}</span>
+                          <input
+                            value={card.promptTemplate}
+                            onChange={(event) =>
+                              updateTrigger(card.id, (prev) => ({
+                                ...prev,
+                                promptTemplate: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>{t("triggers.example")}</span>
+                          <input
+                            value={card.example}
+                            onChange={(event) =>
+                              updateTrigger(card.id, (prev) => ({
+                                ...prev,
+                                example: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>{t("triggers.descriptionLabel")}</span>
+                          <input
+                            value={card.description}
+                            onChange={(event) =>
+                              updateTrigger(card.id, (prev) => ({
+                                ...prev,
+                                description: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
                       </div>
                     </div>
-                    <div className="trigger-card-body">
-                      <label className="field checkbox">
-                        <input
-                          type="checkbox"
-                          checked={card.enabled}
-                          onChange={(event) =>
-                            updateTrigger(card.id, (prev) => ({
-                              ...prev,
-                              enabled: event.target.checked,
-                            }))
-                          }
-                        />
-                        <span>{t("triggers.enabled")}</span>
-                      </label>
-                      <label className="field checkbox">
-                        <input
-                          type="checkbox"
-                          checked={card.autoApply}
-                          onChange={(event) =>
-                            updateTrigger(card.id, (prev) => ({
-                              ...prev,
-                              autoApply: event.target.checked,
-                            }))
-                          }
-                        />
-                        <span>{t("triggers.autoApply")}</span>
-                      </label>
-                      <label className="field">
-                        <span>{t("triggers.keyword")}</span>
-                        <input
-                          value={card.keyword}
-                          onChange={(event) =>
-                            updateTrigger(card.id, (prev) => ({
-                              ...prev,
-                              keyword: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span>{t("triggers.variables")}</span>
-                        <input
-                          value={listToString(card.variables)}
-                          onChange={(event) =>
-                            updateTrigger(card.id, (prev) => ({
-                              ...prev,
-                              variables: parseList(event.target.value),
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span>{t("triggers.promptTemplate")}</span>
-                        <input
-                          value={card.promptTemplate}
-                          onChange={(event) =>
-                            updateTrigger(card.id, (prev) => ({
-                              ...prev,
-                              promptTemplate: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span>{t("triggers.example")}</span>
-                        <input
-                          value={card.example}
-                          onChange={(event) =>
-                            updateTrigger(card.id, (prev) => ({
-                              ...prev,
-                              example: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span>{t("triggers.descriptionLabel")}</span>
-                        <input
-                          value={card.description}
-                          onChange={(event) =>
-                            updateTrigger(card.id, (prev) => ({
-                              ...prev,
-                              description: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button type="button" className="secondary" onClick={addTrigger}>
-                {t("triggers.add")}
-              </button>
-            </SettingsCard>
+                  ))}
+                </div>
+                <button type="button" className="secondary" onClick={addTrigger}>
+                  {t("triggers.add")}
+                </button>
+              </SettingsCard>
+            ) : null}
+          </section>
+        </div>
+        <footer className="settings-actions">
+          {message ? (
+            <span className={`status-message ${message.type}`}>{message.text}</span>
           ) : null}
-        </section>
-      </div>
-      <footer className="settings-actions">
-        {message ? (
-          <span className={`status-message ${message.type}`}>{message.text}</span>
-        ) : null}
-        <button type="button" onClick={handleSave}>
-          {t("actions.save")}
-        </button>
-      </footer>
-    </main>
+          <button type="button" onClick={handleSave}>
+            {t("actions.save")}
+          </button>
+        </footer>
+      </main>
+    </>
   );
 }
 

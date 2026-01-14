@@ -69,25 +69,138 @@ body {
   color: var(--text-secondary);
 }
 
-/* Header */
-.page-header {
+/* Title Bar */
+.titlebar {
+  height: 40px;
+  background: var(--bg-app);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 24px;
+  padding: 0 16px;
+  user-select: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  /* Add a subtle bottom border/shadow for separation */
+  box-shadow: 0 1px 0 rgba(0,0,0,0.05);
 }
 
-.page-header h1 {
-  margin: 0;
-  font-size: 32px;
+.titlebar-title {
   font-weight: 600;
-  letter-spacing: -0.5px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  pointer-events: none; /* Let drag pass through */
 }
 
-.page-header p {
-  margin: 8px 0 0;
-  color: var(--text-secondary);
-  font-size: 16px;
+.titlebar-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.titlebar-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px; /* Slightly squarer than main UI */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+  padding: 0;
+}
+
+.titlebar-button:hover {
+  background: rgba(0,0,0,0.05);
+  box-shadow: none;
+  transform: none;
+  color: var(--text-primary);
+}
+
+.titlebar-button.close:hover {
+  background: #e81123;
+  color: white;
+}
+
+:root[data-theme="dark"] .titlebar-button:hover {
+  background: rgba(255,255,255,0.1);
+}
+:root[data-theme="dark"] .titlebar-button.close:hover {
+  background: #c42b1c;
+}
+
+/* Adjust main container for fixed titlebar */
+.container {
+  margin: 0 auto;
+  padding: 40px; /* Reset padding */
+  padding-top: 64px; /* 40px titlebar + 24px spacing */
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+/* Custom Select (Dropdown) Styling */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23333333%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px top 50%;
+  background-size: 10px auto;
+  padding-right: 32px !important; /* Make room for arrow */
+}
+
+:root[data-theme="dark"] select {
+   background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23e0e0e0%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+}
+
+/* Header Removal (Hide it) */
+.page-header {
+  display: none;
+}
+
+/* Trigger Card refinements */
+.trigger-card-header input {
+  font-weight: 600;
+  font-size: 15px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  transition: border-color 0.2s;
+  width: auto;
+}
+
+.trigger-card-header input:focus {
+  outline: none;
+  box-shadow: none;
+  border-bottom-color: var(--accent-color);
+}
+
+/* Make trigger content denser/cleaner */
+.trigger-card-body {
+  grid-template-columns: 1fr 1fr; /* Two column layout for triggers */
+}
+
+.trigger-card-body .field:nth-last-child(1),
+.trigger-card-body .field:nth-last-child(2) {
+  grid-column: span 2; /* Prompt and Description take full width */
+}
+
+@media (max-width: 900px) {
+  .trigger-card-body {
+    grid-template-columns: 1fr;
+  }
+  .trigger-card-body .field:nth-last-child(1),
+  .trigger-card-body .field:nth-last-child(2) {
+    grid-column: span 1;
+  }
 }
 
 /* Layout */
