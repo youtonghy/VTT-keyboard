@@ -6,6 +6,7 @@
 
 use crate::settings::{Settings, VolcengineSettings};
 use base64::{engine::general_purpose, Engine as _};
+use hound::WavReader;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
@@ -88,6 +89,13 @@ struct FileAsrResponse {
     result: Option<String>,
 }
 
+#[derive(Clone, Copy)]
+struct AudioMetadata {
+    sample_rate: u32,
+    channels: u16,
+    bits_per_sample: u16,
+}
+
 /// 转写音频文件
 ///
 /// 根据设置选择使用录音文件识别或流式识别
@@ -106,6 +114,8 @@ fn transcribe_file(settings: &Settings, audio_path: &Path) -> Result<String, Vol
     let file_bytes = fs::read(audio_path).map_err(|e| VolcengineError::Io(e.to_string()))?;
     let audio_base64 = general_purpose::STANDARD.encode(&file_bytes);
 
+    let (audio_format, audio_meta) = detect_audio_info(audio_path);
+
     let request = FileAsrRequest {
         app: AppInfo {
             appid: settings.volcengine.app_id.clone(),
@@ -117,8 +127,8 @@ fn transcribe_file(settings: &Settings, audio_path: &Path) -> Result<String, Vol
         },
         audio: AudioInfo {
             data: audio_base64,
-            format: detect_audio_format(audio_path),
-            rate: Some(16000),
+            format: audio_format,
+            rate: audio_meta.map(|meta| meta.sample_rate),
             language: Some(settings.volcengine.language.clone()),
         },
         request: RequestInfo {
@@ -169,6 +179,7 @@ fn transcribe_streaming(
     audio_path: &Path,
 ) -> Result<String, VolcengineError> {
     let file_bytes = fs::read(audio_path).map_err(|e| VolcengineError::Io(e.to_string()))?;
+    let (audio_format, audio_meta) = detect_audio_info(audio_path);
 
     // 连接 WebSocket
     let url = Url::parse(STREAMING_ASR_URL).map_err(|e| VolcengineError::WebSocket(e.to_string()))?;
@@ -176,7 +187,7 @@ fn transcribe_streaming(
         connect(url).map_err(|e| VolcengineError::WebSocket(e.to_string()))?;
 
     // 发送握手消息
-    let handshake = build_streaming_handshake(settings);
+    let handshake = build_streaming_handshake(settings, &audio_format, audio_meta);
     socket
         .send(Message::Text(handshake))
         .map_err(|e| VolcengineError::WebSocket(e.to_string()))?;
@@ -199,7 +210,7 @@ fn transcribe_streaming(
     }
 
     // 分块发送音频数据
-    let chunk_size = 3200; // 100ms @ 16kHz 16bit mono
+    let chunk_size = compute_chunk_size(audio_meta);
     let mut offset = 0;
     let mut sequence = 1;
 
@@ -260,7 +271,15 @@ fn transcribe_streaming(
 }
 
 /// 构建流式识别握手消息
-fn build_streaming_handshake(settings: &Settings) -> String {
+fn build_streaming_handshake(
+    settings: &Settings,
+    format: &str,
+    metadata: Option<AudioMetadata>,
+) -> String {
+    let sample_rate = metadata.map(|meta| meta.sample_rate).unwrap_or(16000);
+    let channels = metadata.map(|meta| meta.channels).unwrap_or(1);
+    let bits = metadata.map(|meta| meta.bits_per_sample).unwrap_or(16);
+
     let handshake = json!({
         "app": {
             "appid": settings.volcengine.app_id,
@@ -278,11 +297,11 @@ fn build_streaming_handshake(settings: &Settings) -> String {
             "show_utterances": true
         },
         "audio": {
-            "format": "wav",
-            "rate": 16000,
+            "format": format,
+            "rate": sample_rate,
             "language": settings.volcengine.language,
-            "bits": 16,
-            "channel": 1,
+            "bits": bits,
+            "channel": channels,
             "codec": "raw"
         },
         "additions": {
@@ -306,12 +325,49 @@ fn build_audio_message(chunk: &[u8], sequence: i32, is_last: bool) -> String {
     msg.to_string()
 }
 
-/// 检测音频格式
-fn detect_audio_format(path: &Path) -> String {
-    path.extension()
+/// 检测音频格式与元信息
+fn detect_audio_info(path: &Path) -> (String, Option<AudioMetadata>) {
+    let format = path
+        .extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| ext.to_lowercase())
-        .unwrap_or_else(|| "wav".to_string())
+        .unwrap_or_else(|| "wav".to_string());
+
+    if format != "wav" {
+        return (format, None);
+    }
+
+    let reader = match WavReader::open(path) {
+        Ok(reader) => reader,
+        Err(_) => return (format, None),
+    };
+    let spec = reader.spec();
+    (
+        format,
+        Some(AudioMetadata {
+            sample_rate: spec.sample_rate,
+            channels: spec.channels,
+            bits_per_sample: spec.bits_per_sample,
+        }),
+    )
+}
+
+fn compute_chunk_size(metadata: Option<AudioMetadata>) -> usize {
+    let Some(meta) = metadata else {
+        return 3200;
+    };
+    let bits = meta.bits_per_sample as usize;
+    let bytes_per_sample = ((bits + 7) / 8).max(1);
+    let bytes_per_second = meta
+        .sample_rate
+        .saturating_mul(meta.channels as u32) as usize
+        * bytes_per_sample;
+    let chunk = bytes_per_second / 10;
+    if chunk == 0 {
+        3200
+    } else {
+        chunk
+    }
 }
 
 /// 验证配置
