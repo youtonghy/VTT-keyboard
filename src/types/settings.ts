@@ -56,8 +56,6 @@ export interface TriggerCard {
   keyword: string;
   promptTemplate: string;
   variables: string[];
-  example: string;
-  description: string;
 }
 
 export interface AppearanceSettings {

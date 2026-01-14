@@ -300,8 +300,6 @@ function App() {
     keyword: t("triggers.defaultKeyword"),
     promptTemplate: t("triggers.defaultTemplate"),
     variables: parseList(t("triggers.defaultVariables")),
-    example: t("triggers.defaultExample"),
-    description: t("triggers.defaultDescription"),
   });
 
   const updateTrigger = (
@@ -386,6 +384,22 @@ function App() {
       setMessage({ type: "error", text: t("data.exportError") });
     }
   };
+
+  useEffect(() => {
+    if (!draft || !settings) {
+      return;
+    }
+    // Avoid saving if no changes
+    if (JSON.stringify(draft) === JSON.stringify(settings)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      handleSave();
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [draft, settings]);
 
   if (loading || !draft) {
     return (
@@ -1030,36 +1044,13 @@ function App() {
                         </label>
                         <label className="field">
                           <span>{t("triggers.promptTemplate")}</span>
-                          <input
+                          <textarea
                             value={card.promptTemplate}
+                            rows={3}
                             onChange={(event) =>
                               updateTrigger(card.id, (prev) => ({
                                 ...prev,
                                 promptTemplate: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>{t("triggers.example")}</span>
-                          <input
-                            value={card.example}
-                            onChange={(event) =>
-                              updateTrigger(card.id, (prev) => ({
-                                ...prev,
-                                example: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>{t("triggers.descriptionLabel")}</span>
-                          <input
-                            value={card.description}
-                            onChange={(event) =>
-                              updateTrigger(card.id, (prev) => ({
-                                ...prev,
-                                description: event.target.value,
                               }))
                             }
                           />
@@ -1079,9 +1070,6 @@ function App() {
           {message ? (
             <span className={`status-message ${message.type}`}>{message.text}</span>
           ) : null}
-          <button type="button" onClick={handleSave}>
-            {t("actions.save")}
-          </button>
         </footer>
       </main>
     </>

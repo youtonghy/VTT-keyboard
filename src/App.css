@@ -188,17 +188,15 @@ select {
   grid-template-columns: 1fr 1fr; /* Two column layout for triggers */
 }
 
-.trigger-card-body .field:nth-last-child(1),
-.trigger-card-body .field:nth-last-child(2) {
-  grid-column: span 2; /* Prompt and Description take full width */
+.trigger-card-body .field:last-child {
+  grid-column: span 2; /* Prompt takes full width */
 }
 
 @media (max-width: 900px) {
   .trigger-card-body {
     grid-template-columns: 1fr;
   }
-  .trigger-card-body .field:nth-last-child(1),
-  .trigger-card-body .field:nth-last-child(2) {
+  .trigger-card-body .field:last-child {
     grid-column: span 1;
   }
 }
@@ -308,7 +306,8 @@ select {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   padding: 12px 16px;
   border-radius: var(--border-radius);
   border: none;
@@ -319,10 +318,13 @@ select {
   box-shadow: var(--input-shadow);
   outline: none;
   transition: box-shadow 0.2s;
+  font-family: inherit; /* Ensure textarea inherits font */
+  resize: vertical; /* Allow vertical resizing */
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   /* Add a subtle accent glow or deeper recess on focus */
   box-shadow: var(--input-shadow), 0 0 0 2px var(--accent-color);
 }

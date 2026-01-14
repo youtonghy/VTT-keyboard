@@ -101,8 +101,6 @@
     "keyword": "Keyword",
     "variables": "Variable Range (comma separated)",
     "promptTemplate": "Prompt Template",
-    "example": "Example",
-    "descriptionLabel": "Description",
     "add": "Add Trigger",
     "remove": "Remove",
     "moveUp": "Move Up",
@@ -111,8 +109,6 @@
     "defaultKeyword": "translate to",
     "defaultTemplate": "Translate the following content to {value}.",
     "defaultVariables": "English",
-    "defaultExample": "translate to English",
-    "defaultDescription": "Example: translate to English",
     "validationVariables": "Variable range cannot be empty: {{title}}",
     "validationKeyword": "Keyword cannot be empty: {{title}}"
   },

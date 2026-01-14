@@ -95,8 +95,6 @@ fn default_triggers() -> Vec<TriggerCard> {
             keyword: "翻译为".to_string(),
             prompt_template: "请将以下内容翻译为{value}。".to_string(),
             variables: vec!["英文".to_string()],
-            example: "翻译为英文".to_string(),
-            description: "示例：翻译为英文".to_string(),
         },
         TriggerCard {
             id: "polish".to_string(),
@@ -107,8 +105,6 @@ fn default_triggers() -> Vec<TriggerCard> {
             keyword: "润色为".to_string(),
             prompt_template: "请将以下内容润色为{value}。".to_string(),
             variables: vec!["口语".to_string()],
-            example: "润色为口语".to_string(),
-            description: "示例：润色为口语".to_string(),
         },
     ]
 }
@@ -171,8 +167,6 @@ pub struct TriggerCard {
     pub keyword: String,
     pub prompt_template: String,
     pub variables: Vec<String>,
-    pub example: String,
-    pub description: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

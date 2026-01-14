@@ -101,8 +101,6 @@
     "keyword": "触发词关键词",
     "variables": "变量范围（英文逗号分隔）",
     "promptTemplate": "提示词模板",
-    "example": "示例触发词",
-    "descriptionLabel": "说明",
     "add": "新增触发词",
     "remove": "删除",
     "moveUp": "上移",
@@ -111,8 +109,6 @@
     "defaultKeyword": "翻译为",
     "defaultTemplate": "请将以下内容翻译为{value}。",
     "defaultVariables": "英文",
-    "defaultExample": "翻译为英文",
-    "defaultDescription": "示例：翻译为英文",
     "validationVariables": "触发词变量范围不能为空：{{title}}",
     "validationKeyword": "触发词关键词不能为空：{{title}}"
   },
