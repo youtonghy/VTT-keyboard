@@ -57,7 +57,9 @@
   },
   "speech": {
     "title": "Speech to Text",
-    "description": "Configure OpenAI transcription parameters.",
+    "description": "Select the transcription service provider.",
+    "provider": "Provider",
+    "volcengine": "Volcengine",
     "model": "Model",
     "language": "Language (ISO-639-1)",
     "prompt": "Prompt",
@@ -69,6 +71,18 @@
     "knownSpeakerNames": "Known Speaker Names (comma separated)",
     "knownSpeakerReferences": "Known Speaker References (comma separated)",
     "stream": "Enable Streaming"
+  },
+  "volcengine": {
+    "appId": "App ID",
+    "accessToken": "Access Token",
+    "language": "Language",
+    "useStreaming": "Enable Streaming Recognition",
+    "useFast": "Enable Fast Mode",
+    "langZhCN": "Chinese (Simplified)",
+    "langZhTW": "Chinese (Traditional)",
+    "langEnUS": "English",
+    "langJaJP": "Japanese",
+    "langKoKR": "Korean"
   },
   "text": {
     "title": "Text",

@@ -6,6 +6,7 @@ mod recorder;
 mod settings;
 mod status_native;
 mod triggers;
+mod volcengine;
 
 use recorder::RecorderService;
 use settings::{Settings, SettingsStore};

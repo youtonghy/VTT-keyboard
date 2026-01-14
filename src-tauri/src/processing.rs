@@ -2,9 +2,10 @@ use crate::audio_processing::{self, AudioProcessingError};
 use crate::openai::{self, OpenAiError};
 use crate::paste::{self, PasteError};
 use crate::recorder::RecordedAudio;
-use crate::settings::{SettingsError, SettingsStore};
+use crate::settings::{SettingsError, SettingsStore, TranscriptionProvider};
 use crate::status_native::{self, StatusType};
 use crate::triggers;
+use crate::volcengine::{self, VolcengineError};
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
@@ -28,8 +29,10 @@ pub enum ProcessingError {
     Settings(#[from] SettingsError),
     #[error("录音分段失败: {0}")]
     Audio(#[from] AudioProcessingError),
-    #[error("转写失败: {0}")]
+    #[error("OpenAI 转写失败: {0}")]
     OpenAi(#[from] OpenAiError),
+    #[error("火山引擎转写失败: {0}")]
+    Volcengine(#[from] VolcengineError),
     #[error("触发词处理失败: {0}")]
     Trigger(String),
     #[error("写入剪贴板失败: {0}")]
@@ -58,7 +61,10 @@ pub fn handle_recording(
     let mut transcripts = Vec::new();
     for (index, path) in paths.iter().enumerate() {
         dev_log(&format!("开始请求转写段落 {}", index + 1));
-        let text = openai::transcribe_audio(&settings, path)?;
+        let text = match settings.provider {
+            TranscriptionProvider::Openai => openai::transcribe_audio(&settings, path)?,
+            TranscriptionProvider::Volcengine => volcengine::transcribe_audio(&settings, path)?,
+        };
         dev_log(&format!("转写结果 {}: {}", index + 1, text));
         transcripts.push(text);
     }

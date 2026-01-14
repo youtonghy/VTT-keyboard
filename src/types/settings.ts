@@ -1,7 +1,11 @@
+export type TranscriptionProvider = "openai" | "volcengine";
+
 export interface Settings {
   shortcut: ShortcutSettings;
   recording: RecordingSettings;
+  provider: TranscriptionProvider;
   openai: OpenAiSettings;
+  volcengine: VolcengineSettings;
   triggers: TriggerCard[];
   appearance: AppearanceSettings;
 }
@@ -58,4 +62,12 @@ export interface TriggerCard {
 
 export interface AppearanceSettings {
   theme: string;
+}
+
+export interface VolcengineSettings {
+  appId: string;
+  accessToken: string;
+  useStreaming: boolean;
+  useFast: boolean;
+  language: string;
 }

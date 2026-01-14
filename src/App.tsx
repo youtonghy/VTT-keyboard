@@ -508,237 +508,333 @@ function App() {
           ) : null}
 
           {activeSection === "speech" ? (
-            <SettingsCard
-              title={t("speech.title")}
-              description={t("speech.description")}
-            >
-              <label className="field">
-                <span>{t("openai.apiBase")}</span>
-                <input
-                  value={draft.openai.apiBase}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: { ...prev.openai, apiBase: event.target.value },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("openai.apiKey")}</span>
-                <input
-                  type="password"
-                  value={draft.openai.apiKey}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: { ...prev.openai, apiKey: event.target.value },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.model")}</span>
-                <input
-                  value={draft.openai.speechToText.model}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          model: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.language")}</span>
-                <input
-                  value={draft.openai.speechToText.language}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          language: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.prompt")}</span>
-                <input
-                  value={draft.openai.speechToText.prompt}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          prompt: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.responseFormat")}</span>
-                <input
-                  value={draft.openai.speechToText.responseFormat}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          responseFormat: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.temperature")}</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={draft.openai.speechToText.temperature}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          temperature: Number(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.chunkingStrategy")}</span>
-                <input
-                  value={draft.openai.speechToText.chunkingStrategy}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          chunkingStrategy: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.timestampGranularities")}</span>
-                <input
-                  value={listToString(draft.openai.speechToText.timestampGranularities)}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          timestampGranularities: parseList(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.include")}</span>
-                <input
-                  value={listToString(draft.openai.speechToText.include)}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          include: parseList(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.knownSpeakerNames")}</span>
-                <input
-                  value={listToString(draft.openai.speechToText.knownSpeakerNames)}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          knownSpeakerNames: parseList(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t("speech.knownSpeakerReferences")}</span>
-                <input
-                  value={listToString(draft.openai.speechToText.knownSpeakerReferences)}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          knownSpeakerReferences: parseList(event.target.value),
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field checkbox">
-                <input
-                  type="checkbox"
-                  checked={draft.openai.speechToText.stream}
-                  onChange={(event) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      openai: {
-                        ...prev.openai,
-                        speechToText: {
-                          ...prev.openai.speechToText,
-                          stream: event.target.checked,
-                        },
-                      },
-                    }))
-                  }
-                />
-                <span>{t("speech.stream")}</span>
-              </label>
-            </SettingsCard>
+            <>
+              <SettingsCard
+                title={t("speech.title")}
+                description={t("speech.description")}
+              >
+                <label className="field">
+                  <span>{t("speech.provider")}</span>
+                  <select
+                    value={draft.provider}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        provider: event.target.value as "openai" | "volcengine",
+                      }))
+                    }
+                  >
+                    <option value="openai">OpenAI</option>
+                    <option value="volcengine">{t("speech.volcengine")}</option>
+                  </select>
+                </label>
+              </SettingsCard>
+
+              {draft.provider === "openai" ? (
+                <SettingsCard title="OpenAI">
+                  <label className="field">
+                    <span>{t("openai.apiBase")}</span>
+                    <input
+                      value={draft.openai.apiBase}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: { ...prev.openai, apiBase: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("openai.apiKey")}</span>
+                    <input
+                      type="password"
+                      value={draft.openai.apiKey}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: { ...prev.openai, apiKey: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.model")}</span>
+                    <input
+                      value={draft.openai.speechToText.model}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              model: event.target.value,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.language")}</span>
+                    <input
+                      value={draft.openai.speechToText.language}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              language: event.target.value,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.prompt")}</span>
+                    <input
+                      value={draft.openai.speechToText.prompt}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              prompt: event.target.value,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.responseFormat")}</span>
+                    <input
+                      value={draft.openai.speechToText.responseFormat}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              responseFormat: event.target.value,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.temperature")}</span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={draft.openai.speechToText.temperature}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              temperature: Number(event.target.value),
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.chunkingStrategy")}</span>
+                    <input
+                      value={draft.openai.speechToText.chunkingStrategy}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              chunkingStrategy: event.target.value,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.timestampGranularities")}</span>
+                    <input
+                      value={listToString(draft.openai.speechToText.timestampGranularities)}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              timestampGranularities: parseList(event.target.value),
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.include")}</span>
+                    <input
+                      value={listToString(draft.openai.speechToText.include)}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              include: parseList(event.target.value),
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.knownSpeakerNames")}</span>
+                    <input
+                      value={listToString(draft.openai.speechToText.knownSpeakerNames)}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              knownSpeakerNames: parseList(event.target.value),
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("speech.knownSpeakerReferences")}</span>
+                    <input
+                      value={listToString(draft.openai.speechToText.knownSpeakerReferences)}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              knownSpeakerReferences: parseList(event.target.value),
+                            },
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.openai.speechToText.stream}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          openai: {
+                            ...prev.openai,
+                            speechToText: {
+                              ...prev.openai.speechToText,
+                              stream: event.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    <span>{t("speech.stream")}</span>
+                  </label>
+                </SettingsCard>
+              ) : null}
+
+              {draft.provider === "volcengine" ? (
+                <SettingsCard title={t("speech.volcengine")}>
+                  <label className="field">
+                    <span>{t("volcengine.appId")}</span>
+                    <input
+                      value={draft.volcengine.appId}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          volcengine: { ...prev.volcengine, appId: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("volcengine.accessToken")}</span>
+                    <input
+                      type="password"
+                      value={draft.volcengine.accessToken}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          volcengine: { ...prev.volcengine, accessToken: event.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{t("volcengine.language")}</span>
+                    <select
+                      value={draft.volcengine.language}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          volcengine: { ...prev.volcengine, language: event.target.value },
+                        }))
+                      }
+                    >
+                      <option value="zh-CN">{t("volcengine.langZhCN")}</option>
+                      <option value="zh-TW">{t("volcengine.langZhTW")}</option>
+                      <option value="en-US">{t("volcengine.langEnUS")}</option>
+                      <option value="ja-JP">{t("volcengine.langJaJP")}</option>
+                      <option value="ko-KR">{t("volcengine.langKoKR")}</option>
+                    </select>
+                  </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.volcengine.useStreaming}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          volcengine: { ...prev.volcengine, useStreaming: event.target.checked },
+                        }))
+                      }
+                    />
+                    <span>{t("volcengine.useStreaming")}</span>
+                  </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.volcengine.useFast}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          volcengine: { ...prev.volcengine, useFast: event.target.checked },
+                        }))
+                      }
+                    />
+                    <span>{t("volcengine.useFast")}</span>
+                  </label>
+                </SettingsCard>
+              ) : null}
+            </>
           ) : null}
 
           {activeSection === "text" ? (

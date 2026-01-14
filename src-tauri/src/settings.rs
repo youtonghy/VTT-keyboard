@@ -31,7 +31,11 @@ pub enum SettingsError {
 pub struct Settings {
     pub shortcut: ShortcutSettings,
     pub recording: RecordingSettings,
+    #[serde(default)]
+    pub provider: TranscriptionProvider,
     pub openai: OpenAiSettings,
+    #[serde(default)]
+    pub volcengine: VolcengineSettings,
     #[serde(default = "default_triggers")]
     pub triggers: Vec<TriggerCard>,
     pub appearance: AppearanceSettings,
@@ -46,6 +50,7 @@ impl Default for Settings {
             recording: RecordingSettings {
                 segment_seconds: 60,
             },
+            provider: TranscriptionProvider::default(),
             openai: OpenAiSettings {
                 api_base: "https://api.openai.com/v1".to_string(),
                 api_key: "".to_string(),
@@ -70,6 +75,7 @@ impl Default for Settings {
                     instructions: "".to_string(),
                 },
             },
+            volcengine: VolcengineSettings::default(),
             triggers: default_triggers(),
             appearance: AppearanceSettings {
                 theme: "system".to_string(),
@@ -173,6 +179,36 @@ pub struct TriggerCard {
 #[serde(rename_all = "camelCase")]
 pub struct AppearanceSettings {
     pub theme: String,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptionProvider {
+    #[default]
+    Openai,
+    Volcengine,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolcengineSettings {
+    pub app_id: String,
+    pub access_token: String,
+    pub use_streaming: bool,
+    pub use_fast: bool,
+    pub language: String,
+}
+
+impl Default for VolcengineSettings {
+    fn default() -> Self {
+        Self {
+            app_id: String::new(),
+            access_token: String::new(),
+            use_streaming: false,
+            use_fast: false,
+            language: "zh-CN".to_string(),
+        }
+    }
 }
 
 #[derive(Clone)]

@@ -57,7 +57,9 @@
   },
   "speech": {
     "title": "语音转写",
-    "description": "配置 OpenAI 语音转写参数。",
+    "description": "选择语音识别服务提供商。",
+    "provider": "提供商",
+    "volcengine": "火山引擎",
     "model": "转写模型",
     "language": "语言（ISO-639-1）",
     "prompt": "提示词",
@@ -69,6 +71,18 @@
     "knownSpeakerNames": "说话人名称（逗号分隔）",
     "knownSpeakerReferences": "说话人样本（逗号分隔）",
     "stream": "启用流式"
+  },
+  "volcengine": {
+    "appId": "App ID",
+    "accessToken": "Access Token",
+    "language": "语言",
+    "useStreaming": "启用流式识别",
+    "useFast": "启用极速版",
+    "langZhCN": "中文（简体）",
+    "langZhTW": "中文（繁体）",
+    "langEnUS": "英语",
+    "langJaJP": "日语",
+    "langKoKR": "韩语"
   },
   "text": {
     "title": "文本处理",
