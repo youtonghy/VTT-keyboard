@@ -2,6 +2,9 @@ use crate::openai::{self, OpenAiError};
 use crate::settings::{Settings, TriggerCard};
 use regex::Regex;
 
+const VALUE_PLACEHOLDER: &str = "{value}";
+const SENTENCE_DELIMITERS: [char; 4] = [',', '，', '。', '.'];
+
 pub struct TriggerResult {
     pub output: String,
     pub triggered: bool,
@@ -71,7 +74,7 @@ pub fn apply_triggers(
 
 fn split_sentences(input: &str) -> Vec<String> {
     input
-        .split([',', '，'])
+        .split(SENTENCE_DELIMITERS)
         .map(|part| part.trim().to_string())
         .filter(|part| !part.is_empty())
         .collect()
@@ -84,23 +87,22 @@ fn match_card(card: &TriggerCard, sentences: &[String]) -> Option<String> {
 }
 
 fn capture_phrase(card: &TriggerCard, sentence: &str) -> Option<String> {
-    if card.keyword.trim().is_empty() {
+    let keyword = card.keyword.trim();
+    if keyword.is_empty() {
         return None;
     }
-    let pattern = format!(r"(?i){}(?P<value>[^,，。！？!?.]*)", regex::escape(&card.keyword));
-    let regex = Regex::new(&pattern).ok()?;
-    let value = regex
-        .captures(sentence)
-        .and_then(|caps| caps.name("value"))
-        .map(|value| value.as_str().trim().to_string())?;
-    if value.is_empty() {
+    let (prefix, suffix) = split_keyword(keyword)?;
+    let value = match_sentence(sentence, prefix, suffix)?;
+    let normalized_value = normalize_for_compare(&value);
+    if normalized_value.is_empty() {
         return None;
     }
     let allowed = card
         .variables
         .iter()
-        .filter(|item| !item.trim().is_empty())
-        .any(|item| item.trim().eq_ignore_ascii_case(&value));
+        .map(|item| normalize_for_compare(item))
+        .filter(|item| !item.is_empty())
+        .any(|item| item.eq_ignore_ascii_case(&normalized_value));
     if allowed {
         Some(value)
     } else {
@@ -109,12 +111,71 @@ fn capture_phrase(card: &TriggerCard, sentence: &str) -> Option<String> {
 }
 
 fn remove_trigger_phrase(input: &str, keyword: &str) -> String {
-    let pattern = format!(r"(?i){}[^,，。！？!?.]*", regex::escape(keyword));
+    let keyword = keyword.trim();
+    let Some((prefix, suffix)) = split_keyword(keyword) else {
+        return input.trim().to_string();
+    };
+    let pattern = build_trigger_pattern(prefix, suffix);
     let regex = Regex::new(&pattern).ok();
     let cleaned = regex
         .map(|re| re.replace_all(input, ""))
         .unwrap_or_else(|| input.into());
     cleaned.trim().to_string()
+}
+
+fn split_keyword(keyword: &str) -> Option<(&str, &str)> {
+    let mut parts = keyword.split(VALUE_PLACEHOLDER);
+    let prefix = parts.next()?;
+    let suffix = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((prefix, suffix))
+}
+
+fn match_sentence(sentence: &str, prefix: &str, suffix: &str) -> Option<String> {
+    let pattern = build_trigger_pattern(prefix, suffix);
+    let regex = Regex::new(&pattern).ok()?;
+    let captures = regex.captures(sentence)?;
+    let value = captures
+        .name("value")
+        .map(|value| value.as_str().to_string())?;
+    Some(normalize_for_value(&value))
+}
+
+fn build_trigger_pattern(prefix: &str, suffix: &str) -> String {
+    let prefix_pattern = normalize_for_pattern(prefix);
+    let suffix_pattern = normalize_for_pattern(suffix);
+    let value_pattern = if suffix_pattern.is_empty() {
+        r"[^,，。！？!?.]+"
+    } else {
+        r"[^,，。！？!?.]+?"
+    };
+    format!(
+        "(?i){}\\s*(?P<value>{})\\s*{}",
+        prefix_pattern, value_pattern, suffix_pattern
+    )
+}
+
+fn normalize_for_pattern(text: &str) -> String {
+    let mut pattern = String::new();
+    for ch in text.chars().filter(|ch| !ch.is_whitespace()) {
+        if !pattern.is_empty() {
+            pattern.push_str(r"\s*");
+        }
+        pattern.push_str(&regex::escape(&ch.to_string()));
+    }
+    pattern
+}
+
+fn normalize_for_compare(text: &str) -> String {
+    text.chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
+fn normalize_for_value(value: &str) -> String {
+    let trimmed = value.trim();
+    let trimmed = trimmed.trim_matches(|ch: char| matches!(ch, '-' | '_' | '.' | ','));
+    trimmed.trim().to_string()
 }
 
 fn merge_instructions(base: &str, extra: &str) -> String {

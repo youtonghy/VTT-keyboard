@@ -100,18 +100,19 @@
     "autoApply": "默认启用（无触发词也执行）",
     "keyword": "触发词关键词",
     "variables": "变量范围",
-    "variablesPlaceholder": "输入变量后回车、逗号或失焦添加",
+    "variablesPlaceholder": "用中英文逗号分隔，例如：英文, 日文, 韩文",
     "promptTemplate": "提示词模板",
     "add": "新增触发词",
     "remove": "删除",
     "moveUp": "上移",
     "moveDown": "下移",
     "newTitle": "自定义触发词",
-    "defaultKeyword": "翻译为",
+    "defaultKeyword": "翻译为{value}",
     "defaultTemplate": "请将以下内容翻译为{value}。",
     "defaultVariables": "英文",
     "validationVariables": "触发词变量范围不能为空：{{title}}",
-    "validationKeyword": "触发词关键词不能为空：{{title}}"
+    "validationKeyword": "触发词关键词不能为空：{{title}}",
+    "validationKeywordPlaceholder": "触发词关键词必须包含且只包含一个 {value}：{{title}}"
   },
   "actions": {
     "save": "保存设置",

@@ -92,7 +92,7 @@ fn default_triggers() -> Vec<TriggerCard> {
             enabled: true,
             auto_apply: false,
             locked: true,
-            keyword: "翻译为".to_string(),
+            keyword: "翻译为{value}".to_string(),
             prompt_template: "请将以下内容翻译为{value}。".to_string(),
             variables: vec!["英文".to_string()],
         },
@@ -102,7 +102,7 @@ fn default_triggers() -> Vec<TriggerCard> {
             enabled: true,
             auto_apply: false,
             locked: true,
-            keyword: "润色为".to_string(),
+            keyword: "润色为{value}".to_string(),
             prompt_template: "请将以下内容润色为{value}。".to_string(),
             variables: vec!["口语".to_string()],
         },
@@ -310,6 +310,12 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
         if card.keyword.trim().is_empty() {
             return Err(SettingsError::Serde(format!(
                 "触发词关键字不能为空: {}",
+                card.title
+            )));
+        }
+        if card.keyword.matches("{value}").count() != 1 {
+            return Err(SettingsError::Serde(format!(
+                "触发词关键字必须包含且只包含一个 {{value}}: {}",
                 card.title
             )));
         }

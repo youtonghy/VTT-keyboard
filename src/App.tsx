@@ -289,6 +289,15 @@ function App() {
     if (invalidKeyword) {
       return t("triggers.validationKeyword", { title: invalidKeyword.title });
     }
+    const invalidKeywordPlaceholder = next.triggers.find((card) => {
+      const count = card.keyword.split("{value}").length - 1;
+      return count !== 1;
+    });
+    if (invalidKeywordPlaceholder) {
+      return t("triggers.validationKeywordPlaceholder", {
+        title: invalidKeywordPlaceholder.title,
+      });
+    }
     return null;
   };
 
@@ -1036,10 +1045,10 @@ function App() {
                           <TagInput
                             values={card.variables}
                             placeholder={t("triggers.variablesPlaceholder")}
-                            onChange={(values) =>
+                            onCommit={(nextValues) =>
                               updateTrigger(card.id, (prev) => ({
                                 ...prev,
-                                variables: values,
+                                variables: nextValues,
                               }))
                             }
                           />

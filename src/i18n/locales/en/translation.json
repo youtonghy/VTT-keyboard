@@ -100,18 +100,19 @@
     "autoApply": "Auto apply without keyword",
     "keyword": "Keyword",
     "variables": "Variable Range",
-    "variablesPlaceholder": "Type a value and press Enter, comma, or blur",
+    "variablesPlaceholder": "Separate with commas (`,` or `，`), e.g., English, Japanese",
     "promptTemplate": "Prompt Template",
     "add": "Add Trigger",
     "remove": "Remove",
     "moveUp": "Move Up",
     "moveDown": "Move Down",
     "newTitle": "Custom Trigger",
-    "defaultKeyword": "translate to",
+    "defaultKeyword": "translate to {value}",
     "defaultTemplate": "Translate the following content to {value}.",
     "defaultVariables": "English",
     "validationVariables": "Variable range cannot be empty: {{title}}",
-    "validationKeyword": "Keyword cannot be empty: {{title}}"
+    "validationKeyword": "Keyword cannot be empty: {{title}}",
+    "validationKeywordPlaceholder": "Keyword must include exactly one {value}: {{title}}"
   },
   "actions": {
     "save": "Save Settings",
