@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { getName, getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
@@ -98,12 +99,29 @@ function App() {
     text: string;
   } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [appInfo, setAppInfo] = useState<{
+    name: string;
+    version: string;
+    buildDate: string;
+  } | null>(null);
 
   useEffect(() => {
     if (settings) {
       setDraft(settings);
     }
   }, [settings]);
+
+  useEffect(() => {
+    const fetchAppInfo = async () => {
+      const [name, version, info] = await Promise.all([
+        getName(),
+        getVersion(),
+        invoke<{ buildDate: string }>("get_app_info"),
+      ]);
+      setAppInfo({ name, version, buildDate: info.buildDate });
+    };
+    void fetchAppInfo();
+  }, []);
 
   useEffect(() => {
     if (!draft) {
@@ -270,6 +288,7 @@ function App() {
       { id: "speech", label: t("nav.speech") },
       { id: "text", label: t("nav.text") },
       { id: "triggers", label: t("nav.triggers") },
+      { id: "about", label: t("nav.about") },
     ],
     [t]
   );
@@ -1073,6 +1092,40 @@ function App() {
                 <button type="button" className="secondary" onClick={addTrigger}>
                   {t("triggers.add")}
                 </button>
+              </SettingsCard>
+            ) : null}
+
+            {activeSection === "about" && appInfo ? (
+              <SettingsCard
+                title={t("about.title")}
+                description={t("about.description")}
+              >
+                <div className="field">
+                  <span>{t("about.appName")}</span>
+                  <span>{appInfo.name}</span>
+                </div>
+                <div className="field">
+                  <span>{t("about.version")}</span>
+                  <span>{appInfo.version}</span>
+                </div>
+                <div className="field">
+                  <span>{t("about.buildDate")}</span>
+                  <span>{appInfo.buildDate}</span>
+                </div>
+                <div className="field">
+                  <span>{t("about.author")}</span>
+                  <span>youtonghy</span>
+                </div>
+                <div className="field">
+                  <span>{t("about.website")}</span>
+                  <a
+                    href="https://vtt.tokisantike.net/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    https://vtt.tokisantike.net/
+                  </a>
+                </div>
               </SettingsCard>
             ) : null}
           </section>

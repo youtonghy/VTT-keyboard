@@ -162,6 +162,13 @@ fn set_tray_menu(
     Ok(())
 }
 
+#[tauri::command]
+fn get_app_info() -> serde_json::Value {
+    serde_json::json!({
+        "buildDate": env!("BUILD_DATE")
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize native status overlay
@@ -201,7 +208,8 @@ pub fn run() {
             import_settings,
             start_recording,
             stop_recording,
-            set_tray_menu
+            set_tray_menu,
+            get_app_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

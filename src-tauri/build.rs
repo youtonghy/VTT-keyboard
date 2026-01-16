@@ -1,4 +1,8 @@
 fn main() {
+    // Inject build date as environment variable
+    let build_date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    println!("cargo:rustc-env=BUILD_DATE={}", build_date);
+
     tauri_build::build();
 
     // Compile native status overlay for Windows

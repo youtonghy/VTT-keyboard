@@ -10,7 +10,8 @@
     "recording": "录音",
     "speech": "转写",
     "text": "文本处理",
-    "triggers": "触发词"
+    "triggers": "触发词",
+    "about": "关于"
   },
   "general": {
     "title": "外观与语言",
@@ -135,5 +136,14 @@
       "en": "English",
       "zh-CN": "简体中文"
     }
+  },
+  "about": {
+    "title": "关于",
+    "description": "软件版本与构建信息。",
+    "appName": "软件名称",
+    "version": "版本号",
+    "buildDate": "构建日期",
+    "author": "作者",
+    "website": "官网"
   }
 }

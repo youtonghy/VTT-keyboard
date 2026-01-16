@@ -10,7 +10,8 @@
     "recording": "Recording",
     "speech": "Transcription",
     "text": "Text",
-    "triggers": "Triggers"
+    "triggers": "Triggers",
+    "about": "About"
   },
   "general": {
     "title": "Appearance & Language",
@@ -135,5 +136,14 @@
       "en": "English",
       "zh-CN": "Simplified Chinese"
     }
+  },
+  "about": {
+    "title": "About",
+    "description": "Application version and build information.",
+    "appName": "App Name",
+    "version": "Version",
+    "buildDate": "Build Date",
+    "author": "Author",
+    "website": "Website"
   }
 }
