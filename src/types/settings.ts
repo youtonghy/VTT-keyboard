@@ -1,4 +1,4 @@
-export type TranscriptionProvider = "openai" | "volcengine";
+export type TranscriptionProvider = "openai" | "volcengine" | "sensevoice";
 
 export interface Settings {
   shortcut: ShortcutSettings;
@@ -6,6 +6,7 @@ export interface Settings {
   provider: TranscriptionProvider;
   openai: OpenAiSettings;
   volcengine: VolcengineSettings;
+  sensevoice: SenseVoiceSettings;
   triggers: TriggerCard[];
   appearance: AppearanceSettings;
 }
@@ -68,4 +69,14 @@ export interface VolcengineSettings {
   useStreaming: boolean;
   useFast: boolean;
   language: string;
+}
+
+export interface SenseVoiceSettings {
+  enabled: boolean;
+  installed: boolean;
+  serviceUrl: string;
+  modelId: string;
+  device: string;
+  downloadState: string;
+  lastError: string;
 }

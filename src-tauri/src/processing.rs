@@ -2,6 +2,7 @@ use crate::audio_processing::{self, AudioProcessingError};
 use crate::openai::{self, OpenAiError};
 use crate::paste::{self, PasteError};
 use crate::recorder::RecordedAudio;
+use crate::sensevoice::{self, SenseVoiceError};
 use crate::settings::{SettingsError, SettingsStore, TranscriptionProvider};
 use crate::status_native::{self, StatusType};
 use crate::triggers;
@@ -33,6 +34,8 @@ pub enum ProcessingError {
     OpenAi(#[from] OpenAiError),
     #[error("火山引擎转写失败: {0}")]
     Volcengine(#[from] VolcengineError),
+    #[error("SenseVoice 转写失败: {0}")]
+    SenseVoice(#[from] SenseVoiceError),
     #[error("触发词处理失败: {0}")]
     Trigger(String),
     #[error("写入剪贴板失败: {0}")]
@@ -64,6 +67,7 @@ pub fn handle_recording(
         let text = match settings.provider {
             TranscriptionProvider::Openai => openai::transcribe_audio(&settings, path)?,
             TranscriptionProvider::Volcengine => volcengine::transcribe_audio(&settings, path)?,
+            TranscriptionProvider::Sensevoice => sensevoice::client::transcribe_audio(&settings, path)?,
         };
         dev_log(&format!("转写结果 {}: {}", index + 1, text));
         transcripts.push(text);

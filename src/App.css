@@ -440,6 +440,33 @@ button:disabled {
 .button-row {
   display: flex;
   gap: 20px;
+  flex-wrap: wrap;
+}
+
+.sensevoice-summary {
+  display: grid;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.sensevoice-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: var(--border-radius);
+  background: var(--input-bg);
+  box-shadow: var(--input-shadow);
+  font-size: 13px;
+}
+
+.sensevoice-error {
+  font-size: 13px;
+  color: #b91c1c;
+  border: 1px solid #b91c1c;
+  border-radius: var(--border-radius);
+  padding: 10px 14px;
 }
 
 /* Triggers List */

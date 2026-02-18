@@ -36,6 +36,8 @@ pub struct Settings {
     pub openai: OpenAiSettings,
     #[serde(default)]
     pub volcengine: VolcengineSettings,
+    #[serde(default)]
+    pub sensevoice: SenseVoiceSettings,
     #[serde(default = "default_triggers")]
     pub triggers: Vec<TriggerCard>,
     pub appearance: AppearanceSettings,
@@ -76,6 +78,7 @@ impl Default for Settings {
                 },
             },
             volcengine: VolcengineSettings::default(),
+            sensevoice: SenseVoiceSettings::default(),
             triggers: default_triggers(),
             appearance: AppearanceSettings {
                 theme: "system".to_string(),
@@ -181,6 +184,7 @@ pub enum TranscriptionProvider {
     #[default]
     Openai,
     Volcengine,
+    Sensevoice,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -201,6 +205,32 @@ impl Default for VolcengineSettings {
             use_streaming: false,
             use_fast: false,
             language: "zh-CN".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SenseVoiceSettings {
+    pub enabled: bool,
+    pub installed: bool,
+    pub service_url: String,
+    pub model_id: String,
+    pub device: String,
+    pub download_state: String,
+    pub last_error: String,
+}
+
+impl Default for SenseVoiceSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            installed: false,
+            service_url: "http://127.0.0.1:8765".to_string(),
+            model_id: "iic/SenseVoiceSmall".to_string(),
+            device: "auto".to_string(),
+            download_state: "idle".to_string(),
+            last_error: String::new(),
         }
     }
 }
@@ -320,6 +350,12 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
             )));
         }
     }
+
+    if settings.sensevoice.service_url.trim().is_empty() {
+        return Err(SettingsError::Serde(
+            "SenseVoice 服务地址不能为空".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -354,4 +390,3 @@ fn decrypt_payload(encoded: &str, key: &[u8; 32]) -> Result<String, SettingsErro
         .map_err(|err| SettingsError::Crypto(err.to_string()))?;
     String::from_utf8(plain).map_err(|err| SettingsError::Crypto(err.to_string()))
 }
-

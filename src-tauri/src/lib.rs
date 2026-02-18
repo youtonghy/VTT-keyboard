@@ -3,12 +3,14 @@ mod openai;
 mod paste;
 mod processing;
 mod recorder;
+mod sensevoice;
 mod settings;
 mod status_native;
 mod triggers;
 mod volcengine;
 
 use recorder::RecorderService;
+use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
 use settings::{Settings, SettingsStore};
 use std::fs;
 use std::sync::Mutex;
@@ -34,6 +36,7 @@ struct TrayState {
 pub(crate) struct AppState {
     recorder: RecorderService,
     settings_store: SettingsStore,
+    sensevoice_manager: Mutex<SenseVoiceManager>,
     tray_state: Mutex<TrayState>,
 }
 
@@ -94,6 +97,56 @@ fn stop_recording(state: State<AppState>) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+#[tauri::command]
+fn get_sensevoice_status(state: State<AppState>) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+    manager
+        .status(&state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn prepare_sensevoice(app: tauri::AppHandle, state: State<AppState>) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+    manager
+        .prepare(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn start_sensevoice_service(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+    manager
+        .start_service(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn stop_sensevoice_service(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+    manager
+        .stop_service(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -187,6 +240,7 @@ pub fn run() {
             app.manage(AppState {
                 recorder: RecorderService::new(),
                 settings_store: store,
+                sensevoice_manager: Mutex::new(SenseVoiceManager::new()),
                 tray_state: Mutex::new(TrayState::default()),
             });
 
@@ -208,6 +262,10 @@ pub fn run() {
             import_settings,
             start_recording,
             stop_recording,
+            get_sensevoice_status,
+            prepare_sensevoice,
+            start_sensevoice_service,
+            stop_sensevoice_service,
             set_tray_menu,
             get_app_info
         ])
@@ -217,4 +275,3 @@ pub fn run() {
     // Cleanup native status overlay
     status_native::cleanup();
 }
-

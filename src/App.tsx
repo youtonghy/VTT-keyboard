@@ -10,6 +10,7 @@ import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { SettingsCard } from "./components/SettingsCard";
 import { TagInput } from "./components/TagInput";
 import { TitleBar } from "./components/TitleBar";
+import { useSenseVoice } from "./hooks/useSenseVoice";
 import { useSettings } from "./hooks/useSettings";
 import type { Settings } from "./types/settings";
 import "./App.css";
@@ -91,7 +92,16 @@ const createId = () =>
 
 function App() {
   const { t, i18n } = useTranslation();
-  const { settings, loading, saveSettings } = useSettings();
+  const { settings, loading, saveSettings, reload } = useSettings();
+  const {
+    status: sensevoiceStatus,
+    progress: sensevoiceProgress,
+    loading: sensevoiceLoading,
+    refreshStatus: refreshSenseVoiceStatus,
+    prepare: prepareSenseVoice,
+    startService: startSenseVoiceService,
+    stopService: stopSenseVoiceService,
+  } = useSenseVoice();
   const [draft, setDraft] = useState<Settings | null>(null);
   const [activeSection, setActiveSection] = useState("general");
   const [message, setMessage] = useState<{
@@ -430,6 +440,59 @@ function App() {
     return () => clearTimeout(timer);
   }, [draft, settings]);
 
+  useEffect(() => {
+    if (activeSection !== "speech" || draft?.provider !== "sensevoice") {
+      return;
+    }
+    void refreshSenseVoiceStatus().catch(() => {});
+  }, [activeSection, draft?.provider, refreshSenseVoiceStatus]);
+
+  const handleSenseVoicePrepare = async () => {
+    try {
+      if (draft) {
+        await saveSettings(draft);
+      }
+      await prepareSenseVoice();
+      await reload();
+      setMessage({ type: "success", text: t("sensevoice.prepareSuccess") });
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: t("sensevoice.prepareError", { error: toErrorMessage(error) }),
+      });
+    }
+  };
+
+  const handleSenseVoiceStart = async () => {
+    try {
+      if (draft) {
+        await saveSettings(draft);
+      }
+      await startSenseVoiceService();
+      setMessage({ type: "success", text: t("sensevoice.startSuccess") });
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: t("sensevoice.startError", { error: toErrorMessage(error) }),
+      });
+    }
+  };
+
+  const handleSenseVoiceStop = async () => {
+    try {
+      if (draft) {
+        await saveSettings(draft);
+      }
+      await stopSenseVoiceService();
+      setMessage({ type: "success", text: t("sensevoice.stopSuccess") });
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: t("sensevoice.stopError", { error: toErrorMessage(error) }),
+      });
+    }
+  };
+
   if (loading || !draft) {
     return (
       <>
@@ -563,12 +626,13 @@ function App() {
                       onChange={(event) =>
                         updateDraft((prev) => ({
                           ...prev,
-                          provider: event.target.value as "openai" | "volcengine",
+                          provider: event.target.value as Settings["provider"],
                         }))
                       }
                     >
                       <option value="openai">OpenAI</option>
                       <option value="volcengine">{t("speech.volcengine")}</option>
+                      <option value="sensevoice">{t("speech.sensevoice")}</option>
                     </select>
                   </label>
                 </SettingsCard>
@@ -875,6 +939,122 @@ function App() {
                       />
                       <span>{t("volcengine.useFast")}</span>
                     </label>
+                  </SettingsCard>
+                ) : null}
+
+                {draft.provider === "sensevoice" ? (
+                  <SettingsCard title={t("speech.sensevoice")}>
+                    <div className="sensevoice-summary">
+                      <span>
+                        {t("sensevoice.installed")}:{" "}
+                        {draft.sensevoice.installed
+                          ? t("sensevoice.yes")
+                          : t("sensevoice.no")}
+                      </span>
+                      <span>
+                        {t("sensevoice.running")}:{" "}
+                        {sensevoiceStatus.running
+                          ? t("sensevoice.runningNow")
+                          : t("sensevoice.stopped")}
+                      </span>
+                      <span>
+                        {t("sensevoice.state")}:{" "}
+                        {t(`sensevoice.stateMap.${draft.sensevoice.downloadState}`, {
+                          defaultValue: draft.sensevoice.downloadState,
+                        })}
+                      </span>
+                    </div>
+
+                    <label className="field">
+                      <span>{t("sensevoice.serviceUrl")}</span>
+                      <input
+                        value={draft.sensevoice.serviceUrl}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            sensevoice: {
+                              ...prev.sensevoice,
+                              serviceUrl: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>{t("sensevoice.modelId")}</span>
+                      <input
+                        value={draft.sensevoice.modelId}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            sensevoice: {
+                              ...prev.sensevoice,
+                              modelId: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>{t("sensevoice.device")}</span>
+                      <select
+                        value={draft.sensevoice.device}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            sensevoice: {
+                              ...prev.sensevoice,
+                              device: event.target.value,
+                            },
+                          }))
+                        }
+                      >
+                        <option value="auto">{t("sensevoice.deviceAuto")}</option>
+                        <option value="cpu">{t("sensevoice.deviceCpu")}</option>
+                        <option value="cuda">{t("sensevoice.deviceCuda")}</option>
+                      </select>
+                    </label>
+
+                    {sensevoiceProgress ? (
+                      <div className="sensevoice-progress">
+                        <span>{sensevoiceProgress.message}</span>
+                        <span>
+                          {sensevoiceProgress.percent !== undefined
+                            ? `${sensevoiceProgress.percent}%`
+                            : ""}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {draft.sensevoice.lastError ? (
+                      <div className="sensevoice-error">{draft.sensevoice.lastError}</div>
+                    ) : null}
+
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        onClick={handleSenseVoicePrepare}
+                        disabled={sensevoiceLoading}
+                      >
+                        {t("sensevoice.prepare")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSenseVoiceStart}
+                        disabled={sensevoiceLoading || !draft.sensevoice.installed}
+                      >
+                        {t("sensevoice.start")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSenseVoiceStop}
+                        disabled={sensevoiceLoading || !sensevoiceStatus.running}
+                      >
+                        {t("sensevoice.stop")}
+                      </button>
+                    </div>
                   </SettingsCard>
                 ) : null}
               </>
