@@ -23,6 +23,11 @@ const PIP_MIRRORS: [&str; 2] = [
     "https://pypi.tuna.tsinghua.edu.cn/simple",
     "https://pypi.org/simple",
 ];
+const TORCH_INDEXES: [&str; 3] = [
+    "https://download.pytorch.org/whl/cpu",
+    "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "https://pypi.org/simple",
+];
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,6 +113,7 @@ impl SenseVoiceManager {
             self.update_state(store, "downloading", "", None, None)?;
             self.emit_progress(app, "download", "Downloading SenseVoice model", Some(60));
             download_model(
+                app,
                 &venv_python,
                 &paths.runtime_dir.join("prepare.py"),
                 &paths.models_dir,
@@ -450,8 +456,8 @@ fn install_requirements(
 
 fn install_torch_packages(app: &AppHandle, venv_python: &Path) -> Result<(), SenseVoiceError> {
     let mut errors = Vec::new();
-    for mirror in PIP_MIRRORS {
-        let detail = format!("Retry install torch via mirror: {mirror}");
+    for index in TORCH_INDEXES {
+        let detail = format!("Retry install torch via index: {index}");
         let payload = SenseVoiceProgress {
             stage: "install".to_string(),
             message: "Installing Python dependencies".to_string(),
@@ -466,7 +472,7 @@ fn install_torch_packages(app: &AppHandle, venv_python: &Path) -> Result<(), Sen
             .arg("pip")
             .arg("install")
             .arg("--index-url")
-            .arg(mirror)
+            .arg(index)
             .arg("--progress-bar")
             .arg("off")
             .arg("--disable-pip-version-check")
@@ -495,7 +501,7 @@ fn install_torch_packages(app: &AppHandle, venv_python: &Path) -> Result<(), Sen
             },
         ) {
             Ok(_) => return Ok(()),
-            Err(err) => errors.push(format!("{mirror}: {err}")),
+            Err(err) => errors.push(format!("{index}: {err}")),
         }
     }
 
@@ -531,6 +537,7 @@ fn verify_runtime_imports(app: &AppHandle, venv_python: &Path) -> Result<(), Sen
 }
 
 fn download_model(
+    app: &AppHandle,
     venv_python: &Path,
     prepare_script: &Path,
     model_dir: &Path,
@@ -553,7 +560,40 @@ fn download_model(
         .arg("hf,ms")
         .arg("--state-path")
         .arg(state_file);
-    run_command(&mut command, "下载 SenseVoice 模型")
+
+    let first = run_command(&mut command, "下载 SenseVoice 模型");
+    if let Err(err) = first {
+        let err_text = err.to_string();
+        if err_text.contains("No module named 'torch'") {
+            let payload = SenseVoiceProgress {
+                stage: "download".to_string(),
+                message: "Downloading SenseVoice model".to_string(),
+                percent: Some(60),
+                detail: Some("Torch missing during model download, trying auto repair".to_string()),
+            };
+            let _ = app.emit("sensevoice-progress", payload);
+
+            install_torch_packages(app, venv_python)?;
+
+            let mut retry = Command::new(venv_python);
+            retry
+                .arg(prepare_script)
+                .arg("--model-id")
+                .arg(model_id)
+                .arg("--model-dir")
+                .arg(model_dir)
+                .arg("--device")
+                .arg(device)
+                .arg("--hubs")
+                .arg("hf,ms")
+                .arg("--state-path")
+                .arg(state_file);
+            return run_command(&mut retry, "下载 SenseVoice 模型");
+        }
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 fn venv_python_path(venv_dir: &Path) -> PathBuf {

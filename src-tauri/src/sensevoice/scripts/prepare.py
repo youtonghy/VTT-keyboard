@@ -1,10 +1,60 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 import traceback
 
-from funasr import AutoModel
+PIP_INDEXES = [
+    "https://download.pytorch.org/whl/cpu",
+    "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "https://pypi.org/simple",
+]
+
+
+def install_torch_runtime() -> bool:
+    for index in PIP_INDEXES:
+        print(f"[sensevoice] torch missing, installing via index={index}", file=sys.stderr)
+        command = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--index-url",
+            index,
+            "--progress-bar",
+            "off",
+            "--disable-pip-version-check",
+            "--default-timeout",
+            "60",
+            "--retries",
+            "3",
+            "torch",
+            "torchaudio",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        if result.stdout:
+            print(f"[sensevoice] {result.stdout.strip()}", file=sys.stderr)
+        if result.stderr:
+            print(f"[sensevoice] {result.stderr.strip()}", file=sys.stderr)
+    return False
+
+
+def get_auto_model():
+    try:
+        from funasr import AutoModel as ImportedAutoModel
+
+        return ImportedAutoModel
+    except ModuleNotFoundError as exc:
+        if exc.name != "torch":
+            raise
+        if not install_torch_runtime():
+            raise
+        from funasr import AutoModel as ImportedAutoModel
+
+        return ImportedAutoModel
 
 
 def resolve_device(device: str) -> str:
@@ -28,6 +78,7 @@ def main() -> int:
     parser.add_argument("--hubs", default="hf,ms")
     parser.add_argument("--state-path", required=True)
     args = parser.parse_args()
+    auto_model = get_auto_model()
 
     model_dir = os.path.abspath(args.model_dir)
     os.makedirs(model_dir, exist_ok=True)
@@ -41,7 +92,7 @@ def main() -> int:
     for hub in hubs:
         try:
             print(f"[sensevoice] trying hub={hub}, model={args.model_id}, device={selected_device}")
-            model = AutoModel(
+            model = auto_model(
                 model=args.model_id,
                 hub=hub,
                 trust_remote_code=True,

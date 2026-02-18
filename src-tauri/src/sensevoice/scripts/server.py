@@ -1,12 +1,64 @@
 import os
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from funasr import AutoModel
-from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
 MODEL = None
+PIP_INDEXES = [
+    "https://download.pytorch.org/whl/cpu",
+    "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "https://pypi.org/simple",
+]
+
+
+def install_torch_runtime() -> bool:
+    for index in PIP_INDEXES:
+        print(f"[sensevoice] torch missing, installing via index={index}", file=sys.stderr)
+        command = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--index-url",
+            index,
+            "--progress-bar",
+            "off",
+            "--disable-pip-version-check",
+            "--default-timeout",
+            "60",
+            "--retries",
+            "3",
+            "torch",
+            "torchaudio",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        if result.stdout:
+            print(f"[sensevoice] {result.stdout.strip()}", file=sys.stderr)
+        if result.stderr:
+            print(f"[sensevoice] {result.stderr.strip()}", file=sys.stderr)
+    return False
+
+
+def get_funasr_runtime():
+    try:
+        from funasr import AutoModel
+        from funasr.utils.postprocess_utils import rich_transcription_postprocess
+
+        return AutoModel, rich_transcription_postprocess
+    except ModuleNotFoundError as exc:
+        if exc.name != "torch":
+            raise
+        if not install_torch_runtime():
+            raise
+        from funasr import AutoModel
+        from funasr.utils.postprocess_utils import rich_transcription_postprocess
+
+        return AutoModel, rich_transcription_postprocess
 
 
 def resolve_device(value: str) -> str:
@@ -27,6 +79,7 @@ def load_model():
     if MODEL is not None:
         return MODEL
 
+    auto_model, _ = get_funasr_runtime()
     model_id = os.getenv("SENSEVOICE_MODEL_ID", "iic/SenseVoiceSmall")
     model_dir = os.getenv("SENSEVOICE_MODEL_DIR", "")
     device = resolve_device(os.getenv("SENSEVOICE_DEVICE", "auto"))
@@ -38,7 +91,7 @@ def load_model():
         os.environ["HF_HOME"] = os.path.join(model_root, "hf_home")
         os.environ["MODELSCOPE_CACHE"] = os.path.join(model_root, "ms_cache")
 
-    MODEL = AutoModel(
+    MODEL = auto_model(
         model=model_id,
         hub=hub,
         trust_remote_code=True,
@@ -60,6 +113,7 @@ def health():
 
 @app.post("/api/v1/asr")
 async def asr(file: UploadFile = File(...), language: str = Form("auto")):
+    _, rich_transcription_postprocess = get_funasr_runtime()
     model = load_model()
     suffix = Path(file.filename or "audio.wav").suffix
     if not suffix:
