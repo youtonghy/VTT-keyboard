@@ -7,9 +7,9 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use url::Url;
 
@@ -52,6 +52,14 @@ struct SenseVoiceProgress {
     percent: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SenseVoiceRuntimeLog {
+    stream: String,
+    line: String,
+    ts: i64,
 }
 
 pub struct SenseVoiceManager {
@@ -192,19 +200,30 @@ impl SenseVoiceManager {
             .env("SENSEVOICE_HUB", hub)
             .env("SENSEVOICE_HOST", host)
             .env("SENSEVOICE_PORT", port.to_string())
+            .env("PYTHONUNBUFFERED", "1")
             .stdin(Stdio::null())
-            .stdout(Stdio::from(stdout_file))
-            .stderr(Stdio::from(log_file));
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         let mut child = command
             .spawn()
             .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+        let runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
+        attach_runtime_logs(
+            &mut child,
+            app.clone(),
+            &log_path,
+            Arc::clone(&runtime_tail),
+            stdout_file,
+            log_file,
+        )?;
 
         if let Err(err) = wait_health(
             &sensevoice.service_url,
             Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
             &mut child,
             &log_path,
+            &runtime_tail,
         ) {
             let _ = child.kill();
             let _ = child.wait();
@@ -663,6 +682,7 @@ fn wait_health(
     timeout: Duration,
     child: &mut Child,
     log_path: &Path,
+    runtime_tail: &Arc<Mutex<VecDeque<String>>>,
 ) -> Result<(), SenseVoiceError> {
     let url = format!("{}/health", service_url.trim_end_matches('/'));
     let client = reqwest::blocking::Client::new();
@@ -670,7 +690,7 @@ fn wait_health(
     while started.elapsed() < timeout {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let tail = read_log_tail(log_path, 30);
+                let tail = collect_runtime_tail(runtime_tail, 30, log_path);
                 let exit = status
                     .code()
                     .map(|value| value.to_string())
@@ -696,6 +716,11 @@ fn wait_health(
         thread::sleep(Duration::from_millis(500));
     }
     let tail = read_log_tail(log_path, 30);
+    let tail = if tail == "（无日志）" {
+        collect_runtime_tail(runtime_tail, 30, log_path)
+    } else {
+        tail
+    };
     Err(SenseVoiceError::Request(
         format!(
             "SenseVoice 服务启动超时（{} 秒）。最近日志: {}",
@@ -703,6 +728,124 @@ fn wait_health(
             tail
         ),
     ))
+}
+
+fn attach_runtime_logs(
+    child: &mut Child,
+    app: AppHandle,
+    log_path: &Path,
+    runtime_tail: Arc<Mutex<VecDeque<String>>>,
+    stdout_file: fs::File,
+    stderr_file: fs::File,
+) -> Result<(), SenseVoiceError> {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| SenseVoiceError::Process("SenseVoice 服务无法读取 stdout".to_string()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| SenseVoiceError::Process("SenseVoice 服务无法读取 stderr".to_string()))?;
+
+    spawn_runtime_log_reader(
+        stdout,
+        "stdout",
+        app.clone(),
+        runtime_tail.clone(),
+        stdout_file,
+        log_path.to_path_buf(),
+    );
+    spawn_runtime_log_reader(
+        stderr,
+        "stderr",
+        app,
+        runtime_tail,
+        stderr_file,
+        log_path.to_path_buf(),
+    );
+    Ok(())
+}
+
+fn spawn_runtime_log_reader<R>(
+    reader: R,
+    stream: &str,
+    app: AppHandle,
+    runtime_tail: Arc<Mutex<VecDeque<String>>>,
+    mut output_file: fs::File,
+    log_path: PathBuf,
+) where
+    R: std::io::Read + Send + 'static,
+{
+    let stream_name = stream.to_string();
+    thread::spawn(move || {
+        let reader = BufReader::new(reader);
+        for line in reader.lines() {
+            let Ok(raw) = line else {
+                continue;
+            };
+            let normalized = normalize_log_line(&raw);
+            if normalized.is_empty() {
+                continue;
+            }
+
+            let _ = writeln!(output_file, "{normalized}");
+            let _ = output_file.flush();
+
+            push_runtime_tail(
+                &runtime_tail,
+                format!("[{stream_name}] {normalized}"),
+                200,
+            );
+
+            let payload = SenseVoiceRuntimeLog {
+                stream: stream_name.clone(),
+                line: normalized,
+                ts: current_timestamp_ms(),
+            };
+            let _ = app.emit("sensevoice-runtime-log", payload);
+        }
+
+        let _ = output_file.flush();
+        if let Ok(mut fallback) = OpenOptions::new().create(true).append(true).open(log_path) {
+            let _ = writeln!(fallback, "[{stream_name}] log stream ended");
+        }
+    });
+}
+
+fn push_runtime_tail(tail: &Arc<Mutex<VecDeque<String>>>, value: String, max_lines: usize) {
+    if let Ok(mut guard) = tail.lock() {
+        if guard.len() >= max_lines {
+            guard.pop_front();
+        }
+        guard.push_back(value);
+    }
+}
+
+fn collect_runtime_tail(
+    tail: &Arc<Mutex<VecDeque<String>>>,
+    max_lines: usize,
+    log_path: &Path,
+) -> String {
+    if let Ok(guard) = tail.lock() {
+        if !guard.is_empty() {
+            let size = guard.len();
+            let start = size.saturating_sub(max_lines);
+            return guard
+                .iter()
+                .skip(start)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" || ");
+        }
+    }
+    read_log_tail(log_path, max_lines)
+}
+
+fn current_timestamp_ms() -> i64 {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    duration.as_millis() as i64
 }
 
 fn read_log_tail(path: &Path, max_lines: usize) -> String {

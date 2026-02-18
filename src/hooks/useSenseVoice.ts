@@ -21,6 +21,12 @@ export interface SenseVoiceProgress {
   detail?: string;
 }
 
+interface SenseVoiceRuntimeLog {
+  stream: "stdout" | "stderr";
+  line: string;
+  ts?: number;
+}
+
 const defaultStatus: SenseVoiceStatus = {
   installed: false,
   enabled: false,
@@ -99,6 +105,34 @@ export function useSenseVoice() {
         });
       }
     });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<SenseVoiceRuntimeLog>("sensevoice-runtime-log", (event) => {
+      const payload = event.payload;
+      const line = payload.line?.trim();
+      if (!line) {
+        return;
+      }
+
+      const entry = `[${payload.stream}] ${line}`;
+      setLogLines((prev) => {
+        const next = [...prev, entry];
+        return next.slice(-100);
+      });
+
+      if (import.meta.env.DEV) {
+        if (payload.stream === "stderr") {
+          console.error("[sensevoice]", line);
+        } else {
+          console.log("[sensevoice]", line);
+        }
+      }
+    });
+
     return () => {
       void unlisten.then((fn) => fn());
     };

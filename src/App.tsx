@@ -1067,6 +1067,10 @@ function App() {
                       <div className="sensevoice-hint">{t("sensevoice.warmingHint")}</div>
                     ) : null}
 
+                    {import.meta.env.DEV ? (
+                      <div className="sensevoice-hint">{t("sensevoice.devConsoleHint")}</div>
+                    ) : null}
+
                     {sensevoiceLogLines.length > 0 ? (
                       <div className="sensevoice-log">
                         <div className="sensevoice-log-title">{t("sensevoice.logTitle")}</div>
