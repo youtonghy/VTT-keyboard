@@ -122,7 +122,7 @@ impl SenseVoiceManager {
                 &sensevoice.device,
             )?;
 
-            self.update_state(store, "validating", "", None, None)?;
+            self.update_state(store, "validating", "", Some(true), None)?;
             self.emit_progress(app, "verify", "Starting SenseVoice service", Some(85));
             self.start_service(app, store)?;
 
