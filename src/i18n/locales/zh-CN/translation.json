@@ -92,6 +92,8 @@
     "no": "否",
     "state": "下载状态",
     "installingHint": "正在安装 Python 依赖，首次可能耗时较长。",
+    "warmingHint": "服务已启动，模型正在后台预热，首次转写可能较慢。",
+    "serverLogHint": "如启动异常，请查看本地日志：sensevoice/runtime/server.log",
     "logTitle": "安装日志",
     "installTimeout": "依赖安装超时，请检查网络后重试。",
     "prepareSuccess": "SenseVoice 已准备完成",

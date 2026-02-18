@@ -1063,6 +1063,10 @@ function App() {
                       <div className="sensevoice-hint">{t("sensevoice.installingHint")}</div>
                     ) : null}
 
+                    {sensevoiceStatus.running ? (
+                      <div className="sensevoice-hint">{t("sensevoice.warmingHint")}</div>
+                    ) : null}
+
                     {sensevoiceLogLines.length > 0 ? (
                       <div className="sensevoice-log">
                         <div className="sensevoice-log-title">{t("sensevoice.logTitle")}</div>
@@ -1071,7 +1075,10 @@ function App() {
                     ) : null}
 
                     {draft.sensevoice.lastError ? (
-                      <div className="sensevoice-error">{draft.sensevoice.lastError}</div>
+                      <>
+                        <div className="sensevoice-error">{draft.sensevoice.lastError}</div>
+                        <div className="sensevoice-hint">{t("sensevoice.serverLogHint")}</div>
+                      </>
                     ) : null}
 
                     <div className="button-row">

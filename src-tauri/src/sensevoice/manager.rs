@@ -3,8 +3,8 @@ use crate::settings::SettingsStore;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::VecDeque;
-use std::fs;
-use std::io::{BufRead, BufReader};
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -28,6 +28,7 @@ const TORCH_INDEXES: [&str; 3] = [
     "https://pypi.tuna.tsinghua.edu.cn/simple",
     "https://pypi.org/simple",
 ];
+const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,7 +128,7 @@ impl SenseVoiceManager {
             self.start_service(app, store)?;
 
             self.update_state(store, "ready", "", Some(true), Some(true))?;
-            self.emit_progress(app, "done", "SenseVoice is ready", Some(100));
+            self.emit_progress(app, "done", "SenseVoice service started", Some(100));
             self.status(store)
         })();
 
@@ -168,6 +169,16 @@ impl SenseVoiceManager {
 
         let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
         let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
+        let log_path = paths.runtime_dir.join("server.log");
+        let mut log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|err| SenseVoiceError::Io(format!("打开 SenseVoice 日志失败: {err}")))?;
+        let _ = writeln!(log_file, "\n=== sensevoice service start ===");
+        let stdout_file = log_file
+            .try_clone()
+            .map_err(|err| SenseVoiceError::Io(format!("复制日志句柄失败: {err}")))?;
 
         let mut command = Command::new(venv_python);
         command
@@ -182,19 +193,25 @@ impl SenseVoiceManager {
             .env("SENSEVOICE_HOST", host)
             .env("SENSEVOICE_PORT", port.to_string())
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stdout(Stdio::from(stdout_file))
+            .stderr(Stdio::from(log_file));
 
-        let child = command
+        let mut child = command
             .spawn()
             .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
-        self.child = Some(child);
 
-        if let Err(err) = wait_health(&sensevoice.service_url, Duration::from_secs(45)) {
-            let _ = self.stop_service(app, store);
+        if let Err(err) = wait_health(
+            &sensevoice.service_url,
+            Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
+            &mut child,
+            &log_path,
+        ) {
+            let _ = child.kill();
+            let _ = child.wait();
             return Err(err);
         }
 
+        self.child = Some(child);
         self.status(store)
     }
 
@@ -641,11 +658,35 @@ fn venv_python_path(venv_dir: &Path) -> PathBuf {
     }
 }
 
-fn wait_health(service_url: &str, timeout: Duration) -> Result<(), SenseVoiceError> {
+fn wait_health(
+    service_url: &str,
+    timeout: Duration,
+    child: &mut Child,
+    log_path: &Path,
+) -> Result<(), SenseVoiceError> {
     let url = format!("{}/health", service_url.trim_end_matches('/'));
     let client = reqwest::blocking::Client::new();
     let started = Instant::now();
     while started.elapsed() < timeout {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let tail = read_log_tail(log_path, 30);
+                let exit = status
+                    .code()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "signal".to_string());
+                return Err(SenseVoiceError::Request(format!(
+                    "SenseVoice 服务进程已退出（code={exit}）。最近日志: {tail}"
+                )));
+            }
+            Ok(None) => {}
+            Err(err) => {
+                return Err(SenseVoiceError::Request(format!(
+                    "SenseVoice 服务状态检查失败: {err}"
+                )));
+            }
+        }
+
         let response = client.get(&url).send();
         if let Ok(value) = response {
             if value.status().is_success() {
@@ -654,9 +695,39 @@ fn wait_health(service_url: &str, timeout: Duration) -> Result<(), SenseVoiceErr
         }
         thread::sleep(Duration::from_millis(500));
     }
+    let tail = read_log_tail(log_path, 30);
     Err(SenseVoiceError::Request(
-        "SenseVoice 服务启动超时，请检查 Python 依赖或模型下载状态".to_string(),
+        format!(
+            "SenseVoice 服务启动超时（{} 秒）。最近日志: {}",
+            timeout.as_secs(),
+            tail
+        ),
     ))
+}
+
+fn read_log_tail(path: &Path, max_lines: usize) -> String {
+    let text = fs::read_to_string(path).unwrap_or_default();
+    if text.trim().is_empty() {
+        return "（无日志）".to_string();
+    }
+
+    let mut tail = VecDeque::with_capacity(max_lines);
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if tail.len() >= max_lines {
+            tail.pop_front();
+        }
+        tail.push_back(trimmed.to_string());
+    }
+
+    if tail.is_empty() {
+        "（无日志）".to_string()
+    } else {
+        tail.into_iter().collect::<Vec<_>>().join(" || ")
+    }
 }
 
 fn run_command(command: &mut Command, step: &str) -> Result<(), SenseVoiceError> {

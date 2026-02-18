@@ -92,6 +92,8 @@
     "no": "No",
     "state": "Download State",
     "installingHint": "Installing Python dependencies. First-time setup may take several minutes.",
+    "warmingHint": "Service is up. Model warmup is running in background; the first transcription may be slower.",
+    "serverLogHint": "If startup fails, check local log: sensevoice/runtime/server.log",
     "logTitle": "Install Logs",
     "installTimeout": "Dependency installation timed out. Check your network and retry.",
     "prepareSuccess": "SenseVoice is ready",
