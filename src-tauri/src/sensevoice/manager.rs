@@ -417,7 +417,27 @@ fn install_requirements(
                 }
             },
         ) {
-            Ok(_) => return Ok(()),
+            Ok(_) => {
+                match verify_runtime_imports(app, venv_python) {
+                    Ok(_) => return Ok(()),
+                    Err(err) => {
+                        let detail = format!("Runtime verify failed: {err}");
+                        let payload = SenseVoiceProgress {
+                            stage: "install".to_string(),
+                            message: "Installing Python dependencies".to_string(),
+                            percent: Some(35),
+                            detail: Some(detail),
+                        };
+                        let _ = app.emit("sensevoice-progress", payload);
+                        if err.to_string().contains("No module named 'torch'") {
+                            install_torch_packages(app, venv_python)?;
+                            verify_runtime_imports(app, venv_python)?;
+                            return Ok(());
+                        }
+                        errors.push(format!("{mirror}: {err}"));
+                    }
+                }
+            }
             Err(err) => errors.push(format!("{mirror}: {err}")),
         }
     }
@@ -426,6 +446,88 @@ fn install_requirements(
         "安装 SenseVoice 依赖失败（已尝试全部镜像）: {}",
         errors.join(" | ")
     )))
+}
+
+fn install_torch_packages(app: &AppHandle, venv_python: &Path) -> Result<(), SenseVoiceError> {
+    let mut errors = Vec::new();
+    for mirror in PIP_MIRRORS {
+        let detail = format!("Retry install torch via mirror: {mirror}");
+        let payload = SenseVoiceProgress {
+            stage: "install".to_string(),
+            message: "Installing Python dependencies".to_string(),
+            percent: Some(35),
+            detail: Some(detail),
+        };
+        let _ = app.emit("sensevoice-progress", payload);
+
+        let mut install = Command::new(venv_python);
+        install
+            .arg("-m")
+            .arg("pip")
+            .arg("install")
+            .arg("--index-url")
+            .arg(mirror)
+            .arg("--progress-bar")
+            .arg("off")
+            .arg("--disable-pip-version-check")
+            .arg("--default-timeout")
+            .arg(PIP_DEFAULT_TIMEOUT_SECS.to_string())
+            .arg("--retries")
+            .arg(PIP_RETRIES.to_string())
+            .arg("torch")
+            .arg("torchaudio");
+
+        match run_command_streaming(
+            &mut install,
+            "补装 torch 依赖",
+            Duration::from_secs(PIP_INSTALL_TIMEOUT_SECS),
+            |line| {
+                let detail = normalize_log_line(line);
+                if !detail.is_empty() {
+                    let payload = SenseVoiceProgress {
+                        stage: "install".to_string(),
+                        message: "Installing Python dependencies".to_string(),
+                        percent: Some(35),
+                        detail: Some(detail),
+                    };
+                    let _ = app.emit("sensevoice-progress", payload);
+                }
+            },
+        ) {
+            Ok(_) => return Ok(()),
+            Err(err) => errors.push(format!("{mirror}: {err}")),
+        }
+    }
+
+    Err(SenseVoiceError::Process(format!(
+        "补装 torch 依赖失败（已尝试全部镜像）: {}",
+        errors.join(" | ")
+    )))
+}
+
+fn verify_runtime_imports(app: &AppHandle, venv_python: &Path) -> Result<(), SenseVoiceError> {
+    let mut verify = Command::new(venv_python);
+    verify.arg("-c").arg(
+        "import sys; import torch; import funasr; print(f'python={sys.version.split()[0]} torch={torch.__version__}')",
+    );
+
+    run_command_streaming(
+        &mut verify,
+        "校验 SenseVoice 运行时依赖",
+        Duration::from_secs(120),
+        |line| {
+            let detail = normalize_log_line(line);
+            if !detail.is_empty() {
+                let payload = SenseVoiceProgress {
+                    stage: "install".to_string(),
+                    message: "Installing Python dependencies".to_string(),
+                    percent: Some(35),
+                    detail: Some(detail),
+                };
+                let _ = app.emit("sensevoice-progress", payload);
+            }
+        },
+    )
 }
 
 fn download_model(
