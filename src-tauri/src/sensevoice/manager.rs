@@ -2,9 +2,12 @@ use super::SenseVoiceError;
 use crate::settings::SettingsStore;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -13,6 +16,13 @@ use url::Url;
 const PREPARE_SCRIPT: &str = include_str!("scripts/prepare.py");
 const SERVER_SCRIPT: &str = include_str!("scripts/server.py");
 const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
+const PIP_INSTALL_TIMEOUT_SECS: u64 = 20 * 60;
+const PIP_DEFAULT_TIMEOUT_SECS: u64 = 60;
+const PIP_RETRIES: u32 = 3;
+const PIP_MIRRORS: [&str; 2] = [
+    "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "https://pypi.org/simple",
+];
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +44,8 @@ struct SenseVoiceProgress {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     percent: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
 }
 
 pub struct SenseVoiceManager {
@@ -91,7 +103,7 @@ impl SenseVoiceManager {
             }
 
             self.emit_progress(app, "install", "Installing Python dependencies", Some(35));
-            install_requirements(&venv_python, &paths.runtime_dir.join("requirements.txt"))?;
+            install_requirements(app, &venv_python, &paths.runtime_dir.join("requirements.txt"))?;
 
             self.update_state(store, "downloading", "", None, None)?;
             self.emit_progress(app, "download", "Downloading SenseVoice model", Some(60));
@@ -240,10 +252,22 @@ impl SenseVoiceManager {
     }
 
     fn emit_progress(&self, app: &AppHandle, stage: &str, message: &str, percent: Option<u8>) {
+        self.emit_progress_detail(app, stage, message, percent, None);
+    }
+
+    fn emit_progress_detail(
+        &self,
+        app: &AppHandle,
+        stage: &str,
+        message: &str,
+        percent: Option<u8>,
+        detail: Option<&str>,
+    ) {
         let payload = SenseVoiceProgress {
             stage: stage.to_string(),
             message: message.to_string(),
             percent,
+            detail: detail.map(str::to_string),
         };
         let _ = app.emit("sensevoice-progress", payload);
     }
@@ -311,24 +335,97 @@ fn ensure_venv(system_python: &str, venv_dir: &Path) -> Result<(), SenseVoiceErr
     run_command(&mut command, "创建 Python venv")
 }
 
-fn install_requirements(venv_python: &Path, requirements: &Path) -> Result<(), SenseVoiceError> {
+fn install_requirements(
+    app: &AppHandle,
+    venv_python: &Path,
+    requirements: &Path,
+) -> Result<(), SenseVoiceError> {
     let mut upgrade_pip = Command::new(venv_python);
     upgrade_pip
         .arg("-m")
         .arg("pip")
         .arg("install")
         .arg("--upgrade")
+        .arg("--progress-bar")
+        .arg("off")
+        .arg("--disable-pip-version-check")
+        .arg("--default-timeout")
+        .arg(PIP_DEFAULT_TIMEOUT_SECS.to_string())
+        .arg("--retries")
+        .arg(PIP_RETRIES.to_string())
         .arg("pip");
-    run_command(&mut upgrade_pip, "升级 pip")?;
+    run_command_streaming(
+        &mut upgrade_pip,
+        "升级 pip",
+        Duration::from_secs(PIP_INSTALL_TIMEOUT_SECS),
+        |line| {
+            let detail = normalize_log_line(line);
+            if !detail.is_empty() {
+                let payload = SenseVoiceProgress {
+                    stage: "install".to_string(),
+                    message: "Installing Python dependencies".to_string(),
+                    percent: Some(35),
+                    detail: Some(detail),
+                };
+                let _ = app.emit("sensevoice-progress", payload);
+            }
+        },
+    )?;
 
-    let mut install = Command::new(venv_python);
-    install
-        .arg("-m")
-        .arg("pip")
-        .arg("install")
-        .arg("-r")
-        .arg(requirements);
-    run_command(&mut install, "安装 SenseVoice 依赖")
+    let mut errors = Vec::new();
+    for mirror in PIP_MIRRORS {
+        let mirror_msg = format!("Using pip mirror: {mirror}");
+        let payload = SenseVoiceProgress {
+            stage: "install".to_string(),
+            message: "Installing Python dependencies".to_string(),
+            percent: Some(35),
+            detail: Some(mirror_msg),
+        };
+        let _ = app.emit("sensevoice-progress", payload);
+
+        let mut install = Command::new(venv_python);
+        install
+            .arg("-m")
+            .arg("pip")
+            .arg("install")
+            .arg("--index-url")
+            .arg(mirror)
+            .arg("--progress-bar")
+            .arg("off")
+            .arg("--disable-pip-version-check")
+            .arg("--default-timeout")
+            .arg(PIP_DEFAULT_TIMEOUT_SECS.to_string())
+            .arg("--retries")
+            .arg(PIP_RETRIES.to_string())
+            .arg("-r")
+            .arg(requirements);
+
+        match run_command_streaming(
+            &mut install,
+            "安装 SenseVoice 依赖",
+            Duration::from_secs(PIP_INSTALL_TIMEOUT_SECS),
+            |line| {
+                let detail = normalize_log_line(line);
+                if !detail.is_empty() {
+                    let payload = SenseVoiceProgress {
+                        stage: "install".to_string(),
+                        message: "Installing Python dependencies".to_string(),
+                        percent: Some(35),
+                        detail: Some(detail),
+                    };
+                    let _ = app.emit("sensevoice-progress", payload);
+                }
+            },
+        ) {
+            Ok(_) => return Ok(()),
+            Err(err) => errors.push(format!("{mirror}: {err}")),
+        }
+    }
+
+    Err(SenseVoiceError::Process(format!(
+        "安装 SenseVoice 依赖失败（已尝试全部镜像）: {}",
+        errors.join(" | ")
+    )))
 }
 
 fn download_model(
@@ -398,6 +495,112 @@ fn run_command(command: &mut Command, step: &str) -> Result<(), SenseVoiceError>
         stdout.trim().to_string()
     };
     Err(SenseVoiceError::Process(format!("{step}失败: {details}")))
+}
+
+fn run_command_streaming<F>(
+    command: &mut Command,
+    step: &str,
+    timeout: Duration,
+    mut on_line: F,
+) -> Result<(), SenseVoiceError>
+where
+    F: FnMut(&str),
+{
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| SenseVoiceError::Process(format!("{step}失败: 无法读取 stdout")))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| SenseVoiceError::Process(format!("{step}失败: 无法读取 stderr")))?;
+
+    let (tx, rx) = mpsc::channel::<String>();
+    let tx_out = tx.clone();
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            if let Ok(value) = line {
+                let _ = tx_out.send(value);
+            }
+        }
+    });
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(value) = line {
+                let _ = tx.send(value);
+            }
+        }
+    });
+
+    let started = Instant::now();
+    let mut tail = VecDeque::with_capacity(30);
+    let exit_status = loop {
+        while let Ok(line) = rx.try_recv() {
+            if !line.trim().is_empty() {
+                if tail.len() >= 30 {
+                    tail.pop_front();
+                }
+                tail.push_back(line.clone());
+                on_line(&line);
+            }
+        }
+
+        if started.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_handle.join();
+            let _ = stderr_handle.join();
+            return Err(SenseVoiceError::Process(format!(
+                "{step}超时（{} 秒），请检查网络或重试。最近日志: {}",
+                timeout.as_secs(),
+                tail.into_iter().collect::<Vec<_>>().join(" || ")
+            )));
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => thread::sleep(Duration::from_millis(200)),
+            Err(err) => {
+                let _ = stdout_handle.join();
+                let _ = stderr_handle.join();
+                return Err(SenseVoiceError::Process(format!("{step}失败: {err}")));
+            }
+        }
+    };
+
+    while let Ok(line) = rx.try_recv() {
+        if !line.trim().is_empty() {
+            if tail.len() >= 30 {
+                tail.pop_front();
+            }
+            tail.push_back(line.clone());
+            on_line(&line);
+        }
+    }
+
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    if exit_status.success() {
+        return Ok(());
+    }
+
+    Err(SenseVoiceError::Process(format!(
+        "{step}失败: {}",
+        tail.into_iter().collect::<Vec<_>>().join(" || ")
+    )))
+}
+
+fn normalize_log_line(line: &str) -> String {
+    line.replace('\r', "").trim().to_string()
 }
 
 fn parse_host_and_port(service_url: &str) -> Result<(String, u16), SenseVoiceError> {

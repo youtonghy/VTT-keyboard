@@ -96,6 +96,7 @@ function App() {
   const {
     status: sensevoiceStatus,
     progress: sensevoiceProgress,
+    logLines: sensevoiceLogLines,
     loading: sensevoiceLoading,
     refreshStatus: refreshSenseVoiceStatus,
     prepare: prepareSenseVoice,
@@ -1055,6 +1056,17 @@ function App() {
                             ? `${sensevoiceProgress.percent}%`
                             : ""}
                         </span>
+                      </div>
+                    ) : null}
+
+                    {sensevoiceProgress?.stage === "install" ? (
+                      <div className="sensevoice-hint">{t("sensevoice.installingHint")}</div>
+                    ) : null}
+
+                    {sensevoiceLogLines.length > 0 ? (
+                      <div className="sensevoice-log">
+                        <div className="sensevoice-log-title">{t("sensevoice.logTitle")}</div>
+                        <pre>{sensevoiceLogLines.join("\n")}</pre>
                       </div>
                     ) : null}
 

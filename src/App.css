@@ -469,6 +469,35 @@ button:disabled {
   padding: 10px 14px;
 }
 
+.sensevoice-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sensevoice-log {
+  border-radius: var(--border-radius);
+  padding: 12px 14px;
+  background: var(--input-bg);
+  box-shadow: var(--input-shadow);
+}
+
+.sensevoice-log-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.sensevoice-log pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 /* Triggers List */
 .trigger-list {
   display: flex;

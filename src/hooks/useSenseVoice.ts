@@ -18,6 +18,7 @@ export interface SenseVoiceProgress {
   stage: string;
   message: string;
   percent?: number;
+  detail?: string;
 }
 
 const defaultStatus: SenseVoiceStatus = {
@@ -34,6 +35,7 @@ const defaultStatus: SenseVoiceStatus = {
 export function useSenseVoice() {
   const [status, setStatus] = useState<SenseVoiceStatus>(defaultStatus);
   const [progress, setProgress] = useState<SenseVoiceProgress | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const refreshStatus = useCallback(async () => {
@@ -85,7 +87,17 @@ export function useSenseVoice() {
 
   useEffect(() => {
     const unlisten = listen<SenseVoiceProgress>("sensevoice-progress", (event) => {
-      setProgress(event.payload);
+      const payload = event.payload;
+      setProgress(payload);
+      if (payload.stage === "prepare" && payload.percent === 5) {
+        setLogLines([]);
+      }
+      if (payload.detail && payload.detail.trim().length > 0) {
+        setLogLines((prev) => {
+          const next = [...prev, payload.detail!.trim()];
+          return next.slice(-100);
+        });
+      }
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -95,6 +107,7 @@ export function useSenseVoice() {
   return {
     status,
     progress,
+    logLines,
     loading,
     refreshStatus,
     prepare,
