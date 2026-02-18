@@ -286,6 +286,12 @@ struct SenseVoicePaths {
     state_file: PathBuf,
 }
 
+#[derive(Clone)]
+struct PythonCommand {
+    executable: String,
+    prefix_args: Vec<String>,
+}
+
 fn ensure_paths(app: &AppHandle) -> Result<SenseVoicePaths, SenseVoiceError> {
     let root = app
         .path()
@@ -317,26 +323,57 @@ fn write_runtime_files(runtime_dir: &Path) -> Result<(), SenseVoiceError> {
     Ok(())
 }
 
-fn detect_system_python() -> Option<String> {
-    for candidate in ["python3", "python"] {
-        let status = Command::new(candidate)
+fn detect_system_python() -> Option<PythonCommand> {
+    let mut candidates = Vec::new();
+    if cfg!(target_os = "windows") {
+        candidates.push(PythonCommand {
+            executable: "py".to_string(),
+            prefix_args: vec!["-3.11".to_string()],
+        });
+        candidates.push(PythonCommand {
+            executable: "py".to_string(),
+            prefix_args: vec!["-3.10".to_string()],
+        });
+        candidates.push(PythonCommand {
+            executable: "py".to_string(),
+            prefix_args: vec!["-3".to_string()],
+        });
+    }
+    candidates.push(PythonCommand {
+        executable: "python3".to_string(),
+        prefix_args: Vec::new(),
+    });
+    candidates.push(PythonCommand {
+        executable: "python".to_string(),
+        prefix_args: Vec::new(),
+    });
+
+    for candidate in candidates {
+        let mut command = Command::new(&candidate.executable);
+        for arg in &candidate.prefix_args {
+            command.arg(arg);
+        }
+        let status = command
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
         if status.is_ok_and(|value| value.success()) {
-            return Some(candidate.to_string());
+            return Some(candidate);
         }
     }
     None
 }
 
-fn ensure_venv(system_python: &str, venv_dir: &Path) -> Result<(), SenseVoiceError> {
+fn ensure_venv(system_python: &PythonCommand, venv_dir: &Path) -> Result<(), SenseVoiceError> {
     let venv_python = venv_python_path(venv_dir);
     if venv_python.exists() {
         return Ok(());
     }
-    let mut command = Command::new(system_python);
+    let mut command = Command::new(&system_python.executable);
+    for arg in &system_python.prefix_args {
+        command.arg(arg);
+    }
     command.arg("-m").arg("venv").arg(venv_dir);
     run_command(&mut command, "创建 Python venv")
 }
