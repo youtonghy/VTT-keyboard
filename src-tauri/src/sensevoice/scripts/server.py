@@ -15,6 +15,7 @@ MODEL_READY = False
 MODEL_LOADING = False
 MODEL_ERROR = None
 MODEL_LOCK = threading.Lock()
+LOG_LOCK = threading.Lock()
 PIP_INDEXES = [
     "https://download.pytorch.org/whl/cpu",
     "https://pypi.tuna.tsinghua.edu.cn/simple",
@@ -23,7 +24,8 @@ PIP_INDEXES = [
 
 
 def log(message: str):
-    print(f"[sensevoice] {message}", file=sys.stderr, flush=True)
+    with LOG_LOCK:
+        print(f"[sensevoice] {message}", file=sys.stderr, flush=True)
 
 
 def install_torch_runtime() -> bool:

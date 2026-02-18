@@ -7,6 +7,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -60,6 +61,11 @@ struct SenseVoiceRuntimeLog {
     stream: String,
     line: String,
     ts: i64,
+}
+
+enum HealthResult {
+    Healthy,
+    StartupFallback,
 }
 
 pub struct SenseVoiceManager {
@@ -209,25 +215,38 @@ impl SenseVoiceManager {
             .spawn()
             .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
         let runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
+        let startup_completed = Arc::new(AtomicBool::new(false));
         attach_runtime_logs(
             &mut child,
             app.clone(),
             &log_path,
             Arc::clone(&runtime_tail),
+            Arc::clone(&startup_completed),
             stdout_file,
             log_file,
         )?;
 
-        if let Err(err) = wait_health(
+        let wait_result = wait_health(
             &sensevoice.service_url,
             Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
             &mut child,
             &log_path,
             &runtime_tail,
-        ) {
+            &startup_completed,
+        );
+        if let Err(err) = wait_result {
             let _ = child.kill();
             let _ = child.wait();
             return Err(err);
+        }
+        if matches!(wait_result, Ok(HealthResult::StartupFallback)) {
+            self.emit_progress_detail(
+                app,
+                "verify",
+                "Starting SenseVoice service",
+                Some(85),
+                Some("Health check not ready, fallback to runtime startup log"),
+            );
         }
 
         self.child = Some(child);
@@ -683,7 +702,8 @@ fn wait_health(
     child: &mut Child,
     log_path: &Path,
     runtime_tail: &Arc<Mutex<VecDeque<String>>>,
-) -> Result<(), SenseVoiceError> {
+    startup_completed: &Arc<AtomicBool>,
+) -> Result<HealthResult, SenseVoiceError> {
     let url = format!("{}/health", service_url.trim_end_matches('/'));
     let client = reqwest::blocking::Client::new();
     let started = Instant::now();
@@ -710,10 +730,16 @@ fn wait_health(
         let response = client.get(&url).send();
         if let Ok(value) = response {
             if value.status().is_success() {
-                return Ok(());
+                return Ok(HealthResult::Healthy);
             }
         }
+        if startup_completed.load(Ordering::Relaxed) {
+            return Ok(HealthResult::StartupFallback);
+        }
         thread::sleep(Duration::from_millis(500));
+    }
+    if startup_completed.load(Ordering::Relaxed) {
+        return Ok(HealthResult::StartupFallback);
     }
     let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
     Err(SenseVoiceError::Request(
@@ -730,6 +756,7 @@ fn attach_runtime_logs(
     app: AppHandle,
     log_path: &Path,
     runtime_tail: Arc<Mutex<VecDeque<String>>>,
+    startup_completed: Arc<AtomicBool>,
     stdout_file: fs::File,
     stderr_file: fs::File,
 ) -> Result<(), SenseVoiceError> {
@@ -747,6 +774,7 @@ fn attach_runtime_logs(
         "stdout",
         app.clone(),
         runtime_tail.clone(),
+        startup_completed.clone(),
         stdout_file,
         log_path.to_path_buf(),
     );
@@ -755,6 +783,7 @@ fn attach_runtime_logs(
         "stderr",
         app,
         runtime_tail,
+        startup_completed,
         stderr_file,
         log_path.to_path_buf(),
     );
@@ -766,6 +795,7 @@ fn spawn_runtime_log_reader<R>(
     stream: &str,
     app: AppHandle,
     runtime_tail: Arc<Mutex<VecDeque<String>>>,
+    startup_completed: Arc<AtomicBool>,
     mut output_file: fs::File,
     log_path: PathBuf,
 ) where
@@ -781,6 +811,9 @@ fn spawn_runtime_log_reader<R>(
             let normalized = normalize_log_line(&raw);
             if normalized.is_empty() {
                 continue;
+            }
+            if is_startup_complete_line(&normalized) {
+                startup_completed.store(true, Ordering::Relaxed);
             }
 
             let _ = writeln!(output_file, "{normalized}");
@@ -858,6 +891,13 @@ fn current_timestamp_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     duration.as_millis() as i64
+}
+
+fn is_startup_complete_line(line: &str) -> bool {
+    let lowered = line.to_lowercase();
+    lowered.contains("application startup complete")
+        || lowered.contains("started server process")
+        || lowered.contains("uvicorn running on")
 }
 
 fn read_log_tail(path: &Path, max_lines: usize) -> String {
