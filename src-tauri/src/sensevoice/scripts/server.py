@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -157,12 +158,13 @@ def get_model_runtime():
     )
 
 
-app = FastAPI()
-
-
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     ensure_model_loading()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/health")
