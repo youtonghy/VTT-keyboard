@@ -113,10 +113,11 @@ export function useSenseVoice() {
   useEffect(() => {
     const unlisten = listen<SenseVoiceRuntimeLog>("sensevoice-runtime-log", (event) => {
       const payload = event.payload;
-      const line = payload.line?.trim();
-      if (!line) {
+      const rawLine = payload.line?.trim();
+      if (!rawLine) {
         return;
       }
+      const line = rawLine.replace(/^\[sensevoice\]\s*/i, "").trim() || rawLine;
 
       const entry = `[${payload.stream}] ${line}`;
       setLogLines((prev) => {
