@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,9 +22,13 @@ PIP_INDEXES = [
 ]
 
 
+def log(message: str):
+    print(f"[sensevoice] {message}", file=sys.stderr, flush=True)
+
+
 def install_torch_runtime() -> bool:
     for index in PIP_INDEXES:
-        print(f"[sensevoice] torch missing, installing via index={index}", file=sys.stderr)
+        log(f"torch missing, installing via index={index}")
         command = [
             sys.executable,
             "-m",
@@ -45,9 +50,9 @@ def install_torch_runtime() -> bool:
         if result.returncode == 0:
             return True
         if result.stdout:
-            print(f"[sensevoice] {result.stdout.strip()}", file=sys.stderr)
+            log(result.stdout.strip())
         if result.stderr:
-            print(f"[sensevoice] {result.stderr.strip()}", file=sys.stderr)
+            log(result.stderr.strip())
     return False
 
 
@@ -109,21 +114,22 @@ def build_model():
 def load_model_worker():
     global MODEL, POSTPROCESS, MODEL_READY, MODEL_LOADING, MODEL_ERROR
     try:
-        print("[sensevoice] model warmup started", file=sys.stderr)
+        log("model warmup started")
         model, postprocess = build_model()
         with MODEL_LOCK:
             MODEL = model
             POSTPROCESS = postprocess
             MODEL_READY = True
             MODEL_ERROR = None
-        print("[sensevoice] model warmup finished", file=sys.stderr)
+        log("model warmup finished")
     except Exception as exc:
         with MODEL_LOCK:
             MODEL = None
             POSTPROCESS = None
             MODEL_READY = False
             MODEL_ERROR = str(exc)
-        print(f"[sensevoice] model warmup failed: {exc}", file=sys.stderr)
+        log(f"model warmup failed: {exc}")
+        traceback.print_exc()
     finally:
         with MODEL_LOCK:
             MODEL_LOADING = False
@@ -160,8 +166,11 @@ def get_model_runtime():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    log("lifespan startup begin")
     ensure_model_loading()
+    log("lifespan startup done")
     yield
+    log("lifespan shutdown")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -222,4 +231,11 @@ if __name__ == "__main__":
 
     host = os.getenv("SENSEVOICE_HOST", "127.0.0.1")
     port = int(os.getenv("SENSEVOICE_PORT", "8765"))
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    log(f"starting uvicorn on {host}:{port}")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+        log("uvicorn exited normally")
+    except Exception as exc:
+        log(f"uvicorn crashed: {exc}")
+        traceback.print_exc()
+        raise

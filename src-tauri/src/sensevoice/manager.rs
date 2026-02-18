@@ -690,7 +690,7 @@ fn wait_health(
     while started.elapsed() < timeout {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let tail = collect_runtime_tail(runtime_tail, 30, log_path);
+                let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
                 let exit = status
                     .code()
                     .map(|value| value.to_string())
@@ -715,12 +715,7 @@ fn wait_health(
         }
         thread::sleep(Duration::from_millis(500));
     }
-    let tail = read_log_tail(log_path, 30);
-    let tail = if tail == "（无日志）" {
-        collect_runtime_tail(runtime_tail, 30, log_path)
-    } else {
-        tail
-    };
+    let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
     Err(SenseVoiceError::Request(
         format!(
             "SenseVoice 服务启动超时（{} 秒）。最近日志: {}",
@@ -839,6 +834,23 @@ fn collect_runtime_tail(
         }
     }
     read_log_tail(log_path, max_lines)
+}
+
+fn collect_runtime_tail_with_retry(
+    tail: &Arc<Mutex<VecDeque<String>>>,
+    max_lines: usize,
+    log_path: &Path,
+) -> String {
+    let mut last = "（无日志）".to_string();
+    for _ in 0..5 {
+        let current = collect_runtime_tail(tail, max_lines, log_path);
+        if current != "（无日志）" {
+            return current;
+        }
+        last = current;
+        thread::sleep(Duration::from_millis(120));
+    }
+    last
 }
 
 fn current_timestamp_ms() -> i64 {
