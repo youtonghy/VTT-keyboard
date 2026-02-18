@@ -99,6 +99,7 @@ function App() {
     loading: sensevoiceLoading,
     refreshStatus: refreshSenseVoiceStatus,
     prepare: prepareSenseVoice,
+    updateSettings: updateSenseVoiceSettings,
     startService: startSenseVoiceService,
     stopService: stopSenseVoiceService,
   } = useSenseVoice();
@@ -448,10 +449,19 @@ function App() {
   }, [activeSection, draft?.provider, refreshSenseVoiceStatus]);
 
   const handleSenseVoicePrepare = async () => {
+    if (!draft) {
+      return;
+    }
     try {
-      if (draft) {
-        await saveSettings(draft);
-      }
+      await updateSenseVoiceSettings(draft.sensevoice);
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: t("sensevoice.configSaveError", { error: toErrorMessage(error) }),
+      });
+      return;
+    }
+    try {
       await prepareSenseVoice();
       await reload();
       setMessage({ type: "success", text: t("sensevoice.prepareSuccess") });
@@ -464,11 +474,21 @@ function App() {
   };
 
   const handleSenseVoiceStart = async () => {
+    if (!draft) {
+      return;
+    }
     try {
-      if (draft) {
-        await saveSettings(draft);
-      }
+      await updateSenseVoiceSettings(draft.sensevoice);
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: t("sensevoice.configSaveError", { error: toErrorMessage(error) }),
+      });
+      return;
+    }
+    try {
       await startSenseVoiceService();
+      await reload();
       setMessage({ type: "success", text: t("sensevoice.startSuccess") });
     } catch (error) {
       setMessage({
@@ -479,11 +499,21 @@ function App() {
   };
 
   const handleSenseVoiceStop = async () => {
+    if (!draft) {
+      return;
+    }
     try {
-      if (draft) {
-        await saveSettings(draft);
-      }
+      await updateSenseVoiceSettings(draft.sensevoice);
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: t("sensevoice.configSaveError", { error: toErrorMessage(error) }),
+      });
+      return;
+    }
+    try {
       await stopSenseVoiceService();
+      await reload();
       setMessage({ type: "success", text: t("sensevoice.stopSuccess") });
     } catch (error) {
       setMessage({

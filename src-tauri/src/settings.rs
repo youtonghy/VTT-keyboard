@@ -7,6 +7,7 @@ use std::fs;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 use thiserror::Error;
+use url::Url;
 
 const SETTINGS_FILE: &str = "settings.json";
 const SETTINGS_KEY_FILE: &str = "settings.key";
@@ -272,6 +273,22 @@ impl SettingsStore {
 
     pub fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
         validate_settings(settings)?;
+        self.persist_settings(settings)
+    }
+
+    pub fn load_sensevoice(&self) -> Result<SenseVoiceSettings, SettingsError> {
+        let settings = self.load()?;
+        Ok(settings.sensevoice)
+    }
+
+    pub fn save_sensevoice(&self, sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
+        validate_sensevoice_settings(sensevoice)?;
+        let mut settings = self.load()?;
+        settings.sensevoice = sensevoice.clone();
+        self.persist_settings(&settings)
+    }
+
+    fn persist_settings(&self, settings: &Settings) -> Result<(), SettingsError> {
         let json = serde_json::to_string(settings).map_err(|err| SettingsError::Serde(err.to_string()))?;
         let key = self.load_or_create_key()?;
         let encrypted = encrypt_payload(&json, &key)?;
@@ -351,9 +368,41 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
         }
     }
 
-    if settings.sensevoice.service_url.trim().is_empty() {
+    validate_sensevoice_settings(&settings.sensevoice)?;
+    Ok(())
+}
+
+fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
+    if sensevoice.service_url.trim().is_empty() {
         return Err(SettingsError::Serde(
             "SenseVoice 服务地址不能为空".to_string(),
+        ));
+    }
+    let parsed = Url::parse(sensevoice.service_url.trim())
+        .map_err(|err| SettingsError::Serde(format!("SenseVoice 服务地址无效: {err}")))?;
+    if parsed.host_str().is_none() {
+        return Err(SettingsError::Serde(
+            "SenseVoice 服务地址缺少主机名".to_string(),
+        ));
+    }
+    if parsed.port_or_known_default().is_none() {
+        return Err(SettingsError::Serde(
+            "SenseVoice 服务地址缺少端口".to_string(),
+        ));
+    }
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(SettingsError::Serde(
+            "SenseVoice 服务地址必须使用 http 或 https".to_string(),
+        ));
+    }
+    if sensevoice.model_id.trim().is_empty() {
+        return Err(SettingsError::Serde(
+            "SenseVoice 模型 ID 不能为空".to_string(),
+        ));
+    }
+    if !matches!(sensevoice.device.as_str(), "auto" | "cpu" | "cuda") {
+        return Err(SettingsError::Serde(
+            "SenseVoice 推理设备仅支持 auto/cpu/cuda".to_string(),
         ));
     }
     Ok(())

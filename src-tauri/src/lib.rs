@@ -11,7 +11,7 @@ mod volcengine;
 
 use recorder::RecorderService;
 use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
-use settings::{Settings, SettingsStore};
+use settings::{SenseVoiceSettings, Settings, SettingsStore};
 use std::fs;
 use std::sync::Mutex;
 use tauri::{Manager, State, WindowEvent, Wry};
@@ -53,6 +53,25 @@ fn update_settings(state: State<AppState>, settings: Settings) -> Result<(), Str
     state
         .settings_store
         .save(&settings)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn get_sensevoice_settings(state: State<AppState>) -> Result<SenseVoiceSettings, String> {
+    state
+        .settings_store
+        .load_sensevoice()
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn update_sensevoice_settings(
+    state: State<AppState>,
+    sensevoice: SenseVoiceSettings,
+) -> Result<(), String> {
+    state
+        .settings_store
+        .save_sensevoice(&sensevoice)
         .map_err(|err| err.to_string())
 }
 
@@ -258,6 +277,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_settings,
             update_settings,
+            get_sensevoice_settings,
+            update_sensevoice_settings,
             export_settings,
             import_settings,
             start_recording,

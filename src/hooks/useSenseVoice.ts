@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { SenseVoiceSettings } from "../types/settings";
 
 export interface SenseVoiceStatus {
   installed: boolean;
@@ -52,6 +53,10 @@ export function useSenseVoice() {
     }
   }, []);
 
+  const updateSettings = useCallback(async (sensevoice: SenseVoiceSettings) => {
+    await invoke("update_sensevoice_settings", { sensevoice });
+  }, []);
+
   const startService = useCallback(async () => {
     setLoading(true);
     try {
@@ -93,6 +98,7 @@ export function useSenseVoice() {
     loading,
     refreshStatus,
     prepare,
+    updateSettings,
     startService,
     stopService,
   };

@@ -92,6 +92,7 @@
     "no": "No",
     "state": "Download State",
     "prepareSuccess": "SenseVoice is ready",
+    "configSaveError": "SenseVoice config save failed: {{error}}",
     "prepareError": "SenseVoice prepare failed: {{error}}",
     "startSuccess": "SenseVoice service started",
     "startError": "SenseVoice start failed: {{error}}",

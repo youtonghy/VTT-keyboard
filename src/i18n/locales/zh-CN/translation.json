@@ -92,6 +92,7 @@
     "no": "否",
     "state": "下载状态",
     "prepareSuccess": "SenseVoice 已准备完成",
+    "configSaveError": "SenseVoice 配置保存失败：{{error}}",
     "prepareError": "SenseVoice 准备失败：{{error}}",
     "startSuccess": "SenseVoice 服务已启动",
     "startError": "SenseVoice 启动失败：{{error}}",

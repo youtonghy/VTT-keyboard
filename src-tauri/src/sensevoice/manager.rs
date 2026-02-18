@@ -46,18 +46,18 @@ impl SenseVoiceManager {
     }
 
     pub fn status(&mut self, store: &SettingsStore) -> Result<SenseVoiceStatus, SenseVoiceError> {
-        let settings = store
-            .load()
+        let sensevoice = store
+            .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
         Ok(SenseVoiceStatus {
-            installed: settings.sensevoice.installed,
-            enabled: settings.sensevoice.enabled,
+            installed: sensevoice.installed,
+            enabled: sensevoice.enabled,
             running: self.is_running(),
-            service_url: settings.sensevoice.service_url,
-            model_id: settings.sensevoice.model_id,
-            device: settings.sensevoice.device,
-            download_state: settings.sensevoice.download_state,
-            last_error: settings.sensevoice.last_error,
+            service_url: sensevoice.service_url,
+            model_id: sensevoice.model_id,
+            device: sensevoice.device,
+            download_state: sensevoice.download_state,
+            last_error: sensevoice.last_error,
         })
     }
 
@@ -70,8 +70,8 @@ impl SenseVoiceManager {
         self.update_state(store, "preparing", "", None, None)?;
 
         let result: Result<SenseVoiceStatus, SenseVoiceError> = (|| {
-            let settings = store
-                .load()
+            let sensevoice = store
+                .load_sensevoice()
                 .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
             let paths = ensure_paths(app)?;
             write_runtime_files(&paths.runtime_dir)?;
@@ -100,8 +100,8 @@ impl SenseVoiceManager {
                 &paths.runtime_dir.join("prepare.py"),
                 &paths.models_dir,
                 &paths.state_file,
-                &settings.sensevoice.model_id,
-                &settings.sensevoice.device,
+                &sensevoice.model_id,
+                &sensevoice.device,
             )?;
 
             self.update_state(store, "validating", "", None, None)?;
@@ -130,10 +130,10 @@ impl SenseVoiceManager {
             return self.status(store);
         }
 
-        let settings = store
-            .load()
+        let sensevoice = store
+            .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
-        if !settings.sensevoice.installed {
+        if !sensevoice.installed {
             return Err(SenseVoiceError::Config(
                 "SenseVoice 尚未安装，请先完成下载".to_string(),
             ));
@@ -148,18 +148,18 @@ impl SenseVoiceManager {
             ));
         }
 
-        let (host, port) = parse_host_and_port(&settings.sensevoice.service_url)?;
+        let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
         let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
 
         let mut command = Command::new(venv_python);
         command
             .arg(paths.runtime_dir.join("server.py"))
-            .env("SENSEVOICE_MODEL_ID", settings.sensevoice.model_id.clone())
+            .env("SENSEVOICE_MODEL_ID", sensevoice.model_id.clone())
             .env(
                 "SENSEVOICE_MODEL_DIR",
                 paths.models_dir.to_string_lossy().to_string(),
             )
-            .env("SENSEVOICE_DEVICE", settings.sensevoice.device.clone())
+            .env("SENSEVOICE_DEVICE", sensevoice.device.clone())
             .env("SENSEVOICE_HUB", hub)
             .env("SENSEVOICE_HOST", host)
             .env("SENSEVOICE_PORT", port.to_string())
@@ -172,7 +172,7 @@ impl SenseVoiceManager {
             .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
         self.child = Some(child);
 
-        if let Err(err) = wait_health(&settings.sensevoice.service_url, Duration::from_secs(45)) {
+        if let Err(err) = wait_health(&sensevoice.service_url, Duration::from_secs(45)) {
             let _ = self.stop_service(app, store);
             return Err(err);
         }
@@ -223,19 +223,19 @@ impl SenseVoiceManager {
         installed: Option<bool>,
         enabled: Option<bool>,
     ) -> Result<(), SenseVoiceError> {
-        let mut settings = store
-            .load()
+        let mut sensevoice = store
+            .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
-        settings.sensevoice.download_state = download_state.to_string();
-        settings.sensevoice.last_error = last_error.to_string();
+        sensevoice.download_state = download_state.to_string();
+        sensevoice.last_error = last_error.to_string();
         if let Some(next) = installed {
-            settings.sensevoice.installed = next;
+            sensevoice.installed = next;
         }
         if let Some(next) = enabled {
-            settings.sensevoice.enabled = next;
+            sensevoice.enabled = next;
         }
         store
-            .save(&settings)
+            .save_sensevoice(&sensevoice)
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))
     }
 
