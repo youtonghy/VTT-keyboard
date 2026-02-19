@@ -4,7 +4,9 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
+use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Write};
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,19 +19,15 @@ use url::Url;
 const PREPARE_SCRIPT: &str = include_str!("scripts/prepare.py");
 const SERVER_SCRIPT: &str = include_str!("scripts/server.py");
 const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
-const PIP_INSTALL_TIMEOUT_SECS: u64 = 20 * 60;
-const PIP_DEFAULT_TIMEOUT_SECS: u64 = 60;
-const PIP_RETRIES: u32 = 3;
-const PIP_MIRRORS: [&str; 2] = [
-    "https://pypi.tuna.tsinghua.edu.cn/simple",
-    "https://pypi.org/simple",
-];
-const TORCH_INDEXES: [&str; 3] = [
-    "https://download.pytorch.org/whl/cpu",
-    "https://pypi.tuna.tsinghua.edu.cn/simple",
-    "https://pypi.org/simple",
-];
+const DOCKERFILE_TXT: &str = include_str!("scripts/Dockerfile");
+
+const SERVICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
+const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
+
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
+const DOCKER_BUILD_TIMEOUT_SECS: u64 = 40 * 60;
+const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 60 * 60;
+const IMAGE_STAMP_FILE: &str = "image.stamp";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,12 +67,16 @@ enum HealthResult {
 }
 
 pub struct SenseVoiceManager {
-    child: Option<Child>,
+    container_name: Option<String>,
+    log_child: Option<Child>,
 }
 
 impl SenseVoiceManager {
     pub fn new() -> Self {
-        Self { child: None }
+        Self {
+            container_name: None,
+            log_child: None,
+        }
     }
 
     pub fn status(&mut self, store: &SettingsStore) -> Result<SenseVoiceStatus, SenseVoiceError> {
@@ -106,35 +108,16 @@ impl SenseVoiceManager {
                 .load_sensevoice()
                 .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
             let paths = ensure_paths(app)?;
-            write_runtime_files(&paths.runtime_dir)?;
+            write_runtime_files(&paths)?;
+            ensure_docker_available()?;
 
-            let python = detect_system_python().ok_or_else(|| {
-                SenseVoiceError::Config("未检测到 Python，请先安装 Python 3.10+".to_string())
-            })?;
-
-            self.emit_progress(app, "prepare", "Creating Python venv", Some(15));
-            ensure_venv(&python, &paths.venv_dir)?;
-
-            let venv_python = venv_python_path(&paths.venv_dir);
-            if !venv_python.exists() {
-                return Err(SenseVoiceError::Config(
-                    "Python venv 初始化失败，未找到可执行文件".to_string(),
-                ));
-            }
-
-            self.emit_progress(app, "install", "Installing Python dependencies", Some(35));
-            install_requirements(
-                app,
-                &venv_python,
-                &paths.runtime_dir.join("requirements.txt"),
-            )?;
+            self.emit_progress(app, "install", "Building Docker image", Some(35));
+            ensure_runtime_image(app, &paths.runtime_dir)?;
 
             self.update_state(store, "downloading", "", None, None)?;
             self.emit_progress(app, "download", "Downloading SenseVoice model", Some(60));
             download_model(
                 app,
-                &venv_python,
-                &paths.runtime_dir.join("prepare.py"),
                 &paths.models_dir,
                 &paths.state_file,
                 &sensevoice.model_id,
@@ -177,82 +160,49 @@ impl SenseVoiceManager {
         }
 
         let paths = ensure_paths(app)?;
-        write_runtime_files(&paths.runtime_dir)?;
-        let venv_python = venv_python_path(&paths.venv_dir);
-        if !venv_python.exists() {
-            return Err(SenseVoiceError::Config(
-                "未找到 SenseVoice Python 环境，请先执行下载".to_string(),
-            ));
-        }
+        write_runtime_files(&paths)?;
+        ensure_docker_available()?;
+        ensure_runtime_image(app, &paths.runtime_dir)?;
 
         let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
+        let publish_host = normalize_publish_host(&host)?;
         let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
         let log_path = paths.runtime_dir.join("server.log");
-        let mut log_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .map_err(|err| SenseVoiceError::Io(format!("打开 SenseVoice 日志失败: {err}")))?;
-        let _ = writeln!(log_file, "\n=== sensevoice service start ===");
-        let stdout_file = log_file
-            .try_clone()
-            .map_err(|err| SenseVoiceError::Io(format!("复制日志句柄失败: {err}")))?;
 
-        let mut command = Command::new(venv_python);
-        command
-            .arg(paths.runtime_dir.join("server.py"))
-            .current_dir(&paths.runtime_dir)
-            .env("SENSEVOICE_MODEL_ID", sensevoice.model_id.clone())
-            .env(
-                "SENSEVOICE_MODEL_DIR",
-                paths.models_dir.to_string_lossy().to_string(),
-            )
-            .env("SENSEVOICE_DEVICE", sensevoice.device.clone())
-            .env("SENSEVOICE_HUB", hub)
-            .env("SENSEVOICE_HOST", host)
-            .env("SENSEVOICE_PORT", port.to_string())
-            .env("PYTHONUNBUFFERED", "1")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+        run_service_container(
+            &publish_host,
+            port,
+            &paths.models_dir,
+            &sensevoice.model_id,
+            &sensevoice.device,
+            &hub,
+        )?;
 
-        // Windows：将子进程放入独立进程组并隐藏窗口，
-        // 防止父进程的 CTRL_C_EVENT 传播进来触发 uvicorn 立即关闭。
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NEW_PROCESS_GROUP (0x200) | CREATE_NO_WINDOW (0x8000000)
-            command.creation_flags(0x0000_0200 | 0x0800_0000);
-        }
-
-        let mut child = command
-            .spawn()
-            .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
         let runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
         let startup_completed = Arc::new(AtomicBool::new(false));
-        attach_runtime_logs(
-            &mut child,
+        self.start_log_stream(
             app.clone(),
             &log_path,
             Arc::clone(&runtime_tail),
             Arc::clone(&startup_completed),
-            stdout_file,
-            log_file,
         )?;
 
         let wait_result = wait_health(
             &sensevoice.service_url,
             Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
-            &mut child,
             &log_path,
             &runtime_tail,
             &startup_completed,
         );
+
         if let Err(err) = wait_result {
-            let _ = child.kill();
-            let _ = child.wait();
+            self.stop_log_stream();
+            let _ = stop_container(SERVICE_CONTAINER_NAME);
+            let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
             return Err(err);
         }
+
         if matches!(wait_result, Ok(HealthResult::StartupFallback)) {
             self.emit_progress_detail(
                 app,
@@ -263,7 +213,7 @@ impl SenseVoiceManager {
             );
         }
 
-        self.child = Some(child);
+        self.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
         self.status(store)
     }
 
@@ -272,34 +222,74 @@ impl SenseVoiceManager {
         _app: &AppHandle,
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        self.stop_log_stream();
+        let _ = stop_container(SERVICE_CONTAINER_NAME);
+        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+        self.container_name = None;
         self.status(store)
     }
 
     fn is_running(&mut self) -> bool {
-        let mut clear = false;
-        let running = if let Some(child) = self.child.as_mut() {
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    clear = true;
-                    false
-                }
-                Ok(None) => true,
-                Err(_) => {
-                    clear = true;
-                    false
-                }
-            }
+        let running = docker_container_running(SERVICE_CONTAINER_NAME).unwrap_or(false);
+        if running {
+            self.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
         } else {
-            false
-        };
-        if clear {
-            self.child = None;
+            self.container_name = None;
+            self.stop_log_stream();
         }
         running
+    }
+
+    fn start_log_stream(
+        &mut self,
+        app: AppHandle,
+        log_path: &Path,
+        runtime_tail: Arc<Mutex<VecDeque<String>>>,
+        startup_completed: Arc<AtomicBool>,
+    ) -> Result<(), SenseVoiceError> {
+        self.stop_log_stream();
+
+        let mut log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .map_err(|err| SenseVoiceError::Io(format!("打开 SenseVoice 日志失败: {err}")))?;
+        let _ = writeln!(log_file, "\n=== sensevoice docker service start ===");
+        let stdout_file = log_file
+            .try_clone()
+            .map_err(|err| SenseVoiceError::Io(format!("复制日志句柄失败: {err}")))?;
+
+        let mut command = docker_command();
+        command
+            .arg("logs")
+            .arg("-f")
+            .arg(SERVICE_CONTAINER_NAME)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        hide_window(&mut command);
+
+        let mut child = command
+            .spawn()
+            .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+        attach_runtime_logs(
+            &mut child,
+            app,
+            log_path,
+            runtime_tail,
+            startup_completed,
+            stdout_file,
+            log_file,
+        )?;
+        self.log_child = Some(child);
+        Ok(())
+    }
+
+    fn stop_log_stream(&mut self) {
+        if let Some(mut child) = self.log_child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 
     fn update_state(
@@ -348,17 +338,19 @@ impl SenseVoiceManager {
     }
 }
 
-struct SenseVoicePaths {
-    runtime_dir: PathBuf,
-    venv_dir: PathBuf,
-    models_dir: PathBuf,
-    state_file: PathBuf,
+impl Drop for SenseVoiceManager {
+    fn drop(&mut self) {
+        self.stop_log_stream();
+        let _ = stop_container(SERVICE_CONTAINER_NAME);
+        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+    }
 }
 
-#[derive(Clone)]
-struct PythonCommand {
-    executable: String,
-    prefix_args: Vec<String>,
+struct SenseVoicePaths {
+    root_dir: PathBuf,
+    runtime_dir: PathBuf,
+    models_dir: PathBuf,
+    state_file: PathBuf,
 }
 
 fn ensure_paths(app: &AppHandle) -> Result<SenseVoicePaths, SenseVoiceError> {
@@ -368,114 +360,101 @@ fn ensure_paths(app: &AppHandle) -> Result<SenseVoicePaths, SenseVoiceError> {
         .map_err(|err| SenseVoiceError::Io(err.to_string()))?
         .join("sensevoice");
     let runtime_dir = root.join("runtime");
-    let venv_dir = root.join("venv");
     let models_dir = root.join("models");
     let state_file = root.join("state.json");
     fs::create_dir_all(&runtime_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
     fs::create_dir_all(&models_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
     Ok(SenseVoicePaths {
+        root_dir: root,
         runtime_dir,
-        venv_dir,
         models_dir,
         state_file,
     })
 }
 
-fn write_runtime_files(runtime_dir: &Path) -> Result<(), SenseVoiceError> {
-    fs::create_dir_all(runtime_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    fs::write(runtime_dir.join("prepare.py"), PREPARE_SCRIPT)
+fn write_runtime_files(paths: &SenseVoicePaths) -> Result<(), SenseVoiceError> {
+    fs::create_dir_all(&paths.runtime_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    fs::create_dir_all(&paths.models_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    fs::create_dir_all(&paths.root_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+
+    fs::write(paths.runtime_dir.join("prepare.py"), PREPARE_SCRIPT)
         .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    fs::write(runtime_dir.join("server.py"), SERVER_SCRIPT)
+    fs::write(paths.runtime_dir.join("server.py"), SERVER_SCRIPT)
         .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    fs::write(runtime_dir.join("requirements.txt"), REQUIREMENTS_TXT)
+    fs::write(paths.runtime_dir.join("requirements.txt"), REQUIREMENTS_TXT)
         .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    fs::write(paths.runtime_dir.join("Dockerfile"), DOCKERFILE_TXT)
+        .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+
+    if !paths.state_file.exists() {
+        fs::write(&paths.state_file, "{}").map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    }
     Ok(())
 }
 
-fn detect_system_python() -> Option<PythonCommand> {
-    let mut candidates = Vec::new();
-    if cfg!(target_os = "windows") {
-        candidates.push(PythonCommand {
-            executable: "py".to_string(),
-            prefix_args: vec!["-3.11".to_string()],
-        });
-        candidates.push(PythonCommand {
-            executable: "py".to_string(),
-            prefix_args: vec!["-3.10".to_string()],
-        });
-        candidates.push(PythonCommand {
-            executable: "py".to_string(),
-            prefix_args: vec!["-3".to_string()],
-        });
+fn ensure_docker_available() -> Result<(), SenseVoiceError> {
+    let mut version = docker_command();
+    version.arg("version").arg("--format").arg("{{.Client.Version}}");
+    hide_window(&mut version);
+    let output = version
+        .output()
+        .map_err(|err| SenseVoiceError::Config(format!("未检测到 Docker，请先安装 Docker: {err}")))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(SenseVoiceError::Config(format!(
+            "Docker 不可用，请先安装 Docker Desktop 并确保 docker 命令可执行: {detail}"
+        )));
     }
-    candidates.push(PythonCommand {
-        executable: "python3".to_string(),
-        prefix_args: Vec::new(),
-    });
-    candidates.push(PythonCommand {
-        executable: "python".to_string(),
-        prefix_args: Vec::new(),
-    });
 
-    for candidate in candidates {
-        let mut command = Command::new(&candidate.executable);
-        for arg in &candidate.prefix_args {
-            command.arg(arg);
-        }
-        let status = command
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if status.is_ok_and(|value| value.success()) {
-            return Some(candidate);
-        }
+    let mut info = docker_command();
+    info.arg("info");
+    hide_window(&mut info);
+    let output = info
+        .output()
+        .map_err(|err| SenseVoiceError::Config(format!("无法连接 Docker daemon: {err}")))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(SenseVoiceError::Config(format!(
+            "Docker daemon 未运行，请先启动 Docker Desktop: {detail}"
+        )));
     }
-    None
+    Ok(())
 }
 
-fn ensure_venv(system_python: &PythonCommand, venv_dir: &Path) -> Result<(), SenseVoiceError> {
-    let venv_python = venv_python_path(venv_dir);
-    if venv_python.exists() {
+fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), SenseVoiceError> {
+    let stamp_path = runtime_dir.join(IMAGE_STAMP_FILE);
+    let expected_stamp = runtime_stamp();
+    let previous_stamp = fs::read_to_string(&stamp_path).unwrap_or_default();
+    let has_image = docker_image_exists(SERVICE_IMAGE_TAG);
+
+    if has_image && previous_stamp.trim() == expected_stamp {
         return Ok(());
     }
-    let mut command = Command::new(&system_python.executable);
-    for arg in &system_python.prefix_args {
-        command.arg(arg);
-    }
-    command.arg("-m").arg("venv").arg(venv_dir);
-    run_command(&mut command, "创建 Python venv")
-}
 
-fn install_requirements(
-    app: &AppHandle,
-    venv_python: &Path,
-    requirements: &Path,
-) -> Result<(), SenseVoiceError> {
-    let mut upgrade_pip = Command::new(venv_python);
-    upgrade_pip
-        .arg("-m")
-        .arg("pip")
-        .arg("install")
-        .arg("--upgrade")
-        .arg("--progress-bar")
-        .arg("off")
-        .arg("--disable-pip-version-check")
-        .arg("--default-timeout")
-        .arg(PIP_DEFAULT_TIMEOUT_SECS.to_string())
-        .arg("--retries")
-        .arg(PIP_RETRIES.to_string())
-        .arg("pip");
+    let payload = SenseVoiceProgress {
+        stage: "install".to_string(),
+        message: "Building Docker image".to_string(),
+        percent: Some(35),
+        detail: Some(format!("Building image {SERVICE_IMAGE_TAG}")),
+    };
+    let _ = app.emit("sensevoice-progress", payload);
+
+    let mut build = docker_command();
+    build
+        .arg("build")
+        .arg("-t")
+        .arg(SERVICE_IMAGE_TAG)
+        .arg(runtime_dir);
     run_command_streaming(
-        &mut upgrade_pip,
-        "升级 pip",
-        Duration::from_secs(PIP_INSTALL_TIMEOUT_SECS),
+        &mut build,
+        "构建 SenseVoice Docker 镜像",
+        Duration::from_secs(DOCKER_BUILD_TIMEOUT_SECS),
         |line| {
             let detail = normalize_log_line(line);
             if !detail.is_empty() {
                 let payload = SenseVoiceProgress {
                     stage: "install".to_string(),
-                    message: "Installing Python dependencies".to_string(),
+                    message: "Building Docker image".to_string(),
                     percent: Some(35),
                     detail: Some(detail),
                 };
@@ -484,154 +463,75 @@ fn install_requirements(
         },
     )?;
 
-    let mut errors = Vec::new();
-    for mirror in PIP_MIRRORS {
-        let mirror_msg = format!("Using pip mirror: {mirror}");
-        let payload = SenseVoiceProgress {
-            stage: "install".to_string(),
-            message: "Installing Python dependencies".to_string(),
-            percent: Some(35),
-            detail: Some(mirror_msg),
-        };
-        let _ = app.emit("sensevoice-progress", payload);
-
-        let mut install = Command::new(venv_python);
-        install
-            .arg("-m")
-            .arg("pip")
-            .arg("install")
-            .arg("--index-url")
-            .arg(mirror)
-            .arg("--progress-bar")
-            .arg("off")
-            .arg("--disable-pip-version-check")
-            .arg("--default-timeout")
-            .arg(PIP_DEFAULT_TIMEOUT_SECS.to_string())
-            .arg("--retries")
-            .arg(PIP_RETRIES.to_string())
-            .arg("-r")
-            .arg(requirements);
-
-        match run_command_streaming(
-            &mut install,
-            "安装 SenseVoice 依赖",
-            Duration::from_secs(PIP_INSTALL_TIMEOUT_SECS),
-            |line| {
-                let detail = normalize_log_line(line);
-                if !detail.is_empty() {
-                    let payload = SenseVoiceProgress {
-                        stage: "install".to_string(),
-                        message: "Installing Python dependencies".to_string(),
-                        percent: Some(35),
-                        detail: Some(detail),
-                    };
-                    let _ = app.emit("sensevoice-progress", payload);
-                }
-            },
-        ) {
-            Ok(_) => match verify_runtime_imports(app, venv_python) {
-                Ok(_) => return Ok(()),
-                Err(err) => {
-                    let detail = format!("Runtime verify failed: {err}");
-                    let payload = SenseVoiceProgress {
-                        stage: "install".to_string(),
-                        message: "Installing Python dependencies".to_string(),
-                        percent: Some(35),
-                        detail: Some(detail),
-                    };
-                    let _ = app.emit("sensevoice-progress", payload);
-                    if err.to_string().contains("No module named 'torch'") {
-                        install_torch_packages(app, venv_python)?;
-                        verify_runtime_imports(app, venv_python)?;
-                        return Ok(());
-                    }
-                    errors.push(format!("{mirror}: {err}"));
-                }
-            },
-            Err(err) => errors.push(format!("{mirror}: {err}")),
-        }
-    }
-
-    Err(SenseVoiceError::Process(format!(
-        "安装 SenseVoice 依赖失败（已尝试全部镜像）: {}",
-        errors.join(" | ")
-    )))
+    fs::write(stamp_path, expected_stamp).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    Ok(())
 }
 
-fn install_torch_packages(app: &AppHandle, venv_python: &Path) -> Result<(), SenseVoiceError> {
-    let mut errors = Vec::new();
-    for index in TORCH_INDEXES {
-        let detail = format!("Retry install torch via index: {index}");
-        let payload = SenseVoiceProgress {
-            stage: "install".to_string(),
-            message: "Installing Python dependencies".to_string(),
-            percent: Some(35),
-            detail: Some(detail),
-        };
-        let _ = app.emit("sensevoice-progress", payload);
-
-        let mut install = Command::new(venv_python);
-        install
-            .arg("-m")
-            .arg("pip")
-            .arg("install")
-            .arg("--index-url")
-            .arg(index)
-            .arg("--progress-bar")
-            .arg("off")
-            .arg("--disable-pip-version-check")
-            .arg("--default-timeout")
-            .arg(PIP_DEFAULT_TIMEOUT_SECS.to_string())
-            .arg("--retries")
-            .arg(PIP_RETRIES.to_string())
-            .arg("torch")
-            .arg("torchaudio");
-
-        match run_command_streaming(
-            &mut install,
-            "补装 torch 依赖",
-            Duration::from_secs(PIP_INSTALL_TIMEOUT_SECS),
-            |line| {
-                let detail = normalize_log_line(line);
-                if !detail.is_empty() {
-                    let payload = SenseVoiceProgress {
-                        stage: "install".to_string(),
-                        message: "Installing Python dependencies".to_string(),
-                        percent: Some(35),
-                        detail: Some(detail),
-                    };
-                    let _ = app.emit("sensevoice-progress", payload);
-                }
-            },
-        ) {
-            Ok(_) => return Ok(()),
-            Err(err) => errors.push(format!("{index}: {err}")),
-        }
-    }
-
-    Err(SenseVoiceError::Process(format!(
-        "补装 torch 依赖失败（已尝试全部镜像）: {}",
-        errors.join(" | ")
-    )))
+fn runtime_stamp() -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    PREPARE_SCRIPT.hash(&mut hasher);
+    SERVER_SCRIPT.hash(&mut hasher);
+    REQUIREMENTS_TXT.hash(&mut hasher);
+    DOCKERFILE_TXT.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
 }
 
-fn verify_runtime_imports(app: &AppHandle, venv_python: &Path) -> Result<(), SenseVoiceError> {
-    let mut verify = Command::new(venv_python);
-    verify.arg("-c").arg(
-        "import sys; import torch; import funasr; print(f'python={sys.version.split()[0]} torch={torch.__version__}')",
-    );
+fn docker_image_exists(image: &str) -> bool {
+    let mut inspect = docker_command();
+    inspect.arg("image").arg("inspect").arg(image);
+    hide_window(&mut inspect);
+    inspect.status().is_ok_and(|status| status.success())
+}
+
+fn download_model(
+    app: &AppHandle,
+    model_dir: &Path,
+    state_file: &Path,
+    model_id: &str,
+    device: &str,
+) -> Result<(), SenseVoiceError> {
+    fs::create_dir_all(model_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    let state_dir = state_file
+        .parent()
+        .ok_or_else(|| SenseVoiceError::Io("state.json 路径异常".to_string()))?;
+    fs::create_dir_all(state_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    if !state_file.exists() {
+        fs::write(state_file, "{}").map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    }
+
+    let mut command = docker_command();
+    command
+        .arg("run")
+        .arg("--rm")
+        .arg("--mount")
+        .arg(bind_mount(model_dir, "/models"))
+        .arg("--mount")
+        .arg(bind_mount(state_dir, "/state"))
+        .arg(SERVICE_IMAGE_TAG)
+        .arg("python")
+        .arg("prepare.py")
+        .arg("--model-id")
+        .arg(model_id)
+        .arg("--model-dir")
+        .arg("/models")
+        .arg("--device")
+        .arg(device)
+        .arg("--hubs")
+        .arg("hf,ms")
+        .arg("--state-path")
+        .arg("/state/state.json");
 
     run_command_streaming(
-        &mut verify,
-        "校验 SenseVoice 运行时依赖",
-        Duration::from_secs(120),
+        &mut command,
+        "下载 SenseVoice 模型",
+        Duration::from_secs(MODEL_DOWNLOAD_TIMEOUT_SECS),
         |line| {
             let detail = normalize_log_line(line);
             if !detail.is_empty() {
                 let payload = SenseVoiceProgress {
-                    stage: "install".to_string(),
-                    message: "Installing Python dependencies".to_string(),
-                    percent: Some(35),
+                    stage: "download".to_string(),
+                    message: "Downloading SenseVoice model".to_string(),
+                    percent: Some(60),
                     detail: Some(detail),
                 };
                 let _ = app.emit("sensevoice-progress", payload);
@@ -640,80 +540,128 @@ fn verify_runtime_imports(app: &AppHandle, venv_python: &Path) -> Result<(), Sen
     )
 }
 
-fn download_model(
-    app: &AppHandle,
-    venv_python: &Path,
-    prepare_script: &Path,
+fn run_service_container(
+    publish_host: &str,
+    port: u16,
     model_dir: &Path,
-    state_file: &Path,
     model_id: &str,
     device: &str,
+    hub: &str,
 ) -> Result<(), SenseVoiceError> {
     fs::create_dir_all(model_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-
-    let mut command = Command::new(venv_python);
+    let mut command = docker_command();
     command
-        .arg(prepare_script)
-        .current_dir(prepare_script.parent().unwrap_or(prepare_script))
-        .arg("--model-id")
-        .arg(model_id)
-        .arg("--model-dir")
-        .arg(model_dir)
-        .arg("--device")
-        .arg(device)
-        .arg("--hubs")
-        .arg("hf,ms")
-        .arg("--state-path")
-        .arg(state_file);
+        .arg("run")
+        .arg("-d")
+        .arg("--name")
+        .arg(SERVICE_CONTAINER_NAME)
+        .arg("-p")
+        .arg(format!("{publish_host}:{port}:{port}"))
+        .arg("--mount")
+        .arg(bind_mount(model_dir, "/models"))
+        .arg("-e")
+        .arg(format!("SENSEVOICE_MODEL_ID={model_id}"))
+        .arg("-e")
+        .arg("SENSEVOICE_MODEL_DIR=/models")
+        .arg("-e")
+        .arg(format!("SENSEVOICE_DEVICE={device}"))
+        .arg("-e")
+        .arg(format!("SENSEVOICE_HUB={hub}"))
+        .arg("-e")
+        .arg("SENSEVOICE_HOST=0.0.0.0")
+        .arg("-e")
+        .arg(format!("SENSEVOICE_PORT={port}"))
+        .arg(SERVICE_IMAGE_TAG);
 
-    let first = run_command(&mut command, "下载 SenseVoice 模型");
-    if let Err(err) = first {
-        let err_text = err.to_string();
-        if err_text.contains("No module named 'torch'") {
-            let payload = SenseVoiceProgress {
-                stage: "download".to_string(),
-                message: "Downloading SenseVoice model".to_string(),
-                percent: Some(60),
-                detail: Some("Torch missing during model download, trying auto repair".to_string()),
-            };
-            let _ = app.emit("sensevoice-progress", payload);
-
-            install_torch_packages(app, venv_python)?;
-
-            let mut retry = Command::new(venv_python);
-            retry
-                .arg(prepare_script)
-                .current_dir(prepare_script.parent().unwrap_or(prepare_script))
-                .arg("--model-id")
-                .arg(model_id)
-                .arg("--model-dir")
-                .arg(model_dir)
-                .arg("--device")
-                .arg(device)
-                .arg("--hubs")
-                .arg("hf,ms")
-                .arg("--state-path")
-                .arg(state_file);
-            return run_command(&mut retry, "下载 SenseVoice 模型");
-        }
-        return Err(err);
+    hide_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+    if output.status.success() {
+        return Ok(());
     }
-
-    Ok(())
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let details = if !stderr.is_empty() { stderr } else { stdout };
+    Err(SenseVoiceError::Process(format!(
+        "启动 SenseVoice 容器失败: {details}"
+    )))
 }
 
-fn venv_python_path(venv_dir: &Path) -> PathBuf {
-    if cfg!(target_os = "windows") {
-        venv_dir.join("Scripts").join("python.exe")
-    } else {
-        venv_dir.join("bin").join("python")
+fn stop_container(name: &str) -> Result<(), SenseVoiceError> {
+    let mut command = docker_command();
+    command.arg("stop").arg(name);
+    hide_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+    if output.status.success() {
+        return Ok(());
     }
+    let detail = String::from_utf8_lossy(&output.stderr);
+    if detail.contains("No such container") {
+        return Ok(());
+    }
+    Err(SenseVoiceError::Process(format!(
+        "停止容器失败: {}",
+        detail.trim()
+    )))
+}
+
+fn remove_container_if_exists(name: &str) -> Result<(), SenseVoiceError> {
+    let mut command = docker_command();
+    command.arg("rm").arg("-f").arg(name);
+    hide_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr);
+    if detail.contains("No such container") {
+        return Ok(());
+    }
+    Err(SenseVoiceError::Process(format!(
+        "移除容器失败: {}",
+        detail.trim()
+    )))
+}
+
+fn docker_container_running(name: &str) -> Result<bool, SenseVoiceError> {
+    let mut command = docker_command();
+    command
+        .arg("inspect")
+        .arg("-f")
+        .arg("{{.State.Running}}")
+        .arg(name);
+    hide_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        if detail.contains("No such object") || detail.contains("No such container") {
+            return Ok(false);
+        }
+        return Err(SenseVoiceError::Process(format!(
+            "读取容器状态失败: {}",
+            detail.trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim() == "true")
+}
+
+fn bind_mount(source: &Path, target: &str) -> String {
+    format!(
+        "type=bind,source={},target={target}",
+        source.to_string_lossy()
+    )
 }
 
 fn wait_health(
     service_url: &str,
     timeout: Duration,
-    child: &mut Child,
     log_path: &Path,
     runtime_tail: &Arc<Mutex<VecDeque<String>>>,
     startup_completed: &Arc<AtomicBool>,
@@ -722,18 +670,14 @@ fn wait_health(
     let client = reqwest::blocking::Client::new();
     let started = Instant::now();
     while started.elapsed() < timeout {
-        match child.try_wait() {
-            Ok(Some(status)) => {
+        match docker_container_running(SERVICE_CONTAINER_NAME) {
+            Ok(true) => {}
+            Ok(false) => {
                 let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
-                let exit = status
-                    .code()
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "signal".to_string());
                 return Err(SenseVoiceError::Request(format!(
-                    "SenseVoice 服务进程已退出（code={exit}）。最近日志: {tail}"
+                    "SenseVoice 服务容器已退出。最近日志: {tail}"
                 )));
             }
-            Ok(None) => {}
             Err(err) => {
                 return Err(SenseVoiceError::Request(format!(
                     "SenseVoice 服务状态检查失败: {err}"
@@ -744,7 +688,6 @@ fn wait_health(
         let response = client.get(&url).send();
         if let Ok(value) = response {
             if value.status().is_success() {
-                // 解析 JSON body，只有 ready==true 才视为真正就绪
                 let is_ready = value
                     .json::<serde_json::Value>()
                     .ok()
@@ -753,15 +696,11 @@ fn wait_health(
                 if is_ready {
                     return Ok(HealthResult::Healthy);
                 }
-                // ready==false 说明服务已启动但模型仍在加载，继续等待
             }
         }
-        // 注意：不在此处检查 startup_completed；
-        // uvicorn "Application startup complete" 仅说明 ASGI lifespan 完成，
-        // 模型可能还在后台线程加载中，需继续轮询 /health 直到 ready==true。
         thread::sleep(Duration::from_millis(500));
     }
-    // 超时后以 startup_completed 作为最后兜底
+
     if startup_completed.load(Ordering::Relaxed) {
         return Ok(HealthResult::StartupFallback);
     }
@@ -943,29 +882,6 @@ fn read_log_tail(path: &Path, max_lines: usize) -> String {
     }
 }
 
-fn run_command(command: &mut Command, step: &str) -> Result<(), SenseVoiceError> {
-    // Windows：隐藏子进程窗口，避免弹出控制台。
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    let output = command
-        .output()
-        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let details = if !stderr.trim().is_empty() {
-        stderr.trim().to_string()
-    } else {
-        stdout.trim().to_string()
-    };
-    Err(SenseVoiceError::Process(format!("{step}失败: {details}")))
-}
-
 fn run_command_streaming<F>(
     command: &mut Command,
     step: &str,
@@ -976,13 +892,7 @@ where
     F: FnMut(&str),
 {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-    // Windows：隐藏子进程窗口，避免弹出控制台。
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
+    hide_window(command);
 
     let mut child = command
         .spawn()
@@ -1091,6 +1001,18 @@ fn parse_host_and_port(service_url: &str) -> Result<(String, u16), SenseVoiceErr
     Ok((host, port))
 }
 
+fn normalize_publish_host(host: &str) -> Result<String, SenseVoiceError> {
+    if host.eq_ignore_ascii_case("localhost") {
+        return Ok("127.0.0.1".to_string());
+    }
+    if host.parse::<Ipv4Addr>().is_ok() {
+        return Ok(host.to_string());
+    }
+    Err(SenseVoiceError::Config(
+        "Docker 模式下服务地址主机仅支持 localhost 或 IPv4 地址".to_string(),
+    ))
+}
+
 fn read_selected_hub(state_file: &Path) -> Option<String> {
     let data = fs::read_to_string(state_file).ok()?;
     let value: Value = serde_json::from_str(&data).ok()?;
@@ -1098,4 +1020,16 @@ fn read_selected_hub(state_file: &Path) -> Option<String> {
         .get("hub")
         .and_then(|item| item.as_str())
         .map(str::to_string)
+}
+
+fn docker_command() -> Command {
+    Command::new("docker")
+}
+
+fn hide_window(_command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        _command.creation_flags(0x0800_0000);
+    }
 }

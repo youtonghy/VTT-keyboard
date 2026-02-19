@@ -1,5 +1,4 @@
 import os
-import subprocess
 import sys
 import tempfile
 import threading
@@ -16,11 +15,6 @@ MODEL_LOADING = False
 MODEL_ERROR = None
 MODEL_LOCK = threading.Lock()
 LOG_LOCK = threading.Lock()
-PIP_INDEXES = [
-    "https://download.pytorch.org/whl/cpu",
-    "https://pypi.tuna.tsinghua.edu.cn/simple",
-    "https://pypi.org/simple",
-]
 
 
 def log(message: str):
@@ -28,51 +22,11 @@ def log(message: str):
         print(f"[sensevoice] {message}", file=sys.stderr, flush=True)
 
 
-def install_torch_runtime() -> bool:
-    for index in PIP_INDEXES:
-        log(f"torch missing, installing via index={index}")
-        command = [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--index-url",
-            index,
-            "--progress-bar",
-            "off",
-            "--disable-pip-version-check",
-            "--default-timeout",
-            "60",
-            "--retries",
-            "3",
-            "torch",
-            "torchaudio",
-        ]
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode == 0:
-            return True
-        if result.stdout:
-            log(result.stdout.strip())
-        if result.stderr:
-            log(result.stderr.strip())
-    return False
-
-
 def get_funasr_runtime():
-    try:
-        from funasr import AutoModel
-        from funasr.utils.postprocess_utils import rich_transcription_postprocess
+    from funasr import AutoModel
+    from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
-        return AutoModel, rich_transcription_postprocess
-    except ModuleNotFoundError as exc:
-        if exc.name != "torch":
-            raise
-        if not install_torch_runtime():
-            raise
-        from funasr import AutoModel
-        from funasr.utils.postprocess_utils import rich_transcription_postprocess
-
-        return AutoModel, rich_transcription_postprocess
+    return AutoModel, rich_transcription_postprocess
 
 
 def resolve_device(value: str) -> str:
