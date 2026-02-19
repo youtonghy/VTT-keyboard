@@ -22,6 +22,7 @@ impl TranscriptionDispatcher {
                 match message {
                     DispatchMessage::Process(recording) => {
                         if let Err(err) = processing::handle_recording(&store, recording) {
+                            #[cfg(debug_assertions)]
                             eprintln!("录音处理失败: {err}");
                             processing::emit_status("error");
                         }

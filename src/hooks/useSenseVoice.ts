@@ -142,14 +142,6 @@ export function useSenseVoice(monitoringEnabled = false) {
         const next = [...prev, entry];
         return next.slice(-100);
       });
-
-      if (import.meta.env.DEV) {
-        if (payload.stream === "stderr") {
-          console.error("[sensevoice]", line);
-        } else {
-          console.log("[sensevoice]", line);
-        }
-      }
     });
 
     return () => {

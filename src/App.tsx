@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { getName, getVersion } from "@tauri-apps/api/app";
-import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { DrawerNav } from "./components/DrawerNav";
@@ -24,17 +23,9 @@ const parseList = (value: string) =>
 
 const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
 
-const logDebug = (...args: unknown[]) => {
-  if (import.meta.env.DEV) {
-    console.log("[shortcut]", ...args);
-  }
-};
+const logDebug = (..._args: unknown[]) => {};
 
-const logError = (...args: unknown[]) => {
-  if (import.meta.env.DEV) {
-    console.error("[shortcut]", ...args);
-  }
-};
+const logError = (..._args: unknown[]) => {};
 
 const toErrorMessage = (error: unknown) => {
   if (typeof error === "string") {
@@ -152,21 +143,6 @@ function App() {
     }
     root.setAttribute("data-theme", draft.appearance.theme);
   }, [draft?.appearance.theme]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) {
-      return;
-    }
-    const stopListening = listen<string>("dev-log", (event) => {
-      console.log("[vtt]", event.payload);
-    });
-    stopListening.catch((error) => {
-      console.error("[vtt] listen failed", error);
-    });
-    return () => {
-      void stopListening.then((unlisten) => unlisten());
-    };
-  }, []);
 
   useEffect(() => {
     if (!message) {

@@ -20,6 +20,14 @@ use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use transcription_dispatcher::TranscriptionDispatcher;
 
+macro_rules! dev_eprintln {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        {
+            eprintln!($($arg)*);
+        }
+    };
+}
 
 #[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -242,7 +250,7 @@ fn get_app_info() -> serde_json::Value {
 pub fn run() {
     // Initialize native status overlay
     if !status_native::init() {
-        eprintln!("警告：原生状态窗口初始化失败");
+        dev_eprintln!("警告：原生状态窗口初始化失败");
     }
 
     tauri::Builder::default()
@@ -274,13 +282,13 @@ pub fn run() {
                         std::thread::spawn(move || {
                             let state = app_for_stop.state::<AppState>();
                             let Ok(mut manager) = state.sensevoice_manager.lock() else {
-                                eprintln!("关闭窗口时获取 SenseVoice 锁失败");
+                                dev_eprintln!("关闭窗口时获取 SenseVoice 锁失败");
                                 return;
                             };
                             if let Err(err) =
                                 manager.stop_service(&app_for_stop, &state.settings_store)
                             {
-                                eprintln!("关闭窗口时停止 SenseVoice 服务失败: {err}");
+                                dev_eprintln!("关闭窗口时停止 SenseVoice 服务失败: {err}");
                             }
                         });
                     }
@@ -291,7 +299,7 @@ pub fn run() {
                 let settings = match startup_store.load() {
                     Ok(value) => value,
                     Err(err) => {
-                        eprintln!("应用启动读取设置失败: {err}");
+                        dev_eprintln!("应用启动读取设置失败: {err}");
                         return;
                     }
                 };
@@ -303,12 +311,12 @@ pub fn run() {
                 }
                 let state = startup_app.state::<AppState>();
                 let Ok(mut manager) = state.sensevoice_manager.lock() else {
-                    eprintln!("应用启动时获取 SenseVoice 锁失败");
+                    dev_eprintln!("应用启动时获取 SenseVoice 锁失败");
                     return;
                 };
                 if let Err(err) = manager.start_service_async(&startup_app, &state.settings_store)
                 {
-                    eprintln!("应用启动自动拉起 SenseVoice 失败: {err}");
+                    dev_eprintln!("应用启动自动拉起 SenseVoice 失败: {err}");
                 }
             });
             Ok(())
@@ -342,7 +350,7 @@ pub fn parse_sensevoice_worker_job_file_arg(args: &[String]) -> Option<String> {
 
 pub fn run_sensevoice_worker(job_file: Option<&str>) -> i32 {
     let Some(path) = job_file else {
-        eprintln!("missing --job-file <path>");
+        dev_eprintln!("missing --job-file <path>");
         return 2;
     };
     sensevoice::worker::run_worker(path)

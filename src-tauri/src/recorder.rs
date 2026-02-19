@@ -99,7 +99,10 @@ impl Recorder {
 
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let buffer_clone = buffer.clone();
-        let err_fn = |err| eprintln!("录音流错误: {err}");
+        let err_fn = |_err| {
+            #[cfg(debug_assertions)]
+            eprintln!("录音流错误: {_err}");
+        };
 
         let stream = match input_config.sample_format() {
             SampleFormat::I16 => device

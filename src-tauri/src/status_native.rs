@@ -56,6 +56,7 @@ pub fn cleanup() {
 // Stub implementations for unsupported platforms
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 pub fn init() -> bool {
+    #[cfg(debug_assertions)]
     eprintln!("Native status overlay is not supported on this platform");
     false
 }

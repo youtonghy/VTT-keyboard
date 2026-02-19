@@ -93,7 +93,7 @@
     "state": "Download State",
     "installingHint": "Building the SenseVoice Docker image. First-time setup may take several minutes.",
     "warmingHint": "Service is up. Model warmup is running in background; the first transcription may be slower.",
-    "devConsoleHint": "In development mode, runtime logs are mirrored to the browser console.",
+    "devConsoleHint": "In development mode, runtime logs are printed to the terminal.",
     "serverLogHint": "If startup fails, check local log: sensevoice/runtime/server.log",
     "logTitle": "Runtime Logs",
     "installTimeout": "Docker image build or model download timed out. Check your network and retry.",
