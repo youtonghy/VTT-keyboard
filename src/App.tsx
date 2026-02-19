@@ -92,7 +92,10 @@ const createId = () =>
 
 function App() {
   const { t, i18n } = useTranslation();
-  const { settings, loading, saveSettings, reload } = useSettings();
+  const { settings, loading, saveSettings } = useSettings();
+  const [draft, setDraft] = useState<Settings | null>(null);
+  const [activeSection, setActiveSection] = useState("general");
+  const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
   const {
     status: sensevoiceStatus,
     progress: sensevoiceProgress,
@@ -103,9 +106,7 @@ function App() {
     updateSettings: updateSenseVoiceSettings,
     startService: startSenseVoiceService,
     stopService: stopSenseVoiceService,
-  } = useSenseVoice();
-  const [draft, setDraft] = useState<Settings | null>(null);
-  const [activeSection, setActiveSection] = useState("general");
+  } = useSenseVoice(isSenseVoiceActive);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -443,11 +444,11 @@ function App() {
   }, [draft, settings]);
 
   useEffect(() => {
-    if (activeSection !== "speech" || draft?.provider !== "sensevoice") {
+    if (!isSenseVoiceActive) {
       return;
     }
     void refreshSenseVoiceStatus().catch(() => {});
-  }, [activeSection, draft?.provider, refreshSenseVoiceStatus]);
+  }, [isSenseVoiceActive, refreshSenseVoiceStatus]);
 
   const handleSenseVoicePrepare = async () => {
     if (!draft) {
@@ -489,7 +490,7 @@ function App() {
     }
     try {
       await startSenseVoiceService();
-      await reload();
+      await refreshSenseVoiceStatus();
       setMessage({ type: "success", text: t("sensevoice.startSuccess") });
     } catch (error) {
       setMessage({
@@ -514,7 +515,7 @@ function App() {
     }
     try {
       await stopSenseVoiceService();
-      await reload();
+      await refreshSenseVoiceStatus();
       setMessage({ type: "success", text: t("sensevoice.stopSuccess") });
     } catch (error) {
       setMessage({
@@ -975,23 +976,31 @@ function App() {
 
                 {draft.provider === "sensevoice" ? (
                   <SettingsCard title={t("speech.sensevoice")}>
+                    {(() => {
+                      const installed = sensevoiceStatus.installed;
+                      const running = sensevoiceStatus.running;
+                      const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
+                      const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
+
+                      return (
+                        <>
                     <div className="sensevoice-summary">
                       <span>
                         {t("sensevoice.installed")}:{" "}
-                        {draft.sensevoice.installed
+                        {installed
                           ? t("sensevoice.yes")
                           : t("sensevoice.no")}
                       </span>
                       <span>
                         {t("sensevoice.running")}:{" "}
-                        {sensevoiceStatus.running
+                        {running
                           ? t("sensevoice.runningNow")
                           : t("sensevoice.stopped")}
                       </span>
                       <span>
                         {t("sensevoice.state")}:{" "}
-                        {t(`sensevoice.stateMap.${draft.sensevoice.downloadState}`, {
-                          defaultValue: draft.sensevoice.downloadState,
+                        {t(`sensevoice.stateMap.${state}`, {
+                          defaultValue: state,
                         })}
                       </span>
                     </div>
@@ -1063,7 +1072,7 @@ function App() {
                       <div className="sensevoice-hint">{t("sensevoice.installingHint")}</div>
                     ) : null}
 
-                    {sensevoiceStatus.running ? (
+                    {running ? (
                       <div className="sensevoice-hint">{t("sensevoice.warmingHint")}</div>
                     ) : null}
 
@@ -1078,36 +1087,45 @@ function App() {
                       </div>
                     ) : null}
 
-                    {draft.sensevoice.lastError ? (
+                    {lastError ? (
                       <>
-                        <div className="sensevoice-error">{draft.sensevoice.lastError}</div>
+                        <div className="sensevoice-error">{lastError}</div>
                         <div className="sensevoice-hint">{t("sensevoice.serverLogHint")}</div>
                       </>
                     ) : null}
 
                     <div className="button-row">
-                      <button
-                        type="button"
-                        onClick={handleSenseVoicePrepare}
-                        disabled={sensevoiceLoading}
-                      >
-                        {t("sensevoice.prepare")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSenseVoiceStart}
-                        disabled={sensevoiceLoading || !draft.sensevoice.installed}
-                      >
-                        {t("sensevoice.start")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSenseVoiceStop}
-                        disabled={sensevoiceLoading || !sensevoiceStatus.running}
-                      >
-                        {t("sensevoice.stop")}
-                      </button>
+                      {!installed ? (
+                        <button
+                          type="button"
+                          onClick={handleSenseVoicePrepare}
+                          disabled={sensevoiceLoading}
+                        >
+                          {t("sensevoice.prepare")}
+                        </button>
+                      ) : null}
+                      {installed && !running ? (
+                        <button
+                          type="button"
+                          onClick={handleSenseVoiceStart}
+                          disabled={sensevoiceLoading}
+                        >
+                          {t("sensevoice.start")}
+                        </button>
+                      ) : null}
+                      {running ? (
+                        <button
+                          type="button"
+                          onClick={handleSenseVoiceStop}
+                          disabled={sensevoiceLoading}
+                        >
+                          {t("sensevoice.stop")}
+                        </button>
+                      ) : null}
                     </div>
+                        </>
+                      );
+                    })()}
                   </SettingsCard>
                 ) : null}
               </>

@@ -6,6 +6,7 @@ mod recorder;
 mod sensevoice;
 mod settings;
 mod status_native;
+mod transcription_dispatcher;
 mod triggers;
 mod volcengine;
 
@@ -17,6 +18,7 @@ use std::sync::Mutex;
 use tauri::{Manager, State, WindowEvent, Wry};
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
+use transcription_dispatcher::TranscriptionDispatcher;
 
 
 #[derive(Clone, serde::Deserialize)]
@@ -35,6 +37,7 @@ struct TrayState {
 
 pub(crate) struct AppState {
     recorder: RecorderService,
+    transcription_dispatcher: TranscriptionDispatcher,
     settings_store: SettingsStore,
     sensevoice_manager: Mutex<SenseVoiceManager>,
     tray_state: Mutex<TrayState>,
@@ -108,13 +111,7 @@ fn start_recording(state: State<AppState>) -> Result<(), String> {
 fn stop_recording(state: State<AppState>) -> Result<(), String> {
     let audio = state.recorder.stop().map_err(|err| err.to_string())?;
     processing::emit_status("transcribing");
-    let store = state.settings_store.clone();
-    std::thread::spawn(move || {
-        if let Err(err) = processing::handle_recording(&store, audio) {
-            eprintln!("录音处理失败: {err}");
-            processing::emit_status("error");
-        }
-    });
+    state.transcription_dispatcher.enqueue(audio)?;
     Ok(())
 }
 
@@ -258,6 +255,7 @@ pub fn run() {
             let store = SettingsStore::new(app_handle.clone());
             app.manage(AppState {
                 recorder: RecorderService::new(),
+                transcription_dispatcher: TranscriptionDispatcher::new(store.clone()),
                 settings_store: store,
                 sensevoice_manager: Mutex::new(SenseVoiceManager::new()),
                 tray_state: Mutex::new(TrayState::default()),

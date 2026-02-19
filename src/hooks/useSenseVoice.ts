@@ -38,7 +38,7 @@ const defaultStatus: SenseVoiceStatus = {
   lastError: "",
 };
 
-export function useSenseVoice() {
+export function useSenseVoice(monitoringEnabled = false) {
   const [status, setStatus] = useState<SenseVoiceStatus>(defaultStatus);
   const [progress, setProgress] = useState<SenseVoiceProgress | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -90,6 +90,16 @@ export function useSenseVoice() {
   useEffect(() => {
     void refreshStatus().catch(() => {});
   }, [refreshStatus]);
+
+  useEffect(() => {
+    if (!monitoringEnabled) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshStatus().catch(() => {});
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [monitoringEnabled, refreshStatus]);
 
   useEffect(() => {
     const unlisten = listen<SenseVoiceProgress>("sensevoice-progress", (event) => {
