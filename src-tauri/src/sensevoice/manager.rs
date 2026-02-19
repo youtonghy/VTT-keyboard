@@ -1,4 +1,5 @@
 use super::SenseVoiceError;
+use crate::sensevoice::worker::{WorkerEvent, WorkerJob};
 use crate::settings::SettingsStore;
 use serde::Serialize;
 use serde_json::Value;
@@ -26,8 +27,9 @@ const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const DOCKER_BUILD_TIMEOUT_SECS: u64 = 40 * 60;
-const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 60 * 60;
 const IMAGE_STAMP_FILE: &str = "image.stamp";
+const WORKER_ARG: &str = "--sensevoice-worker";
+const WORKER_JOB_FILE_ARG: &str = "--job-file";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +71,7 @@ enum HealthResult {
 pub struct SenseVoiceManager {
     container_name: Option<String>,
     log_child: Option<Child>,
+    prepare_child: Option<Child>,
 }
 
 impl SenseVoiceManager {
@@ -76,10 +79,12 @@ impl SenseVoiceManager {
         Self {
             container_name: None,
             log_child: None,
+            prepare_child: None,
         }
     }
 
     pub fn status(&mut self, store: &SettingsStore) -> Result<SenseVoiceStatus, SenseVoiceError> {
+        self.reconcile_prepare_task();
         let sensevoice = store
             .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
@@ -95,50 +100,35 @@ impl SenseVoiceManager {
         })
     }
 
-    pub fn prepare(
+    pub fn prepare_async(
         &mut self,
         app: &AppHandle,
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
-        self.emit_progress(app, "prepare", "Preparing runtime", Some(5));
-        self.update_state(store, "preparing", "", None, None)?;
-
-        let result: Result<SenseVoiceStatus, SenseVoiceError> = (|| {
-            let sensevoice = store
-                .load_sensevoice()
-                .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
-            let paths = ensure_paths(app)?;
-            write_runtime_files(&paths)?;
-            ensure_docker_available()?;
-
-            self.emit_progress(app, "install", "Building Docker image", Some(35));
-            ensure_runtime_image(app, &paths.runtime_dir)?;
-
-            self.update_state(store, "downloading", "", None, None)?;
-            self.emit_progress(app, "download", "Downloading SenseVoice model", Some(60));
-            download_model(
-                app,
-                &paths.models_dir,
-                &paths.state_file,
-                &sensevoice.model_id,
-                &sensevoice.device,
-            )?;
-
-            self.update_state(store, "validating", "", Some(true), None)?;
-            self.emit_progress(app, "verify", "Starting SenseVoice service", Some(85));
-            self.start_service(app, store)?;
-
-            self.update_state(store, "ready", "", Some(true), Some(true))?;
-            self.emit_progress(app, "done", "SenseVoice service started", Some(100));
-            self.status(store)
-        })();
-
-        if let Err(err) = &result {
-            let _ = self.update_state(store, "error", &err.to_string(), None, None);
-            self.emit_progress(app, "error", &err.to_string(), None);
+        self.reconcile_prepare_task();
+        if self.is_prepare_running() {
+            return self.status(store);
         }
 
-        result
+        self.emit_progress(app, "prepare", "Preparing runtime", Some(5));
+        self.update_state(store, "preparing", "", None, None)?;
+        let sensevoice = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        let paths = ensure_paths(app)?;
+        write_runtime_files(&paths)?;
+        let job = WorkerJob {
+            service_url: sensevoice.service_url,
+            model_id: sensevoice.model_id,
+            device: sensevoice.device,
+            runtime_dir: paths.runtime_dir.to_string_lossy().to_string(),
+            models_dir: paths.models_dir.to_string_lossy().to_string(),
+            state_file: paths.state_file.to_string_lossy().to_string(),
+            image_tag: SERVICE_IMAGE_TAG.to_string(),
+            container_name: SERVICE_CONTAINER_NAME.to_string(),
+        };
+        self.spawn_prepare_worker(app, store, &job)?;
+        self.status(store)
     }
 
     pub fn start_service(
@@ -146,6 +136,12 @@ impl SenseVoiceManager {
         app: &AppHandle,
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
+        self.reconcile_prepare_task();
+        if self.is_prepare_running() {
+            return Err(SenseVoiceError::Process(
+                "下载任务正在后台执行，请稍后再试".to_string(),
+            ));
+        }
         if self.is_running() {
             return self.status(store);
         }
@@ -222,6 +218,7 @@ impl SenseVoiceManager {
         _app: &AppHandle,
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
+        self.stop_prepare_task();
         self.stop_log_stream();
         let _ = stop_container(SERVICE_CONTAINER_NAME);
         let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
@@ -230,6 +227,7 @@ impl SenseVoiceManager {
     }
 
     fn is_running(&mut self) -> bool {
+        self.reconcile_prepare_task();
         let running = docker_container_running(SERVICE_CONTAINER_NAME).unwrap_or(false);
         if running {
             self.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
@@ -238,6 +236,11 @@ impl SenseVoiceManager {
             self.stop_log_stream();
         }
         running
+    }
+
+    fn is_prepare_running(&mut self) -> bool {
+        self.reconcile_prepare_task();
+        self.prepare_child.is_some()
     }
 
     fn start_log_stream(
@@ -292,6 +295,130 @@ impl SenseVoiceManager {
         }
     }
 
+    fn spawn_prepare_worker(
+        &mut self,
+        app: &AppHandle,
+        store: &SettingsStore,
+        job: &WorkerJob,
+    ) -> Result<(), SenseVoiceError> {
+        let runtime_dir = Path::new(&job.runtime_dir);
+        let jobs_dir = runtime_dir.join("jobs");
+        fs::create_dir_all(&jobs_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+        let job_file = jobs_dir.join(format!("job-{}.json", current_timestamp_ms()));
+        let content =
+            serde_json::to_string_pretty(job).map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+        fs::write(&job_file, content).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+
+        let current_exe =
+            std::env::current_exe().map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+        let mut command = Command::new(current_exe);
+        command
+            .arg(WORKER_ARG)
+            .arg(WORKER_JOB_FILE_ARG)
+            .arg(&job_file)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        hide_window(&mut command);
+
+        let mut child = command
+            .spawn()
+            .map_err(|err| SenseVoiceError::Process(format!("启动后台下载任务失败: {err}")))?;
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| SenseVoiceError::Process("后台任务无法读取 stdout".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| SenseVoiceError::Process("后台任务无法读取 stderr".to_string()))?;
+
+        let app_handle = app.clone();
+        let store_clone = store.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                let Ok(line) = line else {
+                    continue;
+                };
+                let content = normalize_log_line(&line);
+                if content.is_empty() {
+                    continue;
+                }
+                if let Ok(event) = serde_json::from_str::<WorkerEvent>(&content) {
+                    handle_worker_event(&app_handle, &store_clone, event);
+                } else {
+                    emit_progress_payload(
+                        &app_handle,
+                        "prepare",
+                        "Preparing runtime",
+                        None,
+                        Some(content),
+                    );
+                }
+            }
+        });
+
+        let app_handle = app.clone();
+        let store_clone = store.clone();
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                let Ok(raw) = line else {
+                    continue;
+                };
+                let content = normalize_log_line(&raw);
+                if content.is_empty() {
+                    continue;
+                }
+                if let Ok(event) = serde_json::from_str::<WorkerEvent>(&content) {
+                    handle_worker_event(&app_handle, &store_clone, event);
+                    continue;
+                }
+                emit_progress_payload(
+                    &app_handle,
+                    "prepare",
+                    "Preparing runtime",
+                    None,
+                    Some(content.clone()),
+                );
+                let _ = app_handle.emit(
+                    "sensevoice-runtime-log",
+                    SenseVoiceRuntimeLog {
+                        stream: "stderr".to_string(),
+                        line: format!("[worker] {content}"),
+                        ts: current_timestamp_ms(),
+                    },
+                );
+            }
+        });
+
+        self.prepare_child = Some(child);
+        Ok(())
+    }
+
+    fn reconcile_prepare_task(&mut self) {
+        let mut clear = false;
+        if let Some(child) = self.prepare_child.as_mut() {
+            match child.try_wait() {
+                Ok(Some(_)) => clear = true,
+                Ok(None) => {}
+                Err(_) => clear = true,
+            }
+        }
+        if clear {
+            self.prepare_child = None;
+        }
+    }
+
+    fn stop_prepare_task(&mut self) {
+        if let Some(mut child) = self.prepare_child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
     fn update_state(
         &self,
         store: &SettingsStore,
@@ -340,10 +467,88 @@ impl SenseVoiceManager {
 
 impl Drop for SenseVoiceManager {
     fn drop(&mut self) {
+        self.stop_prepare_task();
         self.stop_log_stream();
         let _ = stop_container(SERVICE_CONTAINER_NAME);
         let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
     }
+}
+
+fn handle_worker_event(app: &AppHandle, store: &SettingsStore, event: WorkerEvent) {
+    match event {
+        WorkerEvent::Progress {
+            stage,
+            message,
+            percent,
+            detail,
+        } => {
+            emit_progress_payload(app, &stage, &message, percent, detail);
+        }
+        WorkerEvent::RuntimeLog { stream, line, .. } => {
+            let _ = app.emit(
+                "sensevoice-runtime-log",
+                SenseVoiceRuntimeLog {
+                    stream,
+                    line,
+                    ts: current_timestamp_ms(),
+                },
+            );
+        }
+        WorkerEvent::State {
+            download_state,
+            last_error,
+            installed,
+            enabled,
+        } => {
+            let _ = update_state_in_store(store, &download_state, &last_error, installed, enabled);
+        }
+        WorkerEvent::Done { message } => {
+            emit_progress_payload(app, "done", "SenseVoice service started", Some(100), Some(message));
+        }
+        WorkerEvent::Error { message } => {
+            let _ = update_state_in_store(store, "error", &message, None, None);
+            emit_progress_payload(app, "error", &message, None, None);
+        }
+    }
+}
+
+fn emit_progress_payload(
+    app: &AppHandle,
+    stage: &str,
+    message: &str,
+    percent: Option<u8>,
+    detail: Option<String>,
+) {
+    let payload = SenseVoiceProgress {
+        stage: stage.to_string(),
+        message: message.to_string(),
+        percent,
+        detail,
+    };
+    let _ = app.emit("sensevoice-progress", payload);
+}
+
+fn update_state_in_store(
+    store: &SettingsStore,
+    download_state: &str,
+    last_error: &str,
+    installed: Option<bool>,
+    enabled: Option<bool>,
+) -> Result<(), SenseVoiceError> {
+    let mut sensevoice = store
+        .load_sensevoice()
+        .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+    sensevoice.download_state = download_state.to_string();
+    sensevoice.last_error = last_error.to_string();
+    if let Some(next) = installed {
+        sensevoice.installed = next;
+    }
+    if let Some(next) = enabled {
+        sensevoice.enabled = next;
+    }
+    store
+        .save_sensevoice(&sensevoice)
+        .map_err(|err| SenseVoiceError::Settings(err.to_string()))
 }
 
 struct SenseVoicePaths {
@@ -481,63 +686,6 @@ fn docker_image_exists(image: &str) -> bool {
     inspect.arg("image").arg("inspect").arg(image);
     hide_window(&mut inspect);
     inspect.status().is_ok_and(|status| status.success())
-}
-
-fn download_model(
-    app: &AppHandle,
-    model_dir: &Path,
-    state_file: &Path,
-    model_id: &str,
-    device: &str,
-) -> Result<(), SenseVoiceError> {
-    fs::create_dir_all(model_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    let state_dir = state_file
-        .parent()
-        .ok_or_else(|| SenseVoiceError::Io("state.json 路径异常".to_string()))?;
-    fs::create_dir_all(state_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    if !state_file.exists() {
-        fs::write(state_file, "{}").map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    }
-
-    let mut command = docker_command();
-    command
-        .arg("run")
-        .arg("--rm")
-        .arg("--mount")
-        .arg(bind_mount(model_dir, "/models"))
-        .arg("--mount")
-        .arg(bind_mount(state_dir, "/state"))
-        .arg(SERVICE_IMAGE_TAG)
-        .arg("python")
-        .arg("prepare.py")
-        .arg("--model-id")
-        .arg(model_id)
-        .arg("--model-dir")
-        .arg("/models")
-        .arg("--device")
-        .arg(device)
-        .arg("--hubs")
-        .arg("hf,ms")
-        .arg("--state-path")
-        .arg("/state/state.json");
-
-    run_command_streaming(
-        &mut command,
-        "下载 SenseVoice 模型",
-        Duration::from_secs(MODEL_DOWNLOAD_TIMEOUT_SECS),
-        |line| {
-            let detail = normalize_log_line(line);
-            if !detail.is_empty() {
-                let payload = SenseVoiceProgress {
-                    stage: "download".to_string(),
-                    message: "Downloading SenseVoice model".to_string(),
-                    percent: Some(60),
-                    detail: Some(detail),
-                };
-                let _ = app.emit("sensevoice-progress", payload);
-            }
-        },
-    )
 }
 
 fn run_service_container(

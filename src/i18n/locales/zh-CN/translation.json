@@ -98,6 +98,7 @@
     "logTitle": "运行日志",
     "installTimeout": "镜像构建或模型下载超时，请检查网络后重试。",
     "prepareSuccess": "SenseVoice 已准备完成",
+    "prepareQueued": "已在后台开始下载与启用，请查看状态进度。",
     "configSaveError": "SenseVoice 配置保存失败：{{error}}",
     "prepareError": "SenseVoice 准备失败：{{error}}",
     "startSuccess": "SenseVoice 服务已启动",

@@ -98,6 +98,9 @@ export function useSenseVoice() {
       if (payload.stage === "prepare" && payload.percent === 5) {
         setLogLines([]);
       }
+      if (payload.stage === "done" || payload.stage === "error") {
+        void refreshStatus().catch(() => {});
+      }
       if (payload.detail && payload.detail.trim().length > 0) {
         setLogLines((prev) => {
           const next = [...prev, payload.detail!.trim()];
@@ -108,7 +111,7 @@ export function useSenseVoice() {
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, []);
+  }, [refreshStatus]);
 
   useEffect(() => {
     const unlisten = listen<SenseVoiceRuntimeLog>("sensevoice-runtime-log", (event) => {

@@ -1,5 +1,6 @@
 pub mod client;
 pub mod manager;
+pub mod worker;
 
 pub use manager::{SenseVoiceManager, SenseVoiceStatus};
 

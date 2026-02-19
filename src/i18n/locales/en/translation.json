@@ -98,6 +98,7 @@
     "logTitle": "Runtime Logs",
     "installTimeout": "Docker image build or model download timed out. Check your network and retry.",
     "prepareSuccess": "SenseVoice is ready",
+    "prepareQueued": "Background prepare started. Please follow progress status.",
     "configSaveError": "SenseVoice config save failed: {{error}}",
     "prepareError": "SenseVoice prepare failed: {{error}}",
     "startSuccess": "SenseVoice service started",

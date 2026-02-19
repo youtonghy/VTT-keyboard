@@ -464,8 +464,8 @@ function App() {
     }
     try {
       await prepareSenseVoice();
-      await reload();
-      setMessage({ type: "success", text: t("sensevoice.prepareSuccess") });
+      await refreshSenseVoiceStatus();
+      setMessage({ type: "success", text: t("sensevoice.prepareQueued") });
     } catch (error) {
       setMessage({
         type: "error",

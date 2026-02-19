@@ -136,7 +136,7 @@ fn prepare_sensevoice(app: tauri::AppHandle, state: State<AppState>) -> Result<S
         .lock()
         .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
     manager
-        .prepare(&app, &state.settings_store)
+        .prepare_async(&app, &state.settings_store)
         .map_err(|err| err.to_string())
 }
 
@@ -295,4 +295,16 @@ pub fn run() {
 
     // Cleanup native status overlay
     status_native::cleanup();
+}
+
+pub fn parse_sensevoice_worker_job_file_arg(args: &[String]) -> Option<String> {
+    sensevoice::worker::parse_job_file_arg(args)
+}
+
+pub fn run_sensevoice_worker(job_file: Option<&str>) -> i32 {
+    let Some(path) = job_file else {
+        eprintln!("missing --job-file <path>");
+        return 2;
+    };
+    sensevoice::worker::run_worker(path)
 }
