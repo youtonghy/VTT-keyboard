@@ -123,7 +123,11 @@ impl SenseVoiceManager {
             }
 
             self.emit_progress(app, "install", "Installing Python dependencies", Some(35));
-            install_requirements(app, &venv_python, &paths.runtime_dir.join("requirements.txt"))?;
+            install_requirements(
+                app,
+                &venv_python,
+                &paths.runtime_dir.join("requirements.txt"),
+            )?;
 
             self.update_state(store, "downloading", "", None, None)?;
             self.emit_progress(app, "download", "Downloading SenseVoice model", Some(60));
@@ -197,6 +201,7 @@ impl SenseVoiceManager {
         let mut command = Command::new(venv_python);
         command
             .arg(paths.runtime_dir.join("server.py"))
+            .current_dir(&paths.runtime_dir)
             .env("SENSEVOICE_MODEL_ID", sensevoice.model_id.clone())
             .env(
                 "SENSEVOICE_MODEL_DIR",
@@ -515,27 +520,25 @@ fn install_requirements(
                 }
             },
         ) {
-            Ok(_) => {
-                match verify_runtime_imports(app, venv_python) {
-                    Ok(_) => return Ok(()),
-                    Err(err) => {
-                        let detail = format!("Runtime verify failed: {err}");
-                        let payload = SenseVoiceProgress {
-                            stage: "install".to_string(),
-                            message: "Installing Python dependencies".to_string(),
-                            percent: Some(35),
-                            detail: Some(detail),
-                        };
-                        let _ = app.emit("sensevoice-progress", payload);
-                        if err.to_string().contains("No module named 'torch'") {
-                            install_torch_packages(app, venv_python)?;
-                            verify_runtime_imports(app, venv_python)?;
-                            return Ok(());
-                        }
-                        errors.push(format!("{mirror}: {err}"));
+            Ok(_) => match verify_runtime_imports(app, venv_python) {
+                Ok(_) => return Ok(()),
+                Err(err) => {
+                    let detail = format!("Runtime verify failed: {err}");
+                    let payload = SenseVoiceProgress {
+                        stage: "install".to_string(),
+                        message: "Installing Python dependencies".to_string(),
+                        percent: Some(35),
+                        detail: Some(detail),
+                    };
+                    let _ = app.emit("sensevoice-progress", payload);
+                    if err.to_string().contains("No module named 'torch'") {
+                        install_torch_packages(app, venv_python)?;
+                        verify_runtime_imports(app, venv_python)?;
+                        return Ok(());
                     }
+                    errors.push(format!("{mirror}: {err}"));
                 }
-            }
+            },
             Err(err) => errors.push(format!("{mirror}: {err}")),
         }
     }
@@ -642,6 +645,7 @@ fn download_model(
     let mut command = Command::new(venv_python);
     command
         .arg(prepare_script)
+        .current_dir(prepare_script.parent().unwrap_or(prepare_script))
         .arg("--model-id")
         .arg(model_id)
         .arg("--model-dir")
@@ -670,6 +674,7 @@ fn download_model(
             let mut retry = Command::new(venv_python);
             retry
                 .arg(prepare_script)
+                .current_dir(prepare_script.parent().unwrap_or(prepare_script))
                 .arg("--model-id")
                 .arg(model_id)
                 .arg("--model-dir")
@@ -730,7 +735,15 @@ fn wait_health(
         let response = client.get(&url).send();
         if let Ok(value) = response {
             if value.status().is_success() {
-                return Ok(HealthResult::Healthy);
+                // 解析 JSON body，只有 ready==true 才视为真正就绪
+                let is_ready = value
+                    .json::<serde_json::Value>()
+                    .ok()
+                    .and_then(|body| body.get("ready").and_then(|v| v.as_bool()))
+                    .unwrap_or(false);
+                if is_ready {
+                    return Ok(HealthResult::Healthy);
+                }
             }
         }
         if startup_completed.load(Ordering::Relaxed) {
@@ -742,13 +755,11 @@ fn wait_health(
         return Ok(HealthResult::StartupFallback);
     }
     let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
-    Err(SenseVoiceError::Request(
-        format!(
-            "SenseVoice 服务启动超时（{} 秒）。最近日志: {}",
-            timeout.as_secs(),
-            tail
-        ),
-    ))
+    Err(SenseVoiceError::Request(format!(
+        "SenseVoice 服务启动超时（{} 秒）。最近日志: {}",
+        timeout.as_secs(),
+        tail
+    )))
 }
 
 fn attach_runtime_logs(
@@ -819,11 +830,7 @@ fn spawn_runtime_log_reader<R>(
             let _ = writeln!(output_file, "{normalized}");
             let _ = output_file.flush();
 
-            push_runtime_tail(
-                &runtime_tail,
-                format!("[{stream_name}] {normalized}"),
-                200,
-            );
+            push_runtime_tail(&runtime_tail, format!("[{stream_name}] {normalized}"), 200);
 
             let payload = SenseVoiceRuntimeLog {
                 stream: stream_name.clone(),
@@ -1063,5 +1070,8 @@ fn parse_host_and_port(service_url: &str) -> Result<(String, u16), SenseVoiceErr
 fn read_selected_hub(state_file: &Path) -> Option<String> {
     let data = fs::read_to_string(state_file).ok()?;
     let value: Value = serde_json::from_str(&data).ok()?;
-    value.get("hub").and_then(|item| item.as_str()).map(str::to_string)
+    value
+        .get("hub")
+        .and_then(|item| item.as_str())
+        .map(str::to_string)
 }

@@ -101,11 +101,12 @@ def build_model():
         os.environ["HF_HOME"] = os.path.join(model_root, "hf_home")
         os.environ["MODELSCOPE_CACHE"] = os.path.join(model_root, "ms_cache")
 
+    # 不传 remote_code，使用 funasr 内置的 SenseVoice 实现
+    # trust_remote_code=False 确保加载 funasr 内部版本，不依赖本地 model.py
     model = auto_model(
         model=model_id,
         hub=hub,
-        trust_remote_code=True,
-        remote_code="./model.py",
+        trust_remote_code=False,
         vad_model="fsmn-vad",
         vad_kwargs={"max_single_segment_time": 30000},
         device=device,
