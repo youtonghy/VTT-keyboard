@@ -216,6 +216,15 @@ impl SenseVoiceManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
+        // Windows：将子进程放入独立进程组并隐藏窗口，
+        // 防止父进程的 CTRL_C_EVENT 传播进来触发 uvicorn 立即关闭。
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NEW_PROCESS_GROUP (0x200) | CREATE_NO_WINDOW (0x8000000)
+            command.creation_flags(0x0000_0200 | 0x0800_0000);
+        }
+
         let mut child = command
             .spawn()
             .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
@@ -744,13 +753,15 @@ fn wait_health(
                 if is_ready {
                     return Ok(HealthResult::Healthy);
                 }
+                // ready==false 说明服务已启动但模型仍在加载，继续等待
             }
         }
-        if startup_completed.load(Ordering::Relaxed) {
-            return Ok(HealthResult::StartupFallback);
-        }
+        // 注意：不在此处检查 startup_completed；
+        // uvicorn "Application startup complete" 仅说明 ASGI lifespan 完成，
+        // 模型可能还在后台线程加载中，需继续轮询 /health 直到 ready==true。
         thread::sleep(Duration::from_millis(500));
     }
+    // 超时后以 startup_completed 作为最后兜底
     if startup_completed.load(Ordering::Relaxed) {
         return Ok(HealthResult::StartupFallback);
     }
@@ -933,6 +944,12 @@ fn read_log_tail(path: &Path, max_lines: usize) -> String {
 }
 
 fn run_command(command: &mut Command, step: &str) -> Result<(), SenseVoiceError> {
+    // Windows：隐藏子进程窗口，避免弹出控制台。
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
     let output = command
         .output()
         .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
@@ -959,6 +976,13 @@ where
     F: FnMut(&str),
 {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    // Windows：隐藏子进程窗口，避免弹出控制台。
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
 
     let mut child = command
         .spawn()

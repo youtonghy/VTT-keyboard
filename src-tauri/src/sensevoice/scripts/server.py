@@ -101,12 +101,13 @@ def build_model():
         os.environ["HF_HOME"] = os.path.join(model_root, "hf_home")
         os.environ["MODELSCOPE_CACHE"] = os.path.join(model_root, "ms_cache")
 
-    # 不传 remote_code，使用 funasr 内置的 SenseVoice 实现
-    # trust_remote_code=False 确保加载 funasr 内部版本，不依赖本地 model.py
+    # trust_remote_code=True 但不指定 remote_code 路径，
+    # 让 funasr 自动从模型目录解析 model.py（如存在），
+    # 兼容不同版本的 funasr 及 ModelScope / HuggingFace 下载的模型文件。
     model = auto_model(
         model=model_id,
         hub=hub,
-        trust_remote_code=False,
+        trust_remote_code=True,
         vad_model="fsmn-vad",
         vad_kwargs={"max_single_segment_time": 30000},
         device=device,
@@ -125,7 +126,7 @@ def load_model_worker():
             MODEL_READY = True
             MODEL_ERROR = None
         log("model warmup finished")
-    except Exception as exc:
+    except BaseException as exc:
         with MODEL_LOCK:
             MODEL = None
             POSTPROCESS = None

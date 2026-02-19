@@ -92,11 +92,12 @@ def main() -> int:
     for hub in hubs:
         try:
             print(f"[sensevoice] trying hub={hub}, model={args.model_id}, device={selected_device}")
-            # 不传 remote_code，使用 funasr 内置实现，避免依赖本地 model.py
+            # trust_remote_code=True 不指定 remote_code，
+            # 让 funasr 自动从模型目录解析 model.py（兼容不同版本及下载源）
             model = auto_model(
                 model=args.model_id,
                 hub=hub,
-                trust_remote_code=False,
+                trust_remote_code=True,
                 vad_model="fsmn-vad",
                 vad_kwargs={"max_single_segment_time": 30000},
                 device=selected_device,
