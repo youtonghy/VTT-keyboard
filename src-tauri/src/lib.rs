@@ -147,7 +147,7 @@ fn start_sensevoice_service(
         .lock()
         .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
     manager
-        .start_service(&app, &state.settings_store)
+        .start_service_async(&app, &state.settings_store)
         .map_err(|err| err.to_string())
 }
 
@@ -306,7 +306,8 @@ pub fn run() {
                     eprintln!("应用启动时获取 SenseVoice 锁失败");
                     return;
                 };
-                if let Err(err) = manager.start_service(&startup_app, &state.settings_store) {
+                if let Err(err) = manager.start_service_async(&startup_app, &state.settings_store)
+                {
                     eprintln!("应用启动自动拉起 SenseVoice 失败: {err}");
                 }
             });

@@ -70,11 +70,12 @@ export function useSenseVoice(monitoringEnabled = false) {
     try {
       const next = await invoke<SenseVoiceStatus>("start_sensevoice_service");
       setStatus(next);
+      void refreshStatus().catch(() => {});
       return next;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshStatus]);
 
   const stopService = useCallback(async () => {
     setLoading(true);
@@ -108,7 +109,11 @@ export function useSenseVoice(monitoringEnabled = false) {
       if (payload.stage === "prepare" && payload.percent === 5) {
         setLogLines([]);
       }
-      if (payload.stage === "done" || payload.stage === "error") {
+      if (
+        payload.stage === "verify" ||
+        payload.stage === "done" ||
+        payload.stage === "error"
+      ) {
         void refreshStatus().catch(() => {});
       }
       if (payload.detail && payload.detail.trim().length > 0) {

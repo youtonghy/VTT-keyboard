@@ -101,15 +101,23 @@
     "prepareQueued": "已在后台开始下载与启用，请查看状态进度。",
     "configSaveError": "SenseVoice 配置保存失败：{{error}}",
     "prepareError": "SenseVoice 准备失败：{{error}}",
+    "startQueued": "SenseVoice 已在后台启动，模型预热中。",
     "startSuccess": "SenseVoice 服务已启动",
     "startError": "SenseVoice 启动失败：{{error}}",
     "stopSuccess": "SenseVoice 服务已停止",
     "stopError": "SenseVoice 停止失败：{{error}}",
+    "stageStatus": {
+      "started": "已启动（模型预热中）",
+      "warmup": "预热中",
+      "ready": "就绪",
+      "error": "启动异常"
+    },
     "stateMap": {
       "idle": "未开始",
       "preparing": "准备中",
       "downloading": "下载中",
       "validating": "校验中",
+      "running": "运行中（预热）",
       "ready": "可用",
       "error": "失败"
     }

@@ -101,15 +101,23 @@
     "prepareQueued": "Background prepare started. Please follow progress status.",
     "configSaveError": "SenseVoice config save failed: {{error}}",
     "prepareError": "SenseVoice prepare failed: {{error}}",
+    "startQueued": "SenseVoice startup is running in background; model warmup is in progress.",
     "startSuccess": "SenseVoice service started",
     "startError": "SenseVoice start failed: {{error}}",
     "stopSuccess": "SenseVoice service stopped",
     "stopError": "SenseVoice stop failed: {{error}}",
+    "stageStatus": {
+      "started": "Started (model warmup in progress)",
+      "warmup": "Warming up",
+      "ready": "Ready",
+      "error": "Startup failed"
+    },
     "stateMap": {
       "idle": "Idle",
       "preparing": "Preparing",
       "downloading": "Downloading",
       "validating": "Validating",
+      "running": "Running (Warmup)",
       "ready": "Ready",
       "error": "Failed"
     }

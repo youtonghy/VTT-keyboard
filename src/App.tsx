@@ -491,7 +491,7 @@ function App() {
     try {
       await startSenseVoiceService();
       await refreshSenseVoiceStatus();
-      setMessage({ type: "success", text: t("sensevoice.startSuccess") });
+      setMessage({ type: "success", text: t("sensevoice.startQueued") });
     } catch (error) {
       setMessage({
         type: "error",
@@ -981,6 +981,30 @@ function App() {
                       const running = sensevoiceStatus.running;
                       const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
                       const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
+                      const progressStage = sensevoiceProgress?.stage ?? "";
+                      const stageLabelKey =
+                        progressStage === "verify"
+                          ? "started"
+                          : progressStage === "warmup"
+                            ? "warmup"
+                            : progressStage === "done"
+                              ? "ready"
+                              : progressStage === "error"
+                                ? "error"
+                                : running && state === "running"
+                                  ? "warmup"
+                                  : "";
+                      const prepareBusy =
+                        sensevoiceLoading ||
+                        progressStage === "prepare" ||
+                        progressStage === "install";
+                      const startBusy =
+                        sensevoiceLoading ||
+                        progressStage === "prepare" ||
+                        progressStage === "install" ||
+                        progressStage === "verify" ||
+                        progressStage === "warmup";
+                      const stopBusy = sensevoiceLoading;
 
                       return (
                         <>
@@ -1072,8 +1096,10 @@ function App() {
                       <div className="sensevoice-hint">{t("sensevoice.installingHint")}</div>
                     ) : null}
 
-                    {running ? (
-                      <div className="sensevoice-hint">{t("sensevoice.warmingHint")}</div>
+                    {stageLabelKey ? (
+                      <div className="sensevoice-hint">
+                        {t(`sensevoice.stageStatus.${stageLabelKey}`)}
+                      </div>
                     ) : null}
 
                     {import.meta.env.DEV ? (
@@ -1099,7 +1125,7 @@ function App() {
                         <button
                           type="button"
                           onClick={handleSenseVoicePrepare}
-                          disabled={sensevoiceLoading}
+                          disabled={prepareBusy}
                         >
                           {t("sensevoice.prepare")}
                         </button>
@@ -1108,7 +1134,7 @@ function App() {
                         <button
                           type="button"
                           onClick={handleSenseVoiceStart}
-                          disabled={sensevoiceLoading}
+                          disabled={startBusy}
                         >
                           {t("sensevoice.start")}
                         </button>
@@ -1117,7 +1143,7 @@ function App() {
                         <button
                           type="button"
                           onClick={handleSenseVoiceStop}
-                          disabled={sensevoiceLoading}
+                          disabled={stopBusy}
                         >
                           {t("sensevoice.stop")}
                         </button>

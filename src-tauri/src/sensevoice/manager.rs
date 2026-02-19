@@ -1,6 +1,7 @@
 use super::SenseVoiceError;
 use crate::sensevoice::worker::{WorkerEvent, WorkerJob};
 use crate::settings::SettingsStore;
+use crate::AppState;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::VecDeque;
@@ -26,10 +27,14 @@ const SERVICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
 const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
+const HEALTH_REQUEST_TIMEOUT_SECS: u64 = 2;
+const HEALTH_MONITOR_WARN_SECS: u64 = 120;
+const HEALTH_MONITOR_INTERVAL_MILLIS: u64 = 1000;
 const DOCKER_BUILD_TIMEOUT_SECS: u64 = 40 * 60;
 const IMAGE_STAMP_FILE: &str = "image.stamp";
 const WORKER_ARG: &str = "--sensevoice-worker";
 const WORKER_JOB_FILE_ARG: &str = "--job-file";
+const START_CANCELLED_MARKER: &str = "__sensevoice_start_cancelled__";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,15 +68,12 @@ struct SenseVoiceRuntimeLog {
     ts: i64,
 }
 
-enum HealthResult {
-    Healthy,
-    StartupFallback,
-}
-
 pub struct SenseVoiceManager {
     container_name: Option<String>,
     log_child: Option<Child>,
     prepare_child: Option<Child>,
+    start_in_progress: bool,
+    start_cancel_flag: Arc<AtomicBool>,
 }
 
 impl SenseVoiceManager {
@@ -80,6 +82,8 @@ impl SenseVoiceManager {
             container_name: None,
             log_child: None,
             prepare_child: None,
+            start_in_progress: false,
+            start_cancel_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -88,10 +92,11 @@ impl SenseVoiceManager {
         let sensevoice = store
             .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        let running = self.is_running() || self.start_in_progress;
         Ok(SenseVoiceStatus {
             installed: sensevoice.installed,
             enabled: sensevoice.enabled,
-            running: self.is_running(),
+            running,
             service_url: sensevoice.service_url,
             model_id: sensevoice.model_id,
             device: sensevoice.device,
@@ -131,7 +136,7 @@ impl SenseVoiceManager {
         self.status(store)
     }
 
-    pub fn start_service(
+    pub fn start_service_async(
         &mut self,
         app: &AppHandle,
         store: &SettingsStore,
@@ -143,6 +148,11 @@ impl SenseVoiceManager {
             ));
         }
         if self.is_running() {
+            self.start_in_progress = false;
+            self.start_cancel_flag.store(false, Ordering::Relaxed);
+            return self.status(store);
+        }
+        if self.start_in_progress {
             return self.status(store);
         }
 
@@ -155,61 +165,17 @@ impl SenseVoiceManager {
             ));
         }
 
-        let paths = ensure_paths(app)?;
-        write_runtime_files(&paths)?;
-        ensure_docker_available()?;
-        ensure_runtime_image(app, &paths.runtime_dir)?;
+        self.start_in_progress = true;
+        self.start_cancel_flag.store(false, Ordering::Relaxed);
+        self.update_state(store, "running", "", None, None)?;
 
-        let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
-        let publish_host = normalize_publish_host(&host)?;
-        let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
-        let log_path = paths.runtime_dir.join("server.log");
+        let app_handle = app.clone();
+        let store_clone = store.clone();
+        let cancel_flag = Arc::clone(&self.start_cancel_flag);
+        thread::spawn(move || {
+            run_startup_task(app_handle, store_clone, cancel_flag);
+        });
 
-        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
-        run_service_container(
-            &publish_host,
-            port,
-            &paths.models_dir,
-            &sensevoice.model_id,
-            &sensevoice.device,
-            &hub,
-        )?;
-
-        let runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
-        let startup_completed = Arc::new(AtomicBool::new(false));
-        self.start_log_stream(
-            app.clone(),
-            &log_path,
-            Arc::clone(&runtime_tail),
-            Arc::clone(&startup_completed),
-        )?;
-
-        let wait_result = wait_health(
-            &sensevoice.service_url,
-            Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
-            &log_path,
-            &runtime_tail,
-            &startup_completed,
-        );
-
-        if let Err(err) = wait_result {
-            self.stop_log_stream();
-            let _ = stop_container(SERVICE_CONTAINER_NAME);
-            let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
-            return Err(err);
-        }
-
-        if matches!(wait_result, Ok(HealthResult::StartupFallback)) {
-            self.emit_progress_detail(
-                app,
-                "verify",
-                "Starting SenseVoice service",
-                Some(85),
-                Some("Health check not ready, fallback to runtime startup log"),
-            );
-        }
-
-        self.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
         self.status(store)
     }
 
@@ -219,10 +185,13 @@ impl SenseVoiceManager {
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
         self.stop_prepare_task();
+        self.start_cancel_flag.store(true, Ordering::Relaxed);
+        self.start_in_progress = false;
         self.stop_log_stream();
         let _ = stop_container(SERVICE_CONTAINER_NAME);
         let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
         self.container_name = None;
+        let _ = self.update_state(store, "idle", "", None, None);
         self.status(store)
     }
 
@@ -472,6 +441,339 @@ impl Drop for SenseVoiceManager {
         let _ = stop_container(SERVICE_CONTAINER_NAME);
         let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
     }
+}
+
+fn run_startup_task(app: AppHandle, store: SettingsStore, cancel_flag: Arc<AtomicBool>) {
+    let mut runtime_tail: Option<Arc<Mutex<VecDeque<String>>>> = None;
+    let mut log_path: Option<PathBuf> = None;
+
+    let result = (|| -> Result<(String, PathBuf, Arc<Mutex<VecDeque<String>>>), SenseVoiceError> {
+        check_start_cancelled(&cancel_flag)?;
+        let sensevoice = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        if !sensevoice.installed {
+            return Err(SenseVoiceError::Config(
+                "SenseVoice 尚未安装，请先完成下载".to_string(),
+            ));
+        }
+
+        let paths = ensure_paths(&app)?;
+        write_runtime_files(&paths)?;
+        check_start_cancelled(&cancel_flag)?;
+        ensure_docker_available()?;
+        check_start_cancelled(&cancel_flag)?;
+        ensure_runtime_image(&app, &paths.runtime_dir)?;
+        check_start_cancelled(&cancel_flag)?;
+
+        let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
+        let publish_host = normalize_publish_host(&host)?;
+        let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
+        let current_log_path = paths.runtime_dir.join("server.log");
+        log_path = Some(current_log_path.clone());
+
+        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+        run_service_container(
+            &publish_host,
+            port,
+            &paths.models_dir,
+            &sensevoice.model_id,
+            &sensevoice.device,
+            &hub,
+        )?;
+        check_start_cancelled(&cancel_flag)?;
+
+        let current_runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
+        runtime_tail = Some(Arc::clone(&current_runtime_tail));
+        let startup_completed = Arc::new(AtomicBool::new(false));
+        {
+            let state = app.state::<AppState>();
+            let mut manager = state
+                .sensevoice_manager
+                .lock()
+                .map_err(|_| SenseVoiceError::Process("SenseVoice 状态锁获取失败".to_string()))?;
+            manager.start_log_stream(
+                app.clone(),
+                &current_log_path,
+                Arc::clone(&current_runtime_tail),
+                Arc::clone(&startup_completed),
+            )?;
+            manager.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
+        }
+
+        wait_service_reachable(
+            &sensevoice.service_url,
+            Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
+            &current_log_path,
+            &current_runtime_tail,
+            &cancel_flag,
+        )?;
+        update_state_in_store(&store, "running", "", None, None)?;
+        emit_progress_payload(
+            &app,
+            "verify",
+            "SenseVoice service started, model warming up",
+            Some(85),
+            Some("Service is reachable; model warmup is still running".to_string()),
+        );
+
+        Ok((sensevoice.service_url, current_log_path, current_runtime_tail))
+    })();
+
+    match result {
+        Ok((service_url, monitor_log_path, monitor_runtime_tail)) => {
+            finish_start_task(&app, &cancel_flag);
+            spawn_health_monitor(
+                app,
+                store,
+                service_url,
+                monitor_log_path,
+                monitor_runtime_tail,
+                cancel_flag,
+            );
+        }
+        Err(err) => {
+            let cancelled = is_start_cancelled_error(&err) || cancel_flag.load(Ordering::Relaxed);
+            handle_startup_failure(
+                &app,
+                &store,
+                err,
+                cancelled,
+                runtime_tail.as_ref(),
+                log_path.as_deref(),
+            );
+            finish_start_task(&app, &cancel_flag);
+        }
+    }
+}
+
+fn spawn_health_monitor(
+    app: AppHandle,
+    store: SettingsStore,
+    service_url: String,
+    log_path: PathBuf,
+    runtime_tail: Arc<Mutex<VecDeque<String>>>,
+    cancel_flag: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        let client = health_client();
+        let url = format!("{}/health", service_url.trim_end_matches('/'));
+        let started = Instant::now();
+        let mut warned = false;
+        let mut last_warmup_emit = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .unwrap_or_else(Instant::now);
+
+        loop {
+            if cancel_flag.load(Ordering::Relaxed) {
+                return;
+            }
+
+            match docker_container_running(SERVICE_CONTAINER_NAME) {
+                Ok(true) => {}
+                Ok(false) => {
+                    report_monitor_failure(
+                        &app,
+                        &store,
+                        "SenseVoice 服务容器已退出".to_string(),
+                        &runtime_tail,
+                        &log_path,
+                    );
+                    return;
+                }
+                Err(err) => {
+                    report_monitor_failure(
+                        &app,
+                        &store,
+                        format!("SenseVoice 服务状态检查失败: {err}"),
+                        &runtime_tail,
+                        &log_path,
+                    );
+                    return;
+                }
+            }
+
+            if let Ok(response) = client.get(&url).send() {
+                let status = response.status();
+                let body = response.text().unwrap_or_default();
+                if status.is_success() {
+                    let ready = serde_json::from_str::<Value>(&body)
+                        .ok()
+                        .and_then(|json| json.get("ready").and_then(|v| v.as_bool()))
+                        .unwrap_or(false);
+                    if ready {
+                        let _ = update_state_in_store(&store, "ready", "", None, None);
+                        emit_progress_payload(
+                            &app,
+                            "done",
+                            "SenseVoice service ready",
+                            Some(100),
+                            None,
+                        );
+                        return;
+                    }
+                    if last_warmup_emit.elapsed() >= Duration::from_secs(3) {
+                        emit_progress_payload(
+                            &app,
+                            "warmup",
+                            "SenseVoice model warming up",
+                            Some(92),
+                            None,
+                        );
+                        last_warmup_emit = Instant::now();
+                    }
+                }
+            }
+
+            if !warned && started.elapsed() >= Duration::from_secs(HEALTH_MONITOR_WARN_SECS) {
+                emit_progress_payload(
+                    &app,
+                    "warmup",
+                    "SenseVoice model warmup is taking longer than expected",
+                    Some(92),
+                    Some("Service is available, model is still warming up".to_string()),
+                );
+                warned = true;
+            }
+
+            thread::sleep(Duration::from_millis(HEALTH_MONITOR_INTERVAL_MILLIS));
+        }
+    });
+}
+
+fn wait_service_reachable(
+    service_url: &str,
+    timeout: Duration,
+    log_path: &Path,
+    runtime_tail: &Arc<Mutex<VecDeque<String>>>,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<(), SenseVoiceError> {
+    let url = format!("{}/health", service_url.trim_end_matches('/'));
+    let client = health_client();
+    let started = Instant::now();
+
+    while started.elapsed() < timeout {
+        check_start_cancelled(cancel_flag)?;
+        match docker_container_running(SERVICE_CONTAINER_NAME) {
+            Ok(true) => {}
+            Ok(false) => {
+                let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
+                return Err(SenseVoiceError::Request(format!(
+                    "SenseVoice 服务容器已退出。最近日志: {tail}"
+                )));
+            }
+            Err(err) => {
+                return Err(SenseVoiceError::Request(format!(
+                    "SenseVoice 服务状态检查失败: {err}"
+                )));
+            }
+        }
+
+        if let Ok(response) = client.get(&url).send() {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            let body_is_json = serde_json::from_str::<Value>(&body).is_ok();
+            if status.is_success() || body_is_json {
+                return Ok(());
+            }
+        }
+
+        thread::sleep(Duration::from_millis(500));
+    }
+
+    let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
+    Err(SenseVoiceError::Request(format!(
+        "SenseVoice 服务启动超时（{} 秒）。最近日志: {}",
+        timeout.as_secs(),
+        tail
+    )))
+}
+
+fn report_monitor_failure(
+    app: &AppHandle,
+    store: &SettingsStore,
+    message: String,
+    runtime_tail: &Arc<Mutex<VecDeque<String>>>,
+    log_path: &Path,
+) {
+    let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
+    let full_message = format!("{message}。最近日志: {tail}");
+    let _ = update_state_in_store(store, "error", &full_message, None, None);
+    emit_progress_payload(
+        app,
+        "error",
+        "SenseVoice health monitor failed",
+        None,
+        Some(full_message),
+    );
+    cleanup_runtime_state(app);
+    let _ = stop_container(SERVICE_CONTAINER_NAME);
+    let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+}
+
+fn handle_startup_failure(
+    app: &AppHandle,
+    store: &SettingsStore,
+    err: SenseVoiceError,
+    cancelled: bool,
+    runtime_tail: Option<&Arc<Mutex<VecDeque<String>>>>,
+    log_path: Option<&Path>,
+) {
+    if cancelled {
+        let _ = update_state_in_store(store, "idle", "", None, None);
+    } else {
+        let mut message = err.to_string();
+        if let (Some(tail_store), Some(path)) = (runtime_tail, log_path) {
+            let tail = collect_runtime_tail_with_retry(tail_store, 30, path);
+            if tail != "（无日志）" {
+                message = format!("{message}。最近日志: {tail}");
+            }
+        }
+        let _ = update_state_in_store(store, "error", &message, None, None);
+        emit_progress_payload(
+            app,
+            "error",
+            "SenseVoice startup failed",
+            None,
+            Some(message),
+        );
+    }
+
+    cleanup_runtime_state(app);
+    let _ = stop_container(SERVICE_CONTAINER_NAME);
+    let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+}
+
+fn cleanup_runtime_state(app: &AppHandle) {
+    if let Ok(mut manager) = app.state::<AppState>().sensevoice_manager.lock() {
+        manager.stop_log_stream();
+        manager.container_name = None;
+    }
+}
+
+fn finish_start_task(app: &AppHandle, cancel_flag: &Arc<AtomicBool>) {
+    cancel_flag.store(false, Ordering::Relaxed);
+    if let Ok(mut manager) = app.state::<AppState>().sensevoice_manager.lock() {
+        manager.start_in_progress = false;
+    }
+}
+
+fn check_start_cancelled(cancel_flag: &Arc<AtomicBool>) -> Result<(), SenseVoiceError> {
+    if cancel_flag.load(Ordering::Relaxed) {
+        return Err(SenseVoiceError::Process(START_CANCELLED_MARKER.to_string()));
+    }
+    Ok(())
+}
+
+fn is_start_cancelled_error(err: &SenseVoiceError) -> bool {
+    matches!(err, SenseVoiceError::Process(message) if message == START_CANCELLED_MARKER)
+}
+
+fn health_client() -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(HEALTH_REQUEST_TIMEOUT_SECS))
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new())
 }
 
 fn handle_worker_event(app: &AppHandle, store: &SettingsStore, event: WorkerEvent) {
@@ -805,59 +1107,6 @@ fn bind_mount(source: &Path, target: &str) -> String {
         "type=bind,source={},target={target}",
         source.to_string_lossy()
     )
-}
-
-fn wait_health(
-    service_url: &str,
-    timeout: Duration,
-    log_path: &Path,
-    runtime_tail: &Arc<Mutex<VecDeque<String>>>,
-    startup_completed: &Arc<AtomicBool>,
-) -> Result<HealthResult, SenseVoiceError> {
-    let url = format!("{}/health", service_url.trim_end_matches('/'));
-    let client = reqwest::blocking::Client::new();
-    let started = Instant::now();
-    while started.elapsed() < timeout {
-        match docker_container_running(SERVICE_CONTAINER_NAME) {
-            Ok(true) => {}
-            Ok(false) => {
-                let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
-                return Err(SenseVoiceError::Request(format!(
-                    "SenseVoice 服务容器已退出。最近日志: {tail}"
-                )));
-            }
-            Err(err) => {
-                return Err(SenseVoiceError::Request(format!(
-                    "SenseVoice 服务状态检查失败: {err}"
-                )));
-            }
-        }
-
-        let response = client.get(&url).send();
-        if let Ok(value) = response {
-            if value.status().is_success() {
-                let is_ready = value
-                    .json::<serde_json::Value>()
-                    .ok()
-                    .and_then(|body| body.get("ready").and_then(|v| v.as_bool()))
-                    .unwrap_or(false);
-                if is_ready {
-                    return Ok(HealthResult::Healthy);
-                }
-            }
-        }
-        thread::sleep(Duration::from_millis(500));
-    }
-
-    if startup_completed.load(Ordering::Relaxed) {
-        return Ok(HealthResult::StartupFallback);
-    }
-    let tail = collect_runtime_tail_with_retry(runtime_tail, 30, log_path);
-    Err(SenseVoiceError::Request(format!(
-        "SenseVoice 服务启动超时（{} 秒）。最近日志: {}",
-        timeout.as_secs(),
-        tail
-    )))
 }
 
 fn attach_runtime_logs(
