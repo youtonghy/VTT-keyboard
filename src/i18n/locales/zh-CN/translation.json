@@ -157,12 +157,12 @@
     "moveUp": "上移",
     "moveDown": "下移",
     "newTitle": "自定义触发词",
-    "defaultKeyword": "翻译为{value}",
+    "defaultKeyword": "翻译",
     "defaultTemplate": "请将以下内容翻译为{value}。",
     "defaultVariables": "英文",
     "validationVariables": "触发词变量范围不能为空：{{title}}",
     "validationKeyword": "触发词关键词不能为空：{{title}}",
-    "validationKeywordPlaceholder": "触发词关键词必须包含且只包含一个 {value}：{{title}}"
+    "validationKeywordPlaceholder": "触发词关键词最多包含一个 {value}：{{title}}"
   },
   "actions": {
     "save": "保存设置",

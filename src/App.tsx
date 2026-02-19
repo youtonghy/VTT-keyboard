@@ -323,7 +323,7 @@ function App() {
     }
     const invalidKeywordPlaceholder = next.triggers.find((card) => {
       const count = card.keyword.split("{value}").length - 1;
-      return count !== 1;
+      return count > 1;
     });
     if (invalidKeywordPlaceholder) {
       return t("triggers.validationKeywordPlaceholder", {
