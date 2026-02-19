@@ -12,7 +12,7 @@ mod volcengine;
 
 use recorder::RecorderService;
 use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
-use settings::{SenseVoiceSettings, Settings, SettingsStore};
+use settings::{SenseVoiceSettings, Settings, SettingsStore, TranscriptionProvider};
 use std::fs;
 use std::sync::Mutex;
 use tauri::{Manager, State, WindowEvent, Wry};
@@ -253,6 +253,8 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle();
             let store = SettingsStore::new(app_handle.clone());
+            let startup_store = store.clone();
+            let startup_app = app_handle.clone();
             app.manage(AppState {
                 recorder: RecorderService::new(),
                 transcription_dispatcher: TranscriptionDispatcher::new(store.clone()),
@@ -263,13 +265,51 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
+                let app_for_close = app_handle.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = window_clone.hide();
+                        let app_for_stop = app_for_close.clone();
+                        std::thread::spawn(move || {
+                            let state = app_for_stop.state::<AppState>();
+                            let Ok(mut manager) = state.sensevoice_manager.lock() else {
+                                eprintln!("关闭窗口时获取 SenseVoice 锁失败");
+                                return;
+                            };
+                            if let Err(err) =
+                                manager.stop_service(&app_for_stop, &state.settings_store)
+                            {
+                                eprintln!("关闭窗口时停止 SenseVoice 服务失败: {err}");
+                            }
+                        });
                     }
                 });
             }
+
+            std::thread::spawn(move || {
+                let settings = match startup_store.load() {
+                    Ok(value) => value,
+                    Err(err) => {
+                        eprintln!("应用启动读取设置失败: {err}");
+                        return;
+                    }
+                };
+                if settings.provider != TranscriptionProvider::Sensevoice {
+                    return;
+                }
+                if !settings.sensevoice.installed || !settings.sensevoice.enabled {
+                    return;
+                }
+                let state = startup_app.state::<AppState>();
+                let Ok(mut manager) = state.sensevoice_manager.lock() else {
+                    eprintln!("应用启动时获取 SenseVoice 锁失败");
+                    return;
+                };
+                if let Err(err) = manager.start_service(&startup_app, &state.settings_store) {
+                    eprintln!("应用启动自动拉起 SenseVoice 失败: {err}");
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
