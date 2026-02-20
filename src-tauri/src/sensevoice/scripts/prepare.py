@@ -1,7 +1,13 @@
 import argparse
 import json
 import os
+import sys
 import traceback
+
+
+HF_DEFAULT_MODEL_ID = "FunAudioLLM/SenseVoiceSmall"
+MS_DEFAULT_MODEL_ID = "iic/SenseVoiceSmall"
+
 
 def get_auto_model():
     from funasr import AutoModel as ImportedAutoModel
@@ -20,6 +26,16 @@ def resolve_device(device: str) -> str:
     except Exception:
         pass
     return "cpu"
+
+
+def resolve_model_id_for_hub(model_id: str, hub: str) -> str:
+    normalized_hub = hub.strip().lower()
+    if model_id in {HF_DEFAULT_MODEL_ID, MS_DEFAULT_MODEL_ID}:
+        if normalized_hub == "hf":
+            return HF_DEFAULT_MODEL_ID
+        if normalized_hub == "ms":
+            return MS_DEFAULT_MODEL_ID
+    return model_id
 
 
 def main() -> int:
@@ -42,12 +58,13 @@ def main() -> int:
     errors = []
 
     for hub in hubs:
+        selected_model_id = resolve_model_id_for_hub(args.model_id, hub)
         try:
-            print(f"[sensevoice] trying hub={hub}, model={args.model_id}, device={selected_device}")
+            print(f"[sensevoice] trying hub={hub}, model={selected_model_id}, device={selected_device}")
             # trust_remote_code=True 不指定 remote_code，
             # 让 funasr 自动从模型目录解析 model.py（兼容不同版本及下载源）
             model = auto_model(
-                model=args.model_id,
+                model=selected_model_id,
                 hub=hub,
                 trust_remote_code=True,
                 vad_model="fsmn-vad",
@@ -59,7 +76,7 @@ def main() -> int:
                 json.dump(
                     {
                         "hub": hub,
-                        "model_id": args.model_id,
+                        "model_id": selected_model_id,
                         "device": selected_device,
                     },
                     fp,

@@ -15,6 +15,8 @@ MODEL_LOADING = False
 MODEL_ERROR = None
 MODEL_LOCK = threading.Lock()
 LOG_LOCK = threading.Lock()
+HF_DEFAULT_MODEL_ID = "FunAudioLLM/SenseVoiceSmall"
+MS_DEFAULT_MODEL_ID = "iic/SenseVoiceSmall"
 
 
 def log(message: str):
@@ -42,12 +44,23 @@ def resolve_device(value: str) -> str:
     return "cpu"
 
 
+def resolve_model_id_for_hub(model_id: str, hub: str) -> str:
+    normalized_hub = hub.strip().lower()
+    if model_id in {HF_DEFAULT_MODEL_ID, MS_DEFAULT_MODEL_ID}:
+        if normalized_hub == "hf":
+            return HF_DEFAULT_MODEL_ID
+        if normalized_hub == "ms":
+            return MS_DEFAULT_MODEL_ID
+    return model_id
+
+
 def build_model():
     auto_model, rich_transcription_postprocess = get_funasr_runtime()
-    model_id = os.getenv("SENSEVOICE_MODEL_ID", "iic/SenseVoiceSmall")
+    model_id = os.getenv("SENSEVOICE_MODEL_ID", MS_DEFAULT_MODEL_ID)
     model_dir = os.getenv("SENSEVOICE_MODEL_DIR", "")
     device = resolve_device(os.getenv("SENSEVOICE_DEVICE", "auto"))
     hub = os.getenv("SENSEVOICE_HUB", "hf")
+    selected_model_id = resolve_model_id_for_hub(model_id, hub)
 
     if model_dir:
         model_root = os.path.abspath(model_dir)
@@ -55,11 +68,14 @@ def build_model():
         os.environ["HF_HOME"] = os.path.join(model_root, "hf_home")
         os.environ["MODELSCOPE_CACHE"] = os.path.join(model_root, "ms_cache")
 
+    if selected_model_id != model_id:
+        log(f"normalized model id from {model_id} to {selected_model_id} for hub={hub}")
+
     # trust_remote_code=True 但不指定 remote_code 路径，
     # 让 funasr 自动从模型目录解析 model.py（如存在），
     # 兼容不同版本的 funasr 及 ModelScope / HuggingFace 下载的模型文件。
     model = auto_model(
-        model=model_id,
+        model=selected_model_id,
         hub=hub,
         trust_remote_code=True,
         vad_model="fsmn-vad",
