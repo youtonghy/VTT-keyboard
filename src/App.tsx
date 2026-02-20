@@ -13,7 +13,6 @@ import { useAutostart } from "./hooks/useAutostart";
 import { useSenseVoice } from "./hooks/useSenseVoice";
 import { useSettings } from "./hooks/useSettings";
 import type { Settings } from "./types/settings";
-import "./App.css";
 
 const listToString = (values: string[]) => values.join(", ");
 const parseList = (value: string) =>

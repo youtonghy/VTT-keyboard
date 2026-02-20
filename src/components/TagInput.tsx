@@ -43,6 +43,7 @@ export function TagInput({ values, onCommit, placeholder, disabled }: TagInputPr
 
   return (
     <input
+      className="tag-input"
       type="text"
       value={inputValue}
       placeholder={placeholder}

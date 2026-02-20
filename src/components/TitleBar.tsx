@@ -1,6 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useState, useEffect, useMemo } from "react";
-import "../App.css"; // Ensure styles are available
 
 export function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);

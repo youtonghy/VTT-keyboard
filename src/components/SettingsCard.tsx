@@ -9,8 +9,8 @@ interface SettingsCardProps {
 export function SettingsCard({ title, description, children }: SettingsCardProps) {
   return (
     <section className="settings-card">
-      <header>
-        <h3>{title}</h3>
+      <header className="settings-card-header">
+        <h3 className="settings-card-title">{title}</h3>
         {description ? <p>{description}</p> : null}
       </header>
       <div className="settings-card-body">{children}</div>

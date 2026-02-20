@@ -1,0 +1,377 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  --color-mist-50: oklch(0.985 0.008 214);
+  --color-mist-100: oklch(0.966 0.014 214);
+  --color-mist-200: oklch(0.93 0.024 214);
+  --color-mist-300: oklch(0.87 0.04 214);
+  --color-mist-400: oklch(0.78 0.055 214);
+  --color-mist-500: oklch(0.68 0.07 214);
+  --color-mist-600: oklch(0.58 0.08 214);
+  --color-mist-700: oklch(0.48 0.075 214);
+  --color-mist-800: oklch(0.4 0.06 214);
+  --color-mist-900: oklch(0.32 0.045 214);
+  --color-mist-950: oklch(0.24 0.03 214);
+}
+
+:root {
+  --color-bg: var(--color-mist-100);
+  --color-surface: #f6f8fb;
+  --color-surface-elevated: #ffffff;
+  --color-border: color-mix(in oklab, var(--color-mist-500) 28%, #ffffff);
+  --color-accent: var(--color-mist-700);
+  --color-accent-strong: var(--color-mist-800);
+  --color-text-primary: #132033;
+  --color-text-secondary: #516078;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #101725;
+  --color-surface: #141d2d;
+  --color-surface-elevated: #1a2436;
+  --color-border: color-mix(in oklab, var(--color-mist-500) 30%, #0b111d);
+  --color-accent: var(--color-mist-300);
+  --color-accent-strong: var(--color-mist-200);
+  --color-text-primary: #e9f0fa;
+  --color-text-secondary: #9aa9bf;
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  *[data-tauri-drag-region] {
+    app-region: drag;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply m-0 antialiased;
+    color: var(--color-text-primary);
+    background:
+      radial-gradient(circle at 15% -10%, color-mix(in oklab, var(--color-mist-200) 45%, transparent), transparent 52%),
+      radial-gradient(circle at 92% 0%, color-mix(in oklab, var(--color-mist-300) 36%, transparent), transparent 47%),
+      var(--color-bg);
+  }
+
+  a {
+    color: var(--color-accent);
+  }
+}
+
+@layer components {
+  .titlebar {
+    @apply fixed inset-x-0 top-0 z-50 flex h-10 items-center border-b px-3 backdrop-blur-sm;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 86%, transparent);
+  }
+
+  .titlebar-drag-region {
+    @apply flex h-full min-w-0 flex-1 items-center;
+  }
+
+  .titlebar-title {
+    @apply truncate text-xs font-medium tracking-wide;
+    color: var(--color-text-secondary);
+  }
+
+  .titlebar-controls {
+    @apply flex items-center gap-1;
+  }
+
+  .titlebar-button {
+    @apply flex h-7 w-7 items-center justify-center rounded-md border-0 p-0;
+    color: var(--color-text-secondary);
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .titlebar-button:hover {
+    background-color: color-mix(in oklab, var(--color-accent) 12%, transparent);
+    color: var(--color-text-primary);
+  }
+
+  .titlebar-button.close:hover {
+    background-color: #cc334f;
+    color: #fff;
+  }
+
+  .container {
+    @apply mx-auto flex min-h-screen max-w-[1400px] flex-col gap-5 px-4 pb-6 pt-14 md:px-8;
+  }
+
+  .container.loading {
+    @apply items-center justify-center text-sm;
+    color: var(--color-text-secondary);
+  }
+
+  .settings-layout {
+    @apply grid grid-cols-1 gap-5 md:grid-cols-[240px_minmax(0,1fr)] md:items-start;
+  }
+
+  .drawer-nav {
+    @apply flex gap-2 overflow-x-auto pb-1 md:sticky md:top-14 md:max-h-[calc(100vh-4.5rem)] md:flex-col md:overflow-x-hidden md:overflow-y-auto md:pr-1;
+  }
+
+  .drawer-nav-button {
+    @apply min-w-max rounded-xl border px-4 py-2 text-left text-sm font-medium transition md:w-full;
+    border-color: transparent;
+    color: var(--color-text-secondary);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 88%, transparent);
+  }
+
+  .drawer-nav-button:hover {
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
+  }
+
+  .drawer-nav-button.active {
+    border-color: color-mix(in oklab, var(--color-accent) 44%, var(--color-border));
+    color: var(--color-accent-strong);
+    background:
+      linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--color-accent) 16%, transparent) 0.2rem,
+        color-mix(in oklab, var(--color-accent) 8%, var(--color-surface-elevated)) 0.2rem
+      );
+  }
+
+  .settings-content {
+    @apply flex min-w-0 flex-col gap-5;
+  }
+
+  .settings-card {
+    @apply rounded-2xl border p-5 shadow-sm md:p-6;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 95%, transparent);
+  }
+
+  .settings-card-header {
+    @apply mb-5;
+  }
+
+  .settings-card-title {
+    @apply m-0 text-lg font-semibold tracking-tight;
+    color: var(--color-text-primary);
+  }
+
+  .settings-card-header p {
+    @apply mt-2 text-sm;
+    color: var(--color-text-secondary);
+  }
+
+  .settings-card-body {
+    @apply grid gap-4;
+  }
+
+  .field {
+    @apply flex flex-col gap-2 text-sm;
+  }
+
+  .field > span:first-child {
+    @apply text-sm font-medium;
+    color: var(--color-text-secondary);
+  }
+
+  .field > span + span {
+    @apply text-base font-semibold;
+    color: var(--color-text-primary);
+  }
+
+  .field input:not([type="checkbox"]),
+  .field select,
+  .field textarea,
+  .tag-input {
+    @apply w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition;
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .field textarea {
+    @apply min-h-24;
+  }
+
+  .field input:not([type="checkbox"]):focus,
+  .field select:focus,
+  .field textarea:focus,
+  .tag-input:focus {
+    border-color: color-mix(in oklab, var(--color-accent) 52%, var(--color-border));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 15%, transparent);
+  }
+
+  .field.checkbox {
+    @apply flex-row items-center gap-3;
+  }
+
+  .field.checkbox input {
+    @apply h-4 w-4 shrink-0 rounded border;
+    border-color: var(--color-border);
+    accent-color: var(--color-accent);
+  }
+
+  .field.checkbox span {
+    @apply m-0 text-sm font-medium;
+    color: var(--color-text-primary);
+  }
+
+  .shortcut-actions {
+    @apply flex flex-wrap items-center gap-3 text-sm;
+    color: var(--color-text-secondary);
+  }
+
+  .button-row {
+    @apply flex flex-wrap gap-3;
+  }
+
+  .sensevoice-summary {
+    @apply grid gap-1 text-sm;
+    color: var(--color-text-secondary);
+  }
+
+  .sensevoice-progress {
+    @apply flex items-center justify-between rounded-xl border px-3 py-2 text-sm;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 85%, #fff);
+  }
+
+  .sensevoice-error {
+    @apply rounded-xl border px-3 py-2 text-sm;
+    border-color: #cc334f;
+    color: #cc334f;
+    background-color: color-mix(in oklab, #cc334f 10%, transparent);
+  }
+
+  .sensevoice-hint {
+    @apply text-sm;
+    color: var(--color-text-secondary);
+  }
+
+  .sensevoice-log {
+    @apply rounded-xl border px-3 py-2;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .sensevoice-log-title {
+    @apply mb-2 text-sm font-semibold;
+    color: var(--color-text-primary);
+  }
+
+  .sensevoice-log pre {
+    @apply m-0 max-h-44 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed;
+    color: var(--color-text-secondary);
+  }
+
+  .trigger-list {
+    @apply flex flex-col gap-4;
+  }
+
+  .trigger-card {
+    @apply rounded-xl border p-4;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 92%, #fff);
+  }
+
+  .trigger-card-header {
+    @apply mb-3 flex flex-wrap items-start justify-between gap-3;
+  }
+
+  .trigger-card-header input {
+    @apply min-w-[220px] flex-1 rounded-lg border-b px-2 py-1 text-sm font-semibold outline-none;
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+    background-color: transparent;
+  }
+
+  .trigger-card-header input:focus {
+    border-color: var(--color-accent);
+  }
+
+  .trigger-card-actions {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .trigger-card-actions button {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .trigger-card-body {
+    @apply grid gap-3 rounded-xl border p-3 md:grid-cols-2;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 92%, transparent);
+  }
+
+  .trigger-card-body .field:last-child {
+    @apply md:col-span-2;
+  }
+
+  .settings-actions {
+    @apply flex min-h-8 items-center;
+  }
+
+  .status-message {
+    @apply rounded-full border px-3 py-1 text-xs font-medium;
+  }
+
+  .status-message.success {
+    border-color: #0b8f58;
+    color: #0b8f58;
+    background-color: color-mix(in oklab, #0b8f58 10%, transparent);
+  }
+
+  .status-message.error {
+    border-color: #cc334f;
+    color: #cc334f;
+    background-color: color-mix(in oklab, #cc334f 10%, transparent);
+  }
+
+  main button:not(.drawer-nav-button) {
+    @apply inline-flex items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium transition;
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 96%, transparent);
+  }
+
+  main button:not(.drawer-nav-button):hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
+  }
+
+  main button:not(.drawer-nav-button):disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  main button.secondary {
+    @apply w-full md:w-auto;
+  }
+
+  .language-switcher {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .language-switcher-label {
+    @apply mr-2 text-sm;
+    color: var(--color-text-secondary);
+  }
+
+  .language-switcher-button:disabled {
+    border-color: color-mix(in oklab, var(--color-accent) 50%, var(--color-border));
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-elevated));
+    opacity: 1;
+  }
+}

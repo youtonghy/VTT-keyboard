@@ -6,11 +6,12 @@ export function LanguageSwitcher() {
 
   return (
     <div className="language-switcher">
-      <span>{t("language.label")}</span>
+      <span className="language-switcher-label">{t("language.label")}</span>
       {languageOptions.map((option) => (
         <button
           key={option.code}
           type="button"
+          className="language-switcher-button"
           onClick={() => i18n.changeLanguage(option.code)}
           disabled={i18n.language === option.code}
         >
