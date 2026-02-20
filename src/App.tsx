@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { getName, getVersion } from "@tauri-apps/api/app";
@@ -9,6 +9,7 @@ import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { SettingsCard } from "./components/SettingsCard";
 import { TagInput } from "./components/TagInput";
 import { TitleBar } from "./components/TitleBar";
+import { useAutostart } from "./hooks/useAutostart";
 import { useSenseVoice } from "./hooks/useSenseVoice";
 import { useSettings } from "./hooks/useSettings";
 import type { Settings } from "./types/settings";
@@ -84,6 +85,8 @@ const createId = () =>
 function App() {
   const { t, i18n } = useTranslation();
   const { settings, loading, saveSettings } = useSettings();
+  const { syncAutostart } = useAutostart();
+  const autostartSyncedOnStartup = useRef(false);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [activeSection, setActiveSection] = useState("general");
   const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
@@ -114,6 +117,19 @@ function App() {
       setDraft(settings);
     }
   }, [settings]);
+
+  useEffect(() => {
+    if (!settings || autostartSyncedOnStartup.current) {
+      return;
+    }
+    autostartSyncedOnStartup.current = true;
+    void syncAutostart(settings.startup.launchOnBoot).catch((error) => {
+      setMessage({
+        type: "error",
+        text: t("general.launchOnBootSyncError", { error: toErrorMessage(error) }),
+      });
+    });
+  }, [settings, syncAutostart, t]);
 
   useEffect(() => {
     const fetchAppInfo = async () => {
@@ -364,6 +380,15 @@ function App() {
     }
     try {
       await saveSettings(draft);
+      try {
+        await syncAutostart(draft.startup.launchOnBoot);
+      } catch (error) {
+        setMessage({
+          type: "error",
+          text: t("general.launchOnBootSyncError", { error: toErrorMessage(error) }),
+        });
+        return;
+      }
       setMessage({ type: "success", text: t("actions.saveSuccess") });
     } catch (err) {
       setMessage({ type: "error", text: t("actions.saveError") });
@@ -552,6 +577,23 @@ function App() {
                     <span>{t("general.language")}</span>
                     <LanguageSwitcher />
                   </div>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.startup.launchOnBoot}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          startup: {
+                            ...prev.startup,
+                            launchOnBoot: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    <span>{t("general.launchOnBoot")}</span>
+                  </label>
+                  <p>{t("general.launchOnBootHint")}</p>
                 </SettingsCard>
                 <SettingsCard title={t("data.title")} description={t("data.description")}>
                   <div className="button-row">

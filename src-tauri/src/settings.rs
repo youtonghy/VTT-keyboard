@@ -42,6 +42,8 @@ pub struct Settings {
     #[serde(default = "default_triggers")]
     pub triggers: Vec<TriggerCard>,
     pub appearance: AppearanceSettings,
+    #[serde(default)]
+    pub startup: StartupSettings,
 }
 
 impl Default for Settings {
@@ -84,6 +86,7 @@ impl Default for Settings {
             appearance: AppearanceSettings {
                 theme: "system".to_string(),
             },
+            startup: StartupSettings::default(),
         }
     }
 }
@@ -177,6 +180,20 @@ pub struct TriggerCard {
 #[serde(rename_all = "camelCase")]
 pub struct AppearanceSettings {
     pub theme: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupSettings {
+    pub launch_on_boot: bool,
+}
+
+impl Default for StartupSettings {
+    fn default() -> Self {
+        Self {
+            launch_on_boot: false,
+        }
+    }
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]

@@ -20,7 +20,10 @@
     "themeSystem": "跟随系统",
     "themeLight": "日间",
     "themeDark": "夜间",
-    "language": "界面语言"
+    "language": "界面语言",
+    "launchOnBoot": "开机自启",
+    "launchOnBootHint": "系统登录后自动在后台启动，并默认隐藏到托盘。",
+    "launchOnBootSyncError": "开机自启同步失败：{{error}}"
   },
   "data": {
     "title": "配置导入导出",

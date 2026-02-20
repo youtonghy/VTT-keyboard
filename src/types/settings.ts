@@ -9,6 +9,7 @@ export interface Settings {
   sensevoice: SenseVoiceSettings;
   triggers: TriggerCard[];
   appearance: AppearanceSettings;
+  startup: StartupSettings;
 }
 
 export interface ShortcutSettings {
@@ -61,6 +62,10 @@ export interface TriggerCard {
 
 export interface AppearanceSettings {
   theme: string;
+}
+
+export interface StartupSettings {
+  launchOnBoot: boolean;
 }
 
 export interface VolcengineSettings {

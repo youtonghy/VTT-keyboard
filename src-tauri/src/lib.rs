@@ -259,10 +259,19 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            #[cfg(desktop)]
+            if let Err(err) = app.handle().plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                Some(vec!["--autostart"]),
+            )) {
+                dev_eprintln!("初始化开机自启插件失败: {err}");
+            }
+
             let app_handle = app.handle();
             let store = SettingsStore::new(app_handle.clone());
             let startup_store = store.clone();
             let startup_app = app_handle.clone();
+            let is_autostart_launch = std::env::args().any(|arg| arg == "--autostart");
             app.manage(AppState {
                 recorder: RecorderService::new(),
                 transcription_dispatcher: TranscriptionDispatcher::new(store.clone()),
@@ -272,6 +281,9 @@ pub fn run() {
             });
 
             if let Some(window) = app.get_webview_window("main") {
+                if is_autostart_launch {
+                    let _ = window.hide();
+                }
                 let window_clone = window.clone();
                 let app_for_close = app_handle.clone();
                 window.on_window_event(move |event| {

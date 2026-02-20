@@ -20,7 +20,10 @@
     "themeSystem": "System",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "language": "Language"
+    "language": "Language",
+    "launchOnBoot": "Launch on Boot",
+    "launchOnBootHint": "Auto start in background after login and keep the window hidden to tray.",
+    "launchOnBootSyncError": "Failed to sync launch on boot: {{error}}"
   },
   "data": {
     "title": "Import & Export",
