@@ -56,6 +56,11 @@
     min-height: 100%;
   }
 
+  html {
+    overflow-y: auto;
+    scrollbar-gutter: stable both-edges;
+  }
+
   body {
     @apply m-0 antialiased;
     color: var(--color-text-primary);
