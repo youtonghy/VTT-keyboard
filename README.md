@@ -1,5 +1,7 @@
 # VTT Keyboard
 
+Desktop voice-to-text keyboard tool built with Tauri (Rust backend + React frontend).
+
 ## Requirements
 
 - Rust toolchain
@@ -22,3 +24,40 @@ SenseVoice local mode now runs with Docker only. Python runtime on host is no lo
 - Image tag: `vtt-sensevoice:local`
 - Model cache directory: app local data `sensevoice/models`
 - Runtime log path: `sensevoice/runtime/server.log`
+
+## Code Structure
+
+```text
+.
+├─ src/                          # React UI layer
+│  ├─ components/                # Reusable UI components
+│  ├─ hooks/                     # UI state and side-effect hooks
+│  ├─ i18n/                      # i18n bootstrap and locale resources
+│  │  └─ locales/
+│  ├─ types/                     # Shared TypeScript types
+│  ├─ App.tsx                    # Main app entry component
+│  └─ main.tsx                   # Frontend bootstrap
+├─ src-tauri/                    # Tauri/Rust backend
+│  ├─ src/
+│  │  ├─ main.rs                 # Tauri app startup
+│  │  ├─ lib.rs                  # Command registration and app wiring
+│  │  ├─ settings.rs             # Persistent settings management
+│  │  ├─ recorder.rs             # Audio capture
+│  │  ├─ processing.rs           # Audio processing pipeline
+│  │  ├─ transcription_dispatcher.rs # Transcription routing
+│  │  ├─ openai.rs               # OpenAI provider integration
+│  │  ├─ volcengine.rs           # Volcengine provider integration
+│  │  └─ sensevoice/             # SenseVoice local mode manager/client
+│  ├─ native/                    # Platform-specific native overlay code
+│  ├─ capabilities/              # Tauri capability definitions
+│  └─ tauri.conf.json            # Tauri app config
+├─ public/                       # Static assets
+└─ package.json                  # Frontend scripts/dependencies
+```
+
+## Development
+
+```bash
+pnpm install
+pnpm tauri dev
+```
