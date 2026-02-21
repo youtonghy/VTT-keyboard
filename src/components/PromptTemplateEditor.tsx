@@ -101,6 +101,30 @@ export function PromptTemplateEditor({ value, onChange }: PromptTemplateEditorPr
     setTimeout(handleInput, 0);
   };
 
+  const insertVariable = (varName: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const placeholder = document.createTextNode(`{${varName}}`);
+      range.insertNode(placeholder);
+      range.setStartAfter(placeholder);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      // Fallback: append to end
+      const newText = value + `{${varName}}`;
+      onChange(newText);
+      return;
+    }
+    // Trigger input handling to sync state
+    setTimeout(handleInput, 0);
+  };
+
   return (
     <div className="prompt-template-container">
       <div
@@ -119,6 +143,19 @@ export function PromptTemplateEditor({ value, onChange }: PromptTemplateEditorPr
         }}
         suppressContentEditableWarning
       />
+      <div className="prompt-variables-bar">
+        <span className="prompt-variables-hint">插入占位符:</span>
+        <div className="prompt-variables-list">
+          <button
+            type="button"
+            className="prompt-variable-btn"
+            onClick={() => insertVariable("value")}
+            title="点击插入 {value}"
+          >
+            {"{value}"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
