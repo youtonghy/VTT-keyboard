@@ -1,3 +1,8 @@
+import { Info } from "lucide-react";
+import { Tooltip } from "./components/Tooltip";
+import { PromptTemplateEditor } from "./components/PromptTemplateEditor";
+import { NumberWheelInput } from "./components/NumberWheelInput";
+import { SegmentedControl } from "./components/SegmentedControl";
 import { CustomSelect } from "./components/CustomSelect";
 import { Toaster, toast } from "sonner";
 
@@ -512,7 +517,7 @@ function App() {
                 >
                   <label className="field">
                     <span>{t("general.theme")}</span>
-                    <CustomSelect
+                    <SegmentedControl
   value={draft.appearance.theme}
   onChange={(value) =>
     updateDraft((prev) => ({
@@ -546,8 +551,10 @@ function App() {
                       }
                     />
                     <span>{t("general.launchOnBoot")}</span>
-                  </label>
-                  <p>{t("general.launchOnBootHint")}</p>
+  <Tooltip content={t("general.launchOnBootHint")}>
+    <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={14} /></span>
+  </Tooltip>
+</label>
                 </SettingsCard>
                 <SettingsCard title={t("data.title")} description={t("data.description")}>
                   <div className="button-row">
@@ -580,15 +587,17 @@ function App() {
                   />
                 </label>
                 <div className="shortcut-actions">
-                  <button
-                    type="button"
-                    onClick={() => setIsCapturing(true)}
-                    disabled={isCapturing}
-                  >
-                    {isCapturing ? t("shortcut.capturing") : t("shortcut.capture")}
-                  </button>
-                  <span>{t("shortcut.captureHint")}</span>
-                </div>
+  <button
+    type="button"
+    onClick={() => setIsCapturing(true)}
+    disabled={isCapturing}
+  >
+    {isCapturing ? t("shortcut.capturing") : t("shortcut.capture")}
+  </button>
+  <Tooltip content={t("shortcut.captureHint")}>
+    <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={16} /></span>
+  </Tooltip>
+</div>
               </SettingsCard>
             ) : null}
 
@@ -599,20 +608,19 @@ function App() {
               >
                 <label className="field">
                   <span>{t("recording.segmentSeconds")}</span>
-                  <input
-                    type="number"
-                    min={10}
-                    value={draft.recording.segmentSeconds}
-                    onChange={(event) =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        recording: {
-                          ...prev.recording,
-                          segmentSeconds: Number(event.target.value),
-                        },
-                      }))
-                    }
-                  />
+                  <NumberWheelInput
+  min={10}
+  value={draft.recording.segmentSeconds}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      recording: {
+        ...prev.recording,
+        segmentSeconds: value,
+      },
+    }))
+  }
+/>
                 </label>
               </SettingsCard>
             ) : null}
@@ -743,23 +751,22 @@ function App() {
                     </label>
                     <label className="field">
                       <span>{t("speech.temperature")}</span>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={draft.openai.speechToText.temperature}
-                        onChange={(event) =>
-                          updateDraft((prev) => ({
-                            ...prev,
-                            openai: {
-                              ...prev.openai,
-                              speechToText: {
-                                ...prev.openai.speechToText,
-                                temperature: Number(event.target.value),
-                              },
-                            },
-                          }))
-                        }
-                      />
+                      <NumberWheelInput
+  step={0.1}
+  value={draft.openai.speechToText.temperature}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      openai: {
+        ...prev.openai,
+        speechToText: {
+          ...prev.openai.speechToText,
+          temperature: value,
+        },
+      },
+    }))
+  }
+/>
                     </label>
                     <label className="field">
                       <span>{t("speech.chunkingStrategy")}</span>
@@ -1166,63 +1173,60 @@ function App() {
                 </label>
                 <label className="field">
                   <span>{t("text.temperature")}</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={draft.openai.text.temperature}
-                    onChange={(event) =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        openai: {
-                          ...prev.openai,
-                          text: {
-                            ...prev.openai.text,
-                            temperature: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                  />
+                  <NumberWheelInput
+  step={0.1}
+  value={draft.openai.text.temperature}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      openai: {
+        ...prev.openai,
+        text: {
+          ...prev.openai.text,
+          temperature: value,
+        },
+      },
+    }))
+  }
+/>
                 </label>
                 <label className="field">
                   <span>{t("text.maxOutputTokens")}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={draft.openai.text.maxOutputTokens}
-                    onChange={(event) =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        openai: {
-                          ...prev.openai,
-                          text: {
-                            ...prev.openai.text,
-                            maxOutputTokens: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                  />
+                  <NumberWheelInput
+  min={1}
+  value={draft.openai.text.maxOutputTokens}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      openai: {
+        ...prev.openai,
+        text: {
+          ...prev.openai.text,
+          maxOutputTokens: value,
+        },
+      },
+    }))
+  }
+/>
                 </label>
                 <label className="field">
                   <span>{t("text.topP")}</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={draft.openai.text.topP}
-                    onChange={(event) =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        openai: {
-                          ...prev.openai,
-                          text: {
-                            ...prev.openai.text,
-                            topP: Number(event.target.value),
-                          },
-                        },
-                      }))
-                    }
-                  />
+                  <NumberWheelInput
+  step={0.1}
+  value={draft.openai.text.topP}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      openai: {
+        ...prev.openai,
+        text: {
+          ...prev.openai.text,
+          topP: value,
+        },
+      },
+    }))
+  }
+/>
                 </label>
               </SettingsCard>
             ) : null}
@@ -1323,16 +1327,16 @@ function App() {
                         </label>
                         <label className="field">
                           <span>{t("triggers.promptTemplate")}</span>
-                          <textarea
-                            value={card.promptTemplate}
-                            rows={3}
-                            onChange={(event) =>
-                              updateTrigger(card.id, (prev) => ({
-                                ...prev,
-                                promptTemplate: event.target.value,
-                              }))
-                            }
-                          />
+                          <PromptTemplateEditor
+  value={card.promptTemplate}
+  variables={card.variables}
+  onChange={(value) =>
+    updateTrigger(card.id, (prev) => ({
+      ...prev,
+      promptTemplate: value,
+    }))
+  }
+/>
                         </label>
                       </div>
                     </div>

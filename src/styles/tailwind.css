@@ -276,17 +276,37 @@
   }
 
   .field.checkbox {
-    @apply flex-row items-center gap-3;
+    @apply flex-row items-center gap-3 cursor-pointer select-none;
   }
 
   .field.checkbox input {
-    @apply h-4 w-4 shrink-0 rounded border;
+    @apply appearance-none relative h-[20px] w-[20px] shrink-0 rounded-[6px] border bg-transparent transition-all duration-200 ease-in-out cursor-pointer;
     border-color: var(--color-border);
-    accent-color: var(--color-accent);
+  }
+
+  .field.checkbox input:checked {
+    border-color: var(--color-accent);
+    background-color: var(--color-accent);
+  }
+
+  .field.checkbox input:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 25%, transparent);
+    outline: none;
+  }
+
+  .field.checkbox input::after {
+    content: "";
+    @apply absolute inset-0 bg-no-repeat bg-center opacity-0 transition-all duration-200 ease-in-out scale-50;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+    background-size: 70%;
+  }
+
+  .field.checkbox input:checked::after {
+    @apply opacity-100 scale-100;
   }
 
   .field.checkbox span {
-    @apply m-0 text-sm font-medium;
+    @apply m-0 text-sm font-medium transition-colors;
     color: var(--color-text-primary);
   }
 
@@ -537,4 +557,130 @@
       transform: translateY(0) scale(1);
     }
   }
+}
+
+  /* Segmented Control Styles */
+  .segmented-control {
+    @apply flex items-center gap-1.5 p-1 rounded-xl border w-full md:w-fit;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .segmented-control.disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .segmented-control-button {
+    @apply flex-1 md:flex-none flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors border-0 m-0;
+    color: var(--color-text-secondary);
+    background: transparent;
+  }
+
+  .segmented-control-button:hover:not(.active):not(:disabled) {
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 50%, transparent);
+  }
+
+  .segmented-control-button.active {
+    color: var(--color-accent-strong);
+    background-color: var(--color-surface-elevated);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--color-border);
+  }
+}
+
+  /* Prompt Template Editor Styles */
+  .prompt-template-container {
+    @apply flex flex-col gap-2 w-full;
+  }
+
+  .prompt-template-editor {
+    @apply min-h-24 min-w-0 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition whitespace-pre-wrap break-words;
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .prompt-template-editor:focus {
+    border-color: color-mix(in oklab, var(--color-accent) 52%, var(--color-border));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 15%, transparent);
+  }
+
+  .prompt-variable {
+    @apply inline-flex items-center justify-center rounded-md px-1.5 py-0.5 mx-0.5 text-xs font-semibold select-none cursor-grab transition-colors align-middle;
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 15%, var(--color-surface-elevated));
+    border: 1px solid color-mix(in oklab, var(--color-accent) 30%, transparent);
+  }
+
+  .prompt-variable.dragging {
+    @apply opacity-50 cursor-grabbing;
+  }
+
+  .prompt-variables-bar {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .prompt-variables-hint {
+    @apply text-xs font-medium;
+    color: var(--color-text-secondary);
+  }
+
+  .prompt-variables-list {
+    @apply flex flex-wrap gap-1.5;
+  }
+
+  .prompt-variable-btn {
+    @apply inline-flex items-center justify-center rounded border px-2 py-1 text-xs font-medium transition cursor-pointer;
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 96%, transparent);
+  }
+
+  .prompt-variable-btn:hover {
+    border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
+  }
+
+
+  /* Tooltip Styles */
+  .tooltip-wrapper {
+    @apply relative inline-flex items-center justify-center;
+  }
+
+  .tooltip-content {
+    @apply absolute z-50 w-max max-w-[280px] rounded-lg px-3 py-2 text-xs font-medium shadow-lg backdrop-blur-md opacity-0 whitespace-normal break-words pointer-events-none;
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 90%, transparent);
+    border: 1px solid var(--color-border);
+    animation: tooltip-fade-in 0.15s ease-out forwards;
+  }
+
+  .tooltip-top {
+    @apply bottom-full mb-2 left-1/2 -translate-x-1/2;
+  }
+  .tooltip-bottom {
+    @apply top-full mt-2 left-1/2 -translate-x-1/2;
+  }
+  .tooltip-left {
+    @apply right-full mr-2 top-1/2 -translate-y-1/2;
+  }
+  .tooltip-right {
+    @apply left-full ml-2 top-1/2 -translate-y-1/2;
+  }
+
+  @keyframes tooltip-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* End of components layer */
+
 }
