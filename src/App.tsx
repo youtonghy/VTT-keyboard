@@ -1329,7 +1329,6 @@ function App() {
                           <span>{t("triggers.promptTemplate")}</span>
                           <PromptTemplateEditor
   value={card.promptTemplate}
-  variables={card.variables}
   onChange={(value) =>
     updateTrigger(card.id, (prev) => ({
       ...prev,

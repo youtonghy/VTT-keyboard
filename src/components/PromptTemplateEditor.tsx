@@ -1,13 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 
-
 interface PromptTemplateEditorProps {
   value: string;
-  variables: string[];
   onChange: (value: string) => void;
 }
 
-export function PromptTemplateEditor({ value, variables, onChange }: PromptTemplateEditorProps) {
+export function PromptTemplateEditor({ value, onChange }: PromptTemplateEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [html, setHtml] = useState("");
   const isComposing = useRef(false);
@@ -22,11 +20,10 @@ export function PromptTemplateEditor({ value, variables, onChange }: PromptTempl
     // Replace newline with <br>
     result = result.replace(/\n/g, "<br>");
     
-    // Replace {variable} with spans
-    variables.forEach(v => {
-      const regex = new RegExp(`\\{${v}\\}`, 'g');
-      result = result.replace(regex, `<span class="prompt-variable" contenteditable="false" data-var="${v}" draggable="true">{${v}}</span>`);
-    });
+    // Replace {value} with spans
+    const regex = new RegExp(`\\{value\\}`, 'g');
+    result = result.replace(regex, `<span class="prompt-variable" contenteditable="false" data-var="value" draggable="true">{value}</span>`);
+    
     return result;
   };
 
@@ -56,7 +53,7 @@ export function PromptTemplateEditor({ value, variables, onChange }: PromptTempl
     if (editorRef.current && document.activeElement !== editorRef.current && !isComposing.current) {
       setHtml(textToHtml(value));
     }
-  }, [value, variables]);
+  }, [value]);
 
   const handleInput = () => {
     if (editorRef.current && !isComposing.current) {
@@ -140,24 +137,19 @@ export function PromptTemplateEditor({ value, variables, onChange }: PromptTempl
         onDragEnd={handleDragEnd}
         suppressContentEditableWarning
       />
-      {variables.length > 0 && (
-        <div className="prompt-variables-bar">
-          <span className="prompt-variables-hint">插入变量:</span>
-          <div className="prompt-variables-list">
-            {variables.map(v => (
-              <button
-                key={v}
-                type="button"
-                className="prompt-variable-btn"
-                onClick={() => insertVariable(v)}
-                title={`点击插入 {${v}}`}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+      <div className="prompt-variables-bar">
+        <span className="prompt-variables-hint">插入占位符:</span>
+        <div className="prompt-variables-list">
+          <button
+            type="button"
+            className="prompt-variable-btn"
+            onClick={() => insertVariable("value")}
+            title="点击插入 {value}"
+          >
+            {"{value}"}
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
