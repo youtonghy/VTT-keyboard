@@ -1,14 +1,17 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, DragEvent } from "react";
 
 interface PromptTemplateEditorProps {
   value: string;
   onChange: (value: string) => void;
 }
 
+const DRAG_PLACEHOLDER = "⧼VALUE⧽";
+
 export function PromptTemplateEditor({ value, onChange }: PromptTemplateEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [html, setHtml] = useState("");
   const isComposing = useRef(false);
+  const isDragging = useRef(false);
 
   // Parse plain text to HTML
   const textToHtml = (text: string) => {
@@ -56,12 +59,47 @@ export function PromptTemplateEditor({ value, onChange }: PromptTemplateEditorPr
   }, [value]);
 
   const handleInput = () => {
-    if (editorRef.current && !isComposing.current) {
-      const newText = htmlToText(editorRef.current);
+    if (editorRef.current && !isComposing.current && !isDragging.current) {
+      let newText = htmlToText(editorRef.current);
+      
+      // If we just dropped the placeholder, handle the logic
+      if (newText.includes(DRAG_PLACEHOLDER)) {
+        // Remove old {value} since we are moving it
+        newText = newText.replace(/\{value\}/g, '');
+        // Replace placeholder with {value}
+        newText = newText.replace(new RegExp(DRAG_PLACEHOLDER, 'g'), '{value}');
+        
+        // Force a re-render to update the DOM with new HTML to clean up the mess
+        setHtml(textToHtml(newText));
+      }
+
       onChange(newText);
     }
   };
 
+  const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.classList && target.classList.contains("prompt-variable")) {
+      isDragging.current = true;
+      e.dataTransfer.setData("text/plain", DRAG_PLACEHOLDER);
+      e.dataTransfer.effectAllowed = "move";
+      // Slightly dim the original
+      setTimeout(() => {
+        target.style.opacity = "0.4";
+      }, 0);
+    }
+  };
+
+  const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.style) {
+      target.style.opacity = "1";
+    }
+    isDragging.current = false;
+    // We must call handleInput manually here because dropping plain text into contenteditable
+    // sometimes triggers input, sometimes doesn't perfectly sync before dragEnd
+    setTimeout(handleInput, 0);
+  };
 
   return (
     <div className="prompt-template-container">
@@ -72,7 +110,8 @@ export function PromptTemplateEditor({ value, onChange }: PromptTemplateEditorPr
         dangerouslySetInnerHTML={{ __html: html }}
         onInput={handleInput}
         onBlur={handleInput}
-        onDrop={() => setTimeout(handleInput, 0)}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         onCompositionStart={() => (isComposing.current = true)}
         onCompositionEnd={() => {
           isComposing.current = false;
