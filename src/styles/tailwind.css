@@ -73,6 +73,25 @@
   a {
     color: var(--color-accent);
   }
+
+  /* Custom Scrollbar Styles */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full;
+    background: color-mix(in oklab, var(--color-mist-400) 60%, transparent);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--color-mist-500) 80%, transparent);
+  }
 }
 
 @layer components {
@@ -122,27 +141,49 @@
   }
 
   .settings-layout {
-    @apply grid grid-cols-1 gap-5 md:grid-cols-[240px_minmax(0,1fr)] md:items-start;
+    @apply flex flex-col gap-5 md:flex-row md:items-start;
   }
 
-  .drawer-nav {
-    @apply flex gap-2 overflow-x-auto pb-1 md:sticky md:top-14 md:max-h-[calc(100vh-4.5rem)] md:flex-col md:overflow-x-hidden md:overflow-y-auto md:pr-1;
+  .sidebar {
+    @apply flex flex-col gap-2 overflow-x-auto pb-1 md:sticky md:top-14 md:max-h-[calc(100vh-4.5rem)] md:w-[240px] md:shrink-0 md:overflow-x-hidden md:overflow-y-auto md:pr-1 transition-[width] duration-300 ease-in-out;
   }
 
-  .drawer-nav-button {
-    @apply min-w-max rounded-xl border px-4 py-2 text-left text-sm font-medium transition md:w-full;
+  .sidebar.collapsed {
+    @apply md:w-[64px];
+  }
+
+  .sidebar-header {
+    @apply hidden md:flex items-center justify-end px-2 mb-2;
+  }
+
+  .sidebar-collapse-btn {
+    @apply flex h-8 w-8 items-center justify-center rounded-lg border-0 bg-transparent p-0 text-sm transition;
+    color: var(--color-text-secondary);
+  }
+
+  .sidebar-collapse-btn:hover {
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
+  }
+
+  .sidebar-nav {
+    @apply flex gap-2 md:flex-col;
+  }
+
+  .sidebar-nav-button {
+    @apply flex min-w-max items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition md:w-full overflow-hidden;
     border-color: transparent;
     color: var(--color-text-secondary);
     background-color: color-mix(in oklab, var(--color-surface-elevated) 88%, transparent);
   }
 
-  .drawer-nav-button:hover {
+  .sidebar-nav-button:hover {
     border-color: var(--color-border);
     color: var(--color-text-primary);
     background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
   }
 
-  .drawer-nav-button.active {
+  .sidebar-nav-button.active {
     border-color: color-mix(in oklab, var(--color-accent) 44%, var(--color-border));
     color: var(--color-accent-strong);
     background:
@@ -153,8 +194,24 @@
       );
   }
 
+  .sidebar-icon {
+    @apply shrink-0;
+  }
+
+  .sidebar-label {
+    @apply whitespace-nowrap transition-opacity duration-200;
+  }
+
+  .sidebar.collapsed .sidebar-label {
+    @apply opacity-0 w-0 md:hidden;
+  }
+
+  .sidebar.collapsed .sidebar-nav-button {
+    @apply px-3 justify-center;
+  }
+
   .settings-content {
-    @apply flex min-w-0 flex-col gap-5;
+    @apply flex min-w-0 flex-1 flex-col gap-5;
   }
 
   .settings-card {
@@ -348,20 +405,20 @@
     background-color: color-mix(in oklab, #cc334f 10%, transparent);
   }
 
-  main button:not(.drawer-nav-button) {
+  main button:not(.sidebar-nav-button):not(.sidebar-collapse-btn) {
     @apply inline-flex items-center justify-center rounded-xl border px-4 py-2 text-sm font-medium transition;
     border-color: var(--color-border);
     color: var(--color-text-primary);
     background-color: color-mix(in oklab, var(--color-surface-elevated) 96%, transparent);
   }
 
-  main button:not(.drawer-nav-button):hover:not(:disabled) {
+  main button:not(.sidebar-nav-button):not(.sidebar-collapse-btn):hover:not(:disabled) {
     border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
     color: var(--color-accent-strong);
     background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
   }
 
-  main button:not(.drawer-nav-button):disabled {
+  main button:not(.sidebar-nav-button):not(.sidebar-collapse-btn):disabled {
     @apply cursor-not-allowed opacity-50;
   }
 
@@ -388,5 +445,96 @@
   .field a {
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  /* Custom Select Styles */
+  .custom-select-container {
+    @apply relative w-full text-sm;
+  }
+
+  .custom-select-container.disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .custom-select-trigger {
+    @apply flex min-w-0 w-full items-center justify-between rounded-xl border px-3 py-2.5 outline-none transition text-left;
+    border-color: var(--color-border);
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .custom-select-trigger:not(:disabled):hover {
+    border-color: color-mix(in oklab, var(--color-border) 80%, var(--color-text-primary));
+  }
+
+  .custom-select-trigger.open,
+  .custom-select-trigger:focus-visible {
+    border-color: color-mix(in oklab, var(--color-accent) 52%, var(--color-border));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 15%, transparent);
+  }
+
+  .custom-select-value {
+    @apply truncate pr-2;
+  }
+
+  .custom-select-icon {
+    @apply shrink-0 transition-transform duration-200;
+    color: var(--color-text-secondary);
+  }
+
+  .custom-select-icon.rotate {
+    @apply rotate-180;
+  }
+
+  .custom-select-dropdown {
+    @apply absolute z-50 mt-1 w-full min-w-[8rem] overflow-hidden rounded-xl border py-1 shadow-lg shadow-black/5 outline-none backdrop-blur-md;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 95%, transparent);
+    animation: slide-down 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .custom-select-options {
+    @apply max-h-60 overflow-y-auto overflow-x-hidden p-1 m-0 list-none;
+  }
+
+  .custom-select-options li {
+    @apply m-0 p-0;
+  }
+
+  .custom-select-option {
+    @apply relative flex w-full cursor-default select-none items-center rounded-lg py-2 pl-3 pr-9 text-sm outline-none transition-colors text-left border-0;
+    color: var(--color-text-primary);
+    background: transparent;
+  }
+
+  .custom-select-option:hover {
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface));
+    color: var(--color-text-primary);
+  }
+
+  .custom-select-option.selected {
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 15%, var(--color-surface));
+    font-weight: 500;
+  }
+
+  .custom-select-option-label {
+    @apply block truncate;
+  }
+
+  .custom-select-check {
+    @apply absolute right-3 shrink-0;
+    color: var(--color-accent);
+  }
+
+  @keyframes slide-down {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   }
 }

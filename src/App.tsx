@@ -1,10 +1,13 @@
+import { CustomSelect } from "./components/CustomSelect";
+import { Toaster, toast } from "sonner";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
-import { DrawerNav } from "./components/DrawerNav";
+import { Sidebar } from "./components/Sidebar";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { SettingsCard } from "./components/SettingsCard";
 import { TagInput } from "./components/TagInput";
@@ -100,10 +103,6 @@ function App() {
     startService: startSenseVoiceService,
     stopService: stopSenseVoiceService,
   } = useSenseVoice(isSenseVoiceActive);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [appInfo, setAppInfo] = useState<{
     name: string;
@@ -123,10 +122,7 @@ function App() {
     }
     autostartSyncedOnStartup.current = true;
     void syncAutostart(settings.startup.launchOnBoot).catch((error) => {
-      setMessage({
-        type: "error",
-        text: t("general.launchOnBootSyncError", { error: toErrorMessage(error) }),
-      });
+      toast.error(t("general.launchOnBootSyncError", { error: toErrorMessage(error) }));
     });
   }, [settings, syncAutostart, t]);
 
@@ -159,13 +155,7 @@ function App() {
     root.setAttribute("data-theme", draft.appearance.theme);
   }, [draft?.appearance.theme]);
 
-  useEffect(() => {
-    if (!message) {
-      return;
-    }
-    const timer = window.setTimeout(() => setMessage(null), 2000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
+  
 
   useEffect(() => {
     if (!draft) {
@@ -179,10 +169,7 @@ function App() {
         logDebug("unregister all success");
       } catch (error) {
         logError("unregister all failed", error);
-        setMessage({
-          type: "error",
-          text: t("shortcut.unregisterError"),
-        });
+        toast.error(t("shortcut.unregisterError"));
       }
 
       try {
@@ -197,10 +184,7 @@ function App() {
               .catch((error) => {
                 const message = toErrorMessage(error);
                 logError("start_recording failed", message);
-                setMessage({
-                  type: "error",
-                  text: t("shortcut.startError", { error: message }),
-                });
+                toast.error(t("shortcut.startError", { error: message }));
               });
           }
           if (event.state === "Released") {
@@ -209,10 +193,7 @@ function App() {
               .catch((error) => {
                 const message = toErrorMessage(error);
                 logError("stop_recording failed", message);
-                setMessage({
-                  type: "error",
-                  text: t("shortcut.stopError", { error: message }),
-                });
+                toast.error(t("shortcut.stopError", { error: message }));
               });
           }
         });
@@ -221,15 +202,9 @@ function App() {
         const message = toErrorMessage(error);
         logError("register failed", message);
         if (isConflictError(message)) {
-          setMessage({
-            type: "error",
-            text: t("shortcut.conflict", { shortcut: draft.shortcut.key }),
-          });
+          toast.error(t("shortcut.conflict", { shortcut: draft.shortcut.key }));
         } else {
-          setMessage({
-            type: "error",
-            text: t("shortcut.registerError", { error: message }),
-          });
+          toast.error(t("shortcut.registerError", { error: message }));
         }
       }
     };
@@ -256,7 +231,7 @@ function App() {
       event.stopPropagation();
       const hasModifier = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
       if (!hasModifier) {
-        setMessage({ type: "error", text: t("shortcut.requireModifier") });
+        toast.error(t("shortcut.requireModifier"));
         setIsCapturing(false);
         return;
       }
@@ -266,10 +241,7 @@ function App() {
         shortcut: { ...prev.shortcut, key: shortcut },
       }));
       setIsCapturing(false);
-      setMessage({
-        type: "success",
-        text: t("shortcut.captureSuccess", { shortcut }),
-      });
+      toast.success(t("shortcut.captureSuccess", { shortcut }));
     };
     window.addEventListener("keydown", handleKeydown, true);
     return () => window.removeEventListener("keydown", handleKeydown, true);
@@ -374,7 +346,7 @@ function App() {
     }
     const error = validateTriggers(draft);
     if (error) {
-      setMessage({ type: "error", text: error });
+      toast.error(error);
       return;
     }
     try {
@@ -382,15 +354,12 @@ function App() {
       try {
         await syncAutostart(draft.startup.launchOnBoot);
       } catch (error) {
-        setMessage({
-          type: "error",
-          text: t("general.launchOnBootSyncError", { error: toErrorMessage(error) }),
-        });
+        toast.error(t("general.launchOnBootSyncError", { error: toErrorMessage(error) }));
         return;
       }
-      setMessage({ type: "success", text: t("actions.saveSuccess") });
+      toast.success(t("actions.saveSuccess"));
     } catch (err) {
-      setMessage({ type: "error", text: t("actions.saveError") });
+      toast.error(t("actions.saveError"));
     }
   };
 
@@ -406,9 +375,9 @@ function App() {
     try {
       const data = await invoke<Settings>("import_settings", { path: selected });
       setDraft(data);
-      setMessage({ type: "success", text: t("data.importSuccess") });
+      toast.success(t("data.importSuccess"));
     } catch (err) {
-      setMessage({ type: "error", text: t("data.importError") });
+      toast.error(t("data.importError"));
     }
   };
 
@@ -421,9 +390,9 @@ function App() {
     }
     try {
       await invoke("export_settings", { path });
-      setMessage({ type: "success", text: t("data.exportSuccess") });
+      toast.success(t("data.exportSuccess"));
     } catch (err) {
-      setMessage({ type: "error", text: t("data.exportError") });
+      toast.error(t("data.exportError"));
     }
   };
 
@@ -457,21 +426,15 @@ function App() {
     try {
       await updateSenseVoiceSettings(draft.sensevoice);
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: t("sensevoice.configSaveError", { error: toErrorMessage(error) }),
-      });
+      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
       return;
     }
     try {
       await prepareSenseVoice();
       await refreshSenseVoiceStatus();
-      setMessage({ type: "success", text: t("sensevoice.prepareQueued") });
+      toast.success(t("sensevoice.prepareQueued"));
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: t("sensevoice.prepareError", { error: toErrorMessage(error) }),
-      });
+      toast.error(t("sensevoice.prepareError", { error: toErrorMessage(error) }));
     }
   };
 
@@ -482,21 +445,15 @@ function App() {
     try {
       await updateSenseVoiceSettings(draft.sensevoice);
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: t("sensevoice.configSaveError", { error: toErrorMessage(error) }),
-      });
+      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
       return;
     }
     try {
       await startSenseVoiceService();
       await refreshSenseVoiceStatus();
-      setMessage({ type: "success", text: t("sensevoice.startQueued") });
+      toast.success(t("sensevoice.startQueued"));
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: t("sensevoice.startError", { error: toErrorMessage(error) }),
-      });
+      toast.error(t("sensevoice.startError", { error: toErrorMessage(error) }));
     }
   };
 
@@ -507,27 +464,24 @@ function App() {
     try {
       await updateSenseVoiceSettings(draft.sensevoice);
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: t("sensevoice.configSaveError", { error: toErrorMessage(error) }),
-      });
+      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
       return;
     }
     try {
       await stopSenseVoiceService();
       await refreshSenseVoiceStatus();
-      setMessage({ type: "success", text: t("sensevoice.stopSuccess") });
+      toast.success(t("sensevoice.stopSuccess"));
     } catch (error) {
-      setMessage({
-        type: "error",
-        text: t("sensevoice.stopError", { error: toErrorMessage(error) }),
-      });
+      toast.error(t("sensevoice.stopError", { error: toErrorMessage(error) }));
     }
   };
 
   if (loading || !draft) {
     return (
       <>
+
+        <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
+
         <TitleBar />
         <main className="container loading">
           <p>{t("app.loading")}</p>
@@ -538,10 +492,13 @@ function App() {
 
   return (
     <>
+
+      <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
+
       <TitleBar />
       <main className="container">
         <div className="settings-layout">
-          <DrawerNav
+          <Sidebar
             items={navItems}
             activeId={activeSection}
             onSelect={setActiveSection}
@@ -555,22 +512,20 @@ function App() {
                 >
                   <label className="field">
                     <span>{t("general.theme")}</span>
-                    <select
-                      value={draft.appearance.theme}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          appearance: {
-                            ...prev.appearance,
-                            theme: event.target.value,
-                          },
-                        }))
-                      }
-                    >
-                      <option value="system">{t("general.themeSystem")}</option>
-                      <option value="light">{t("general.themeLight")}</option>
-                      <option value="dark">{t("general.themeDark")}</option>
-                    </select>
+                    <CustomSelect
+  value={draft.appearance.theme}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      appearance: { ...prev.appearance, theme: value },
+    }))
+  }
+  options={[
+    { value: "system", label: t("general.themeSystem") },
+    { value: "light", label: t("general.themeLight") },
+    { value: "dark", label: t("general.themeDark") }
+  ]}
+/>
                   </label>
                   <div className="field">
                     <span>{t("general.language")}</span>
@@ -670,19 +625,20 @@ function App() {
                 >
                   <label className="field">
                     <span>{t("speech.provider")}</span>
-                    <select
-                      value={draft.provider}
-                      onChange={(event) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          provider: event.target.value as Settings["provider"],
-                        }))
-                      }
-                    >
-                      <option value="openai">OpenAI</option>
-                      <option value="volcengine">{t("speech.volcengine")}</option>
-                      <option value="sensevoice">{t("speech.sensevoice")}</option>
-                    </select>
+                    <CustomSelect
+  value={draft.provider}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      provider: value as Settings["provider"],
+    }))
+  }
+  options={[
+    { value: "openai", label: "OpenAI" },
+    { value: "volcengine", label: t("speech.volcengine") },
+    { value: "sensevoice", label: t("speech.sensevoice") }
+  ]}
+/>
                   </label>
                 </SettingsCard>
 
@@ -946,21 +902,22 @@ function App() {
                     </label>
                     <label className="field">
                       <span>{t("volcengine.language")}</span>
-                      <select
-                        value={draft.volcengine.language}
-                        onChange={(event) =>
-                          updateDraft((prev) => ({
-                            ...prev,
-                            volcengine: { ...prev.volcengine, language: event.target.value },
-                          }))
-                        }
-                      >
-                        <option value="zh-CN">{t("volcengine.langZhCN")}</option>
-                        <option value="zh-TW">{t("volcengine.langZhTW")}</option>
-                        <option value="en-US">{t("volcengine.langEnUS")}</option>
-                        <option value="ja-JP">{t("volcengine.langJaJP")}</option>
-                        <option value="ko-KR">{t("volcengine.langKoKR")}</option>
-                      </select>
+                      <CustomSelect
+  value={draft.volcengine.language}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      volcengine: { ...prev.volcengine, language: value },
+    }))
+  }
+  options={[
+    { value: "zh-CN", label: t("volcengine.langZhCN") },
+    { value: "zh-TW", label: t("volcengine.langZhTW") },
+    { value: "en-US", label: t("volcengine.langEnUS") },
+    { value: "ja-JP", label: t("volcengine.langJaJP") },
+    { value: "ko-KR", label: t("volcengine.langKoKR") }
+  ]}
+/>
                     </label>
                     <label className="field checkbox">
                       <input
@@ -1080,22 +1037,20 @@ function App() {
 
                     <label className="field">
                       <span>{t("sensevoice.device")}</span>
-                      <select
-                        value={draft.sensevoice.device}
-                        onChange={(event) =>
-                          updateDraft((prev) => ({
-                            ...prev,
-                            sensevoice: {
-                              ...prev.sensevoice,
-                              device: event.target.value,
-                            },
-                          }))
-                        }
-                      >
-                        <option value="auto">{t("sensevoice.deviceAuto")}</option>
-                        <option value="cpu">{t("sensevoice.deviceCpu")}</option>
-                        <option value="cuda">{t("sensevoice.deviceCuda")}</option>
-                      </select>
+                      <CustomSelect
+  value={draft.sensevoice.device}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      sensevoice: { ...prev.sensevoice, device: value },
+    }))
+  }
+  options={[
+    { value: "auto", label: t("sensevoice.deviceAuto") },
+    { value: "cpu", label: t("sensevoice.deviceCpu") },
+    { value: "cuda", label: t("sensevoice.deviceCuda") }
+  ]}
+/>
                     </label>
 
                     {sensevoiceProgress ? (
@@ -1424,11 +1379,7 @@ function App() {
             ) : null}
           </section>
         </div>
-        <footer className="settings-actions">
-          {message ? (
-            <span className={`status-message ${message.type}`}>{message.text}</span>
-          ) : null}
-        </footer>
+        
       </main>
     </>
   );
