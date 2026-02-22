@@ -347,7 +347,7 @@
   }
 
   .sensevoice-log {
-    @apply rounded-xl border px-3 py-2;
+    @apply min-w-0 overflow-hidden rounded-xl border px-3 py-2;
     border-color: var(--color-border);
     background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
   }
