@@ -192,7 +192,7 @@ impl SenseVoiceManager {
 
     pub fn stop_service(
         &mut self,
-        _app: &AppHandle,
+        app: &AppHandle,
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
         self.stop_prepare_task();
@@ -204,6 +204,8 @@ impl SenseVoiceManager {
         let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
         self.container_name = None;
         let _ = self.update_state(store, "idle", "", None, None);
+        // 通知前端进度已终止，清除残留的 verify/warmup 阶段状态
+        self.emit_progress(app, "stopped", "SenseVoice service stopped", None);
         self.status(store)
     }
 
@@ -605,6 +607,8 @@ fn spawn_health_monitor(
         loop {
             if cancel_flag.load(Ordering::Relaxed) {
                 running_cache.store(false, Ordering::Relaxed);
+                // 通知前端进度已终止，清除残留的 verify/warmup 阶段状态
+                emit_progress_payload(&app, "stopped", "SenseVoice service stopped", None, None);
                 return;
             }
 

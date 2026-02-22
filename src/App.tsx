@@ -983,8 +983,9 @@ function App() {
                         sensevoiceLoading ||
                         progressStage === "prepare" ||
                         progressStage === "install" ||
-                        progressStage === "verify" ||
-                        progressStage === "warmup";
+                        // 仅在服务仍在运行时，verify/warmup 阶段才禁用启动按钮
+                        // 防止停止服务后残留阶段导致按钮持续禁用
+                        (running && (progressStage === "verify" || progressStage === "warmup"));
                       const stopBusy = sensevoiceLoading;
 
                       return (

@@ -82,6 +82,8 @@ export function useSenseVoice(monitoringEnabled = false) {
     try {
       const next = await invoke<SenseVoiceStatus>("stop_sensevoice_service");
       setStatus(next);
+      // 主动清除 progress，防止残留的 verify/warmup 阶段导致启动按钮被禁用
+      setProgress(null);
       return next;
     } finally {
       setLoading(false);
@@ -105,6 +107,12 @@ export function useSenseVoice(monitoringEnabled = false) {
   useEffect(() => {
     const unlisten = listen<SenseVoiceProgress>("sensevoice-progress", (event) => {
       const payload = event.payload;
+      // 收到 stopped 事件时清除 progress，防止残留阶段禁用启动按钮
+      if (payload.stage === "stopped") {
+        setProgress(null);
+        void refreshStatus().catch(() => {});
+        return;
+      }
       setProgress(payload);
       if (payload.stage === "prepare" && payload.percent === 5) {
         setLogLines([]);
