@@ -204,7 +204,7 @@ if __name__ == "__main__":
     import uvicorn
 
     host = os.getenv("SENSEVOICE_HOST", "127.0.0.1")
-    port = int(os.getenv("SENSEVOICE_PORT", "8765"))
+    port = int(os.getenv("SENSEVOICE_PORT", "28765"))
     log(f"starting uvicorn on {host}:{port}")
     try:
         uvicorn.run(app, host=host, port=port, log_level="info")

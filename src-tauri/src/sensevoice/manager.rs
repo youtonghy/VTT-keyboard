@@ -16,7 +16,12 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
+
 use url::Url;
+
+/// 日志流批量 emit 间隔：每 150ms 向前端发送一次聚合日志，避免高频 app.emit()
+/// 阻塞 Tauri 主线程（Windows WebView2 通过主线程 dispatch JS 评估）
+const LOG_EMIT_INTERVAL_MILLIS: u64 = 150;
 
 const PREPARE_SCRIPT: &str = include_str!("scripts/prepare.py");
 const SERVER_SCRIPT: &str = include_str!("scripts/server.py");
@@ -74,6 +79,8 @@ pub struct SenseVoiceManager {
     prepare_child: Option<Child>,
     start_in_progress: bool,
     start_cancel_flag: Arc<AtomicBool>,
+    /// 缓存的容器运行状态，由后台健康监测线程异步更新，避免在 Mutex 持有期间调用 docker inspect
+    container_running_cache: Arc<AtomicBool>,
 }
 
 impl SenseVoiceManager {
@@ -84,6 +91,7 @@ impl SenseVoiceManager {
             prepare_child: None,
             start_in_progress: false,
             start_cancel_flag: Arc::new(AtomicBool::new(false)),
+            container_running_cache: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -92,7 +100,8 @@ impl SenseVoiceManager {
         let sensevoice = store
             .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
-        let running = self.is_running() || self.start_in_progress;
+        // 使用缓存值，不在 Mutex 持有期间调用 docker inspect
+        let running = self.is_running_cached() || self.start_in_progress;
         Ok(SenseVoiceStatus {
             installed: sensevoice.installed,
             enabled: sensevoice.enabled,
@@ -147,7 +156,8 @@ impl SenseVoiceManager {
                 "下载任务正在后台执行，请稍后再试".to_string(),
             ));
         }
-        if self.is_running() {
+        // 使用缓存值检测容器状态，避免在 Mutex 持有期间发起 docker inspect 调用
+        if self.is_running_cached() {
             self.start_in_progress = false;
             self.start_cancel_flag.store(false, Ordering::Relaxed);
             return self.status(store);
@@ -167,7 +177,8 @@ impl SenseVoiceManager {
 
         self.start_in_progress = true;
         self.start_cancel_flag.store(false, Ordering::Relaxed);
-        self.update_state(store, "running", "", None, None)?;
+        // 注意：不在此处写 SettingsStore，避免主线程持有 Mutex 期间发起磁盘 I/O
+        // 状态持久化由后台 run_startup_task 线程负责（在实际启动成功后写入）
 
         let app_handle = app.clone();
         let store_clone = store.clone();
@@ -187,6 +198,7 @@ impl SenseVoiceManager {
         self.stop_prepare_task();
         self.start_cancel_flag.store(true, Ordering::Relaxed);
         self.start_in_progress = false;
+        self.container_running_cache.store(false, Ordering::Relaxed);
         self.stop_log_stream();
         let _ = stop_container(SERVICE_CONTAINER_NAME);
         let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
@@ -195,9 +207,20 @@ impl SenseVoiceManager {
         self.status(store)
     }
 
+    /// 读取容器运行状态缓存（纳秒级，无 I/O）
+    fn is_running_cached(&self) -> bool {
+        self.container_running_cache.load(Ordering::Relaxed)
+    }
+
+    /// 实际检查容器状态（调用 docker inspect，用于后台主动轮询）
+    /// 当前由 spawn_health_monitor 后台线程直接调用 docker_container_running() 并更新缓存；
+    /// 此方法保留供未来需要主动同步检查的场景使用。
+    #[allow(dead_code)]
     fn is_running(&mut self) -> bool {
         self.reconcile_prepare_task();
         let running = docker_container_running(SERVICE_CONTAINER_NAME).unwrap_or(false);
+        self.container_running_cache
+            .store(running, Ordering::Relaxed);
         if running {
             self.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
         } else {
@@ -274,8 +297,8 @@ impl SenseVoiceManager {
         let jobs_dir = runtime_dir.join("jobs");
         fs::create_dir_all(&jobs_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
         let job_file = jobs_dir.join(format!("job-{}.json", current_timestamp_ms()));
-        let content =
-            serde_json::to_string_pretty(job).map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+        let content = serde_json::to_string_pretty(job)
+            .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
         fs::write(&job_file, content).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
 
         let current_exe =
@@ -447,81 +470,94 @@ fn run_startup_task(app: AppHandle, store: SettingsStore, cancel_flag: Arc<Atomi
     let mut runtime_tail: Option<Arc<Mutex<VecDeque<String>>>> = None;
     let mut log_path: Option<PathBuf> = None;
 
-    let result = (|| -> Result<(String, PathBuf, Arc<Mutex<VecDeque<String>>>), SenseVoiceError> {
-        check_start_cancelled(&cancel_flag)?;
-        let sensevoice = store
-            .load_sensevoice()
-            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
-        if !sensevoice.installed {
-            return Err(SenseVoiceError::Config(
-                "SenseVoice 尚未安装，请先完成下载".to_string(),
-            ));
-        }
+    let result = (|| -> Result<
+        (String, PathBuf, Arc<Mutex<VecDeque<String>>>, Arc<AtomicBool>),
+        SenseVoiceError,
+    > {
+            check_start_cancelled(&cancel_flag)?;
+            let sensevoice = store
+                .load_sensevoice()
+                .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+            if !sensevoice.installed {
+                return Err(SenseVoiceError::Config(
+                    "SenseVoice 尚未安装，请先完成下载".to_string(),
+                ));
+            }
 
-        let paths = ensure_paths(&app)?;
-        write_runtime_files(&paths)?;
-        check_start_cancelled(&cancel_flag)?;
-        ensure_docker_available()?;
-        check_start_cancelled(&cancel_flag)?;
-        ensure_runtime_image(&app, &paths.runtime_dir)?;
-        check_start_cancelled(&cancel_flag)?;
+            let paths = ensure_paths(&app)?;
+            write_runtime_files(&paths)?;
+            check_start_cancelled(&cancel_flag)?;
+            ensure_docker_available()?;
+            check_start_cancelled(&cancel_flag)?;
+            ensure_runtime_image(&app, &paths.runtime_dir)?;
+            check_start_cancelled(&cancel_flag)?;
 
-        let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
-        let publish_host = normalize_publish_host(&host)?;
-        let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
-        let current_log_path = paths.runtime_dir.join("server.log");
-        log_path = Some(current_log_path.clone());
+            let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
+            let publish_host = normalize_publish_host(&host)?;
+            let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
+            let current_log_path = paths.runtime_dir.join("server.log");
+            log_path = Some(current_log_path.clone());
 
-        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
-        run_service_container(
-            &publish_host,
-            port,
-            &paths.models_dir,
-            &sensevoice.model_id,
-            &sensevoice.device,
-            &hub,
-        )?;
-        check_start_cancelled(&cancel_flag)?;
-
-        let current_runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
-        runtime_tail = Some(Arc::clone(&current_runtime_tail));
-        let startup_completed = Arc::new(AtomicBool::new(false));
-        {
-            let state = app.state::<AppState>();
-            let mut manager = state
-                .sensevoice_manager
-                .lock()
-                .map_err(|_| SenseVoiceError::Process("SenseVoice 状态锁获取失败".to_string()))?;
-            manager.start_log_stream(
-                app.clone(),
-                &current_log_path,
-                Arc::clone(&current_runtime_tail),
-                Arc::clone(&startup_completed),
+            let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+            run_service_container(
+                &publish_host,
+                port,
+                &paths.models_dir,
+                &sensevoice.model_id,
+                &sensevoice.device,
+                &hub,
             )?;
-            manager.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
-        }
+            check_start_cancelled(&cancel_flag)?;
 
-        wait_service_reachable(
-            &sensevoice.service_url,
-            Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
-            &current_log_path,
-            &current_runtime_tail,
-            &cancel_flag,
-        )?;
-        update_state_in_store(&store, "running", "", None, None)?;
-        emit_progress_payload(
-            &app,
-            "verify",
-            "SenseVoice service started, model warming up",
-            Some(85),
-            Some("Service is reachable; model warmup is still running".to_string()),
-        );
+            let current_runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
+            runtime_tail = Some(Arc::clone(&current_runtime_tail));
+            let startup_completed = Arc::new(AtomicBool::new(false));
+            let running_cache;
+            {
+                let state = app.state::<AppState>();
+                let mut manager = state.sensevoice_manager.lock().map_err(|_| {
+                    SenseVoiceError::Process("SenseVoice 状态锁获取失败".to_string())
+                })?;
+                // 容器已启动，立即更新缓存，使 status() 能立刻反映运行状态
+                manager
+                    .container_running_cache
+                    .store(true, Ordering::Relaxed);
+                running_cache = Arc::clone(&manager.container_running_cache);
+                manager.start_log_stream(
+                    app.clone(),
+                    &current_log_path,
+                    Arc::clone(&current_runtime_tail),
+                    Arc::clone(&startup_completed),
+                )?;
+                manager.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
+            }
 
-        Ok((sensevoice.service_url, current_log_path, current_runtime_tail))
-    })();
+            wait_service_reachable(
+                &sensevoice.service_url,
+                Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
+                &current_log_path,
+                &current_runtime_tail,
+                &cancel_flag,
+            )?;
+            update_state_in_store(&store, "running", "", None, None)?;
+            emit_progress_payload(
+                &app,
+                "verify",
+                "SenseVoice service started, model warming up",
+                Some(85),
+                Some("Service is reachable; model warmup is still running".to_string()),
+            );
+
+            Ok((
+                sensevoice.service_url,
+                current_log_path,
+                current_runtime_tail,
+                running_cache,
+            ))
+        })();
 
     match result {
-        Ok((service_url, monitor_log_path, monitor_runtime_tail)) => {
+        Ok((service_url, monitor_log_path, monitor_runtime_tail, running_cache)) => {
             finish_start_task(&app, &cancel_flag);
             spawn_health_monitor(
                 app,
@@ -530,6 +566,7 @@ fn run_startup_task(app: AppHandle, store: SettingsStore, cancel_flag: Arc<Atomi
                 monitor_log_path,
                 monitor_runtime_tail,
                 cancel_flag,
+                running_cache,
             );
         }
         Err(err) => {
@@ -554,6 +591,7 @@ fn spawn_health_monitor(
     log_path: PathBuf,
     runtime_tail: Arc<Mutex<VecDeque<String>>>,
     cancel_flag: Arc<AtomicBool>,
+    running_cache: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         let client = health_client();
@@ -566,12 +604,17 @@ fn spawn_health_monitor(
 
         loop {
             if cancel_flag.load(Ordering::Relaxed) {
+                running_cache.store(false, Ordering::Relaxed);
                 return;
             }
 
             match docker_container_running(SERVICE_CONTAINER_NAME) {
-                Ok(true) => {}
+                Ok(true) => {
+                    // 更新缓存，供 status() / start_service_async() 快速读取
+                    running_cache.store(true, Ordering::Relaxed);
+                }
                 Ok(false) => {
+                    running_cache.store(false, Ordering::Relaxed);
                     report_monitor_failure(
                         &app,
                         &store,
@@ -582,6 +625,7 @@ fn spawn_health_monitor(
                     return;
                 }
                 Err(err) => {
+                    running_cache.store(false, Ordering::Relaxed);
                     report_monitor_failure(
                         &app,
                         &store,
@@ -669,11 +713,20 @@ fn wait_service_reachable(
             }
         }
 
+        // 先尝试直接 HTTP 健康检查
         if let Ok(response) = client.get(&url).send() {
             let status = response.status();
             let body = response.text().unwrap_or_default();
             let body_is_json = serde_json::from_str::<Value>(&body).is_ok();
             if status.is_success() || body_is_json {
+                return Ok(());
+            }
+        }
+
+        // HTTP 失败（Docker Desktop/WSL2 端口映射尚未就绪）时，
+        // 尝试 docker exec 内部健康检查，绕过端口映射延迟问题
+        if let Some(port) = extract_port_from_url(service_url) {
+            if docker_exec_health_check(SERVICE_CONTAINER_NAME, port) {
                 return Ok(());
             }
         }
@@ -723,10 +776,15 @@ fn handle_startup_failure(
         let _ = update_state_in_store(store, "idle", "", None, None);
     } else {
         let mut message = err.to_string();
-        if let (Some(tail_store), Some(path)) = (runtime_tail, log_path) {
-            let tail = collect_runtime_tail_with_retry(tail_store, 30, path);
-            if tail != "（无日志）" {
-                message = format!("{message}。最近日志: {tail}");
+        // 若错误消息中已含"最近日志:"（如来自 wait_service_reachable 的超时/退出错误），
+        // 则不再重复追加，避免日志内容被拼接两次
+        let already_has_tail = message.contains("最近日志:");
+        if !already_has_tail {
+            if let (Some(tail_store), Some(path)) = (runtime_tail, log_path) {
+                let tail = collect_runtime_tail_with_retry(tail_store, 30, path);
+                if tail != "（无日志）" {
+                    message = format!("{message}。最近日志: {tail}");
+                }
             }
         }
         let _ = update_state_in_store(store, "error", &message, None, None);
@@ -805,7 +863,13 @@ fn handle_worker_event(app: &AppHandle, store: &SettingsStore, event: WorkerEven
             let _ = update_state_in_store(store, &download_state, &last_error, installed, enabled);
         }
         WorkerEvent::Done { message } => {
-            emit_progress_payload(app, "done", "SenseVoice service started", Some(100), Some(message));
+            emit_progress_payload(
+                app,
+                "done",
+                "SenseVoice service started",
+                Some(100),
+                Some(message),
+            );
         }
         WorkerEvent::Error { message } => {
             let _ = update_state_in_store(store, "error", &message, None, None);
@@ -901,11 +965,14 @@ fn write_runtime_files(paths: &SenseVoicePaths) -> Result<(), SenseVoiceError> {
 
 fn ensure_docker_available() -> Result<(), SenseVoiceError> {
     let mut version = docker_command();
-    version.arg("version").arg("--format").arg("{{.Client.Version}}");
+    version
+        .arg("version")
+        .arg("--format")
+        .arg("{{.Client.Version}}");
     hide_window(&mut version);
-    let output = version
-        .output()
-        .map_err(|err| SenseVoiceError::Config(format!("未检测到 Docker，请先安装 Docker: {err}")))?;
+    let output = version.output().map_err(|err| {
+        SenseVoiceError::Config(format!("未检测到 Docker，请先安装 Docker: {err}"))
+    })?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(SenseVoiceError::Config(format!(
@@ -1161,37 +1228,88 @@ fn spawn_runtime_log_reader<R>(
 {
     let stream_name = stream.to_string();
     thread::spawn(move || {
-        let reader = BufReader::new(reader);
-        for line in reader.lines() {
-            let Ok(raw) = line else {
-                continue;
-            };
-            let normalized = normalize_log_line(&raw);
-            if normalized.is_empty() {
-                continue;
+        // 使用 mpsc channel 将读取线程与 emit 节流逻辑解耦
+        let (tx, rx) = mpsc::channel::<String>();
+        let stream_for_reader = stream_name.clone();
+
+        // 子线程：逐行读取，写文件 + 更新 runtime_tail + 发送到 channel
+        let reader_handle = {
+            let runtime_tail = Arc::clone(&runtime_tail);
+            thread::spawn(move || {
+                let buf = BufReader::new(reader);
+                for line in buf.lines() {
+                    let Ok(raw) = line else {
+                        break;
+                    };
+                    let normalized = normalize_log_line(&raw);
+                    if normalized.is_empty() {
+                        continue;
+                    }
+                    if is_startup_complete_line(&normalized) {
+                        startup_completed.store(true, Ordering::Relaxed);
+                    }
+                    let _ = writeln!(output_file, "{normalized}");
+                    let _ = output_file.flush();
+                    push_runtime_tail(
+                        &runtime_tail,
+                        format!("[{stream_for_reader}] {normalized}"),
+                        200,
+                    );
+                    // channel 满了就丢弃（避免积压），不影响文件和 tail
+                    let _ = tx.send(normalized);
+                }
+                let _ = output_file.flush();
+            })
+        };
+
+        // 主线程：按 LOG_EMIT_INTERVAL_MILLIS 节流批量 emit
+        let emit_interval = Duration::from_millis(LOG_EMIT_INTERVAL_MILLIS);
+        let mut last_emit = Instant::now();
+        let mut pending: Vec<String> = Vec::new();
+
+        loop {
+            // 收集当前积压的所有日志行
+            loop {
+                match rx.try_recv() {
+                    Ok(line) => pending.push(line),
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        // reader 线程结束，flush 剩余数据后退出
+                        flush_pending_logs(&app, &stream_name, &mut pending);
+                        let _ = reader_handle.join();
+                        if let Ok(mut fallback) =
+                            OpenOptions::new().create(true).append(true).open(&log_path)
+                        {
+                            let _ = writeln!(fallback, "[{stream_name}] log stream ended");
+                        }
+                        return;
+                    }
+                }
             }
-            if is_startup_complete_line(&normalized) {
-                startup_completed.store(true, Ordering::Relaxed);
+
+            if !pending.is_empty() && last_emit.elapsed() >= emit_interval {
+                flush_pending_logs(&app, &stream_name, &mut pending);
+                last_emit = Instant::now();
             }
 
-            let _ = writeln!(output_file, "{normalized}");
-            let _ = output_file.flush();
-
-            push_runtime_tail(&runtime_tail, format!("[{stream_name}] {normalized}"), 200);
-
-            let payload = SenseVoiceRuntimeLog {
-                stream: stream_name.clone(),
-                line: normalized,
-                ts: current_timestamp_ms(),
-            };
-            let _ = app.emit("sensevoice-runtime-log", payload);
-        }
-
-        let _ = output_file.flush();
-        if let Ok(mut fallback) = OpenOptions::new().create(true).append(true).open(log_path) {
-            let _ = writeln!(fallback, "[{stream_name}] log stream ended");
+            thread::sleep(Duration::from_millis(20));
         }
     });
+}
+
+/// 将积累的日志行批量以一次 app.emit() 发出（多行合并为换行分隔的字符串）
+fn flush_pending_logs(app: &AppHandle, stream: &str, pending: &mut Vec<String>) {
+    if pending.is_empty() {
+        return;
+    }
+    let combined = pending.join("\n");
+    pending.clear();
+    let payload = SenseVoiceRuntimeLog {
+        stream: stream.to_string(),
+        line: combined,
+        ts: current_timestamp_ms(),
+    };
+    let _ = app.emit("sensevoice-runtime-log", payload);
 }
 
 fn push_runtime_tail(tail: &Arc<Mutex<VecDeque<String>>>, value: String, max_lines: usize) {
@@ -1429,4 +1547,54 @@ fn hide_window(_command: &mut Command) {
         use std::os::windows::process::CommandExt;
         _command.creation_flags(0x0800_0000);
     }
+}
+
+/// 从 service_url 中提取端口号，供 docker exec 健康检查使用
+fn extract_port_from_url(service_url: &str) -> Option<u16> {
+    Url::parse(service_url)
+        .ok()
+        .and_then(|u| u.port_or_known_default())
+}
+
+/// 通过 docker exec 在容器内部执行 wget 健康检查，绕过 Docker Desktop/WSL2 端口映射延迟。
+/// 容器内不一定有 curl，优先用 wget（BusyBox/Alpine 均内置），失败后尝试 python3。
+fn docker_exec_health_check(container: &str, port: u16) -> bool {
+    let health_url = format!("http://127.0.0.1:{port}/health");
+
+    // 尝试 wget
+    let wget_ok = {
+        let mut cmd = docker_command();
+        cmd.arg("exec")
+            .arg(container)
+            .arg("wget")
+            .arg("-qO-")
+            .arg("--timeout=2")
+            .arg(&health_url);
+        hide_window(&mut cmd);
+        cmd.output()
+            .map(|o| {
+                if o.status.success() {
+                    let body = String::from_utf8_lossy(&o.stdout);
+                    return body.contains("{") || body.len() > 0;
+                }
+                false
+            })
+            .unwrap_or(false)
+    };
+    if wget_ok {
+        return true;
+    }
+
+    // 备选：python3 urllib
+    let mut cmd = docker_command();
+    cmd.arg("exec")
+        .arg(container)
+        .arg("python3")
+        .arg("-c")
+        .arg(format!(
+            "import urllib.request; r=urllib.request.urlopen('{}',timeout=2); print(r.read())",
+            health_url
+        ));
+    hide_window(&mut cmd);
+    cmd.output().map(|o| o.status.success()).unwrap_or(false)
 }

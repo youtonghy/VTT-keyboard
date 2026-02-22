@@ -1,5 +1,5 @@
-use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::Aead;
+use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use base64::{engine::general_purpose, Engine as _};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -244,7 +244,7 @@ impl Default for SenseVoiceSettings {
         Self {
             enabled: false,
             installed: false,
-            service_url: "http://127.0.0.1:8765".to_string(),
+            service_url: "http://127.0.0.1:28765".to_string(),
             model_id: "iic/SenseVoiceSmall".to_string(),
             device: "auto".to_string(),
             download_state: "idle".to_string(),
@@ -306,14 +306,18 @@ impl SettingsStore {
     }
 
     fn persist_settings(&self, settings: &Settings) -> Result<(), SettingsError> {
-        let json = serde_json::to_string(settings).map_err(|err| SettingsError::Serde(err.to_string()))?;
+        let json =
+            serde_json::to_string(settings).map_err(|err| SettingsError::Serde(err.to_string()))?;
         let key = self.load_or_create_key()?;
         let encrypted = encrypt_payload(&json, &key)?;
         let store = self
             .app
             .store(SETTINGS_FILE)
             .map_err(|err| SettingsError::Store(err.to_string()))?;
-        store.set(SETTINGS_STORE_KEY.to_string(), serde_json::Value::String(encrypted));
+        store.set(
+            SETTINGS_STORE_KEY.to_string(),
+            serde_json::Value::String(encrypted),
+        );
         store
             .save()
             .map_err(|err| SettingsError::Store(err.to_string()))?;
@@ -329,7 +333,8 @@ impl SettingsStore {
         fs::create_dir_all(&dir).map_err(|err| SettingsError::Io(err.to_string()))?;
         let key_path = dir.join(SETTINGS_KEY_FILE);
         if key_path.exists() {
-            let data = fs::read_to_string(&key_path).map_err(|err| SettingsError::Io(err.to_string()))?;
+            let data =
+                fs::read_to_string(&key_path).map_err(|err| SettingsError::Io(err.to_string()))?;
             let decoded = general_purpose::STANDARD
                 .decode(data.trim())
                 .map_err(|err| SettingsError::Crypto(err.to_string()))?;
@@ -354,17 +359,12 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
             .iter()
             .any(|card| card.id == id && card.locked);
         if !exists {
-            return Err(SettingsError::Serde(format!(
-                "必须保留内置触发词: {id}"
-            )));
+            return Err(SettingsError::Serde(format!("必须保留内置触发词: {id}")));
         }
     }
 
     for card in &settings.triggers {
-        let has_value = card
-            .variables
-            .iter()
-            .any(|value| !value.trim().is_empty());
+        let has_value = card.variables.iter().any(|value| !value.trim().is_empty());
         if !has_value {
             return Err(SettingsError::Serde(format!(
                 "触发词变量范围不能为空: {}",
@@ -428,8 +428,8 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
 fn encrypt_payload(plain: &str, key: &[u8; 32]) -> Result<String, SettingsError> {
     let mut nonce_bytes = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|err| SettingsError::Crypto(err.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|err| SettingsError::Crypto(err.to_string()))?;
     let nonce = Nonce::from_slice(&nonce_bytes);
     let cipher_text = cipher
         .encrypt(nonce, plain.as_bytes())
@@ -448,8 +448,8 @@ fn decrypt_payload(encoded: &str, key: &[u8; 32]) -> Result<String, SettingsErro
         return Err(SettingsError::Crypto("密文长度不足".to_string()));
     }
     let (nonce_bytes, cipher_text) = decoded.split_at(12);
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|err| SettingsError::Crypto(err.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key).map_err(|err| SettingsError::Crypto(err.to_string()))?;
     let nonce = Nonce::from_slice(nonce_bytes);
     let plain = cipher
         .decrypt(nonce, cipher_text)
