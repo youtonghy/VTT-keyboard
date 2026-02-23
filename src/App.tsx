@@ -1040,19 +1040,14 @@ function App() {
   value={normalizeLocalModel(draft.sensevoice.localModel)}
   onChange={(value) =>
     updateDraft((prev) => {
-      const previousLocalModel = normalizeLocalModel(prev.sensevoice.localModel);
       const nextLocalModel = normalizeLocalModel(value);
-      const previousDefaultModelId = getDefaultModelId(previousLocalModel);
       const nextDefaultModelId = getDefaultModelId(nextLocalModel);
-      const shouldReplaceModelId =
-        !prev.sensevoice.modelId ||
-        prev.sensevoice.modelId === previousDefaultModelId;
       return {
         ...prev,
         sensevoice: {
           ...prev.sensevoice,
           localModel: nextLocalModel,
-          modelId: shouldReplaceModelId ? nextDefaultModelId : prev.sensevoice.modelId,
+          modelId: nextDefaultModelId,
         },
       };
     })
