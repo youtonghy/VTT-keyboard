@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { 
   Settings, 
   Keyboard, 
@@ -11,6 +10,7 @@ import {
   ChevronRight,
   LucideIcon
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export interface SidebarItem {
   id: string;
@@ -20,6 +20,8 @@ export interface SidebarItem {
 interface SidebarProps {
   items: SidebarItem[];
   activeId: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onSelect: (id: string) => void;
 }
 
@@ -33,20 +35,29 @@ const iconMap: Record<string, LucideIcon> = {
   about: Info,
 };
 
-export function Sidebar({ items, activeId, onSelect }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+export function Sidebar({
+  items,
+  activeId,
+  collapsed,
+  onToggleCollapsed,
+  onSelect,
+}: SidebarProps) {
+  const { t } = useTranslation();
+  const toggleLabel = collapsed ? t("nav.expandSidebar") : t("nav.collapseSidebar");
 
   return (
     <nav 
       className={`sidebar ${collapsed ? "collapsed" : ""}`} 
-      aria-label="Sections"
+      aria-label={t("nav.sectionsAria")}
     >
       <div className="sidebar-header">
         <button 
           type="button" 
           className="sidebar-collapse-btn"
-          onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+          onClick={onToggleCollapsed}
+          title={toggleLabel}
+          aria-label={toggleLabel}
+          aria-expanded={!collapsed}
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>

@@ -11,7 +11,10 @@
     "speech": "Transcription",
     "text": "Text",
     "triggers": "Triggers",
-    "about": "About"
+    "about": "About",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "sectionsAria": "Settings section navigation"
   },
   "general": {
     "title": "Appearance & Language",

@@ -166,6 +166,15 @@
     background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
   }
 
+  .sidebar-collapse-btn:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--color-accent) 52%, transparent);
+    outline-offset: 1px;
+  }
+
+  .sidebar-collapse-btn:active {
+    transform: translateY(0.5px);
+  }
+
   .sidebar-nav {
     @apply flex gap-2 md:flex-col;
   }
@@ -194,20 +203,43 @@
       );
   }
 
+  .sidebar-nav-button:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--color-accent) 45%, transparent);
+    outline-offset: 1px;
+  }
+
   .sidebar-icon {
     @apply shrink-0;
   }
 
   .sidebar-label {
-    @apply whitespace-nowrap transition-opacity duration-200;
+    @apply overflow-hidden text-ellipsis whitespace-nowrap;
+    max-width: 170px;
+    transition:
+      opacity 180ms ease,
+      max-width 180ms ease,
+      transform 180ms ease;
   }
 
   .sidebar.collapsed .sidebar-label {
-    @apply opacity-0 w-0 md:hidden;
+    @apply md:pointer-events-none md:opacity-0;
+    max-width: 170px;
+    transform: translateX(0);
+  }
+
+  @media (min-width: 768px) {
+    .sidebar.collapsed .sidebar-label {
+      max-width: 0;
+      transform: translateX(-4px);
+    }
   }
 
   .sidebar.collapsed .sidebar-nav-button {
-    @apply px-3 justify-center;
+    @apply md:px-3 md:justify-center;
+  }
+
+  .sidebar.collapsed .sidebar-nav-button .sidebar-icon {
+    @apply md:mr-0;
   }
 
   .settings-content {
@@ -682,5 +714,3 @@
   }
 
   /* End of components layer */
-
-

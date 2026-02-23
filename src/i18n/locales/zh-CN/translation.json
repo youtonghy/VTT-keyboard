@@ -11,7 +11,10 @@
     "speech": "转写",
     "text": "文本处理",
     "triggers": "触发词",
-    "about": "关于"
+    "about": "关于",
+    "collapseSidebar": "收起侧边栏",
+    "expandSidebar": "展开侧边栏",
+    "sectionsAria": "设置分区导航"
   },
   "general": {
     "title": "外观与语言",

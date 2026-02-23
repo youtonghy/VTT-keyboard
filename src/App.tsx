@@ -18,6 +18,7 @@ import { SettingsCard } from "./components/SettingsCard";
 import { TagInput } from "./components/TagInput";
 import { TitleBar } from "./components/TitleBar";
 import { useAutostart } from "./hooks/useAutostart";
+import { usePersistentBoolean } from "./hooks/usePersistentBoolean";
 import { useSenseVoice } from "./hooks/useSenseVoice";
 import { useSettings } from "./hooks/useSettings";
 import type { Settings } from "./types/settings";
@@ -96,6 +97,10 @@ function App() {
   const autostartSyncedOnStartup = useRef(false);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [activeSection, setActiveSection] = useState("general");
+  const [sidebarCollapsed, setSidebarCollapsed] = usePersistentBoolean(
+    "vtt.sidebar.collapsed",
+    false
+  );
   const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
   const {
     status: sensevoiceStatus,
@@ -506,6 +511,8 @@ function App() {
           <Sidebar
             items={navItems}
             activeId={activeSection}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
             onSelect={setActiveSection}
           />
           <section className="settings-content">
