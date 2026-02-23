@@ -12,6 +12,9 @@ use url::Url;
 const SETTINGS_FILE: &str = "settings.json";
 const SETTINGS_KEY_FILE: &str = "settings.key";
 const SETTINGS_STORE_KEY: &str = "payload";
+const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
+const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
+const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
@@ -296,8 +299,10 @@ impl SettingsStore {
     }
 
     pub fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
-        validate_settings(settings)?;
-        self.persist_settings(settings)
+        let mut normalized = settings.clone();
+        normalize_sensevoice_settings(&mut normalized.sensevoice);
+        validate_settings(&normalized)?;
+        self.persist_settings(&normalized)
     }
 
     pub fn load_sensevoice(&self) -> Result<SenseVoiceSettings, SettingsError> {
@@ -306,9 +311,11 @@ impl SettingsStore {
     }
 
     pub fn save_sensevoice(&self, sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
-        validate_sensevoice_settings(sensevoice)?;
+        let mut normalized = sensevoice.clone();
+        normalize_sensevoice_settings(&mut normalized);
+        validate_sensevoice_settings(&normalized)?;
         let mut settings = self.load()?;
-        settings.sensevoice = sensevoice.clone();
+        settings.sensevoice = normalized;
         self.persist_settings(&settings)
     }
 
@@ -396,8 +403,22 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
     Ok(())
 }
 
+fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
+    if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
+        sensevoice.local_model = LOCAL_MODEL_VOXTRAL.to_string();
+        sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
+        return;
+    }
+    if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_SENSEVOICE) {
+        sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
+    }
+}
+
 fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
-    if !matches!(sensevoice.local_model.as_str(), "sensevoice" | "voxtral") {
+    if !matches!(
+        sensevoice.local_model.as_str(),
+        LOCAL_MODEL_SENSEVOICE | LOCAL_MODEL_VOXTRAL
+    ) {
         return Err(SettingsError::Serde(
             "本地模型仅支持 sensevoice/voxtral".to_string(),
         ));
@@ -432,6 +453,12 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
     if !matches!(sensevoice.device.as_str(), "auto" | "cpu" | "cuda") {
         return Err(SettingsError::Serde(
             "SenseVoice 推理设备仅支持 auto/cpu/cuda".to_string(),
+        ));
+    }
+    if sensevoice.local_model == LOCAL_MODEL_VOXTRAL && sensevoice.device != VOXTRAL_REQUIRED_DEVICE
+    {
+        return Err(SettingsError::Serde(
+            "Voxtral 仅支持 CUDA 设备".to_string(),
         ));
     }
     Ok(())

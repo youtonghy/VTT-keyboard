@@ -90,6 +90,7 @@
     "deviceAuto": "Auto (Prefer GPU)",
     "deviceCpu": "CPU",
     "deviceCuda": "CUDA",
+    "voxtralCudaOnlyHint": "Voxtral requires CUDA (NVIDIA GPU) and runs with FlashAttention disabled.",
     "prepare": "Download & Enable",
     "start": "Start Service",
     "stop": "Stop Service",

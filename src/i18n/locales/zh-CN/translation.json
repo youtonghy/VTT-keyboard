@@ -90,6 +90,7 @@
     "deviceAuto": "自动（优先 GPU）",
     "deviceCpu": "CPU",
     "deviceCuda": "CUDA",
+    "voxtralCudaOnlyHint": "Voxtral 仅支持 CUDA（NVIDIA GPU），且已禁用 FlashAttention。",
     "prepare": "下载并启用",
     "start": "启动服务",
     "stop": "停止服务",

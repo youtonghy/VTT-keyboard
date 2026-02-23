@@ -31,7 +31,8 @@ Voxtral runtime notes:
 
 - Docker image: `vllm/vllm-openai:latest`
 - API endpoint: `POST /v1/audio/transcriptions`
-- Startup tries GPU (`--runtime nvidia --gpus all`) first, then falls back to CPU if GPU startup fails.
+- Voxtral is CUDA-only (`--runtime nvidia --gpus all --device cuda`), with FlashAttention disabled (`--attention-backend TORCH_SDPA`).
+- CPU fallback is disabled for Voxtral.
 - Model weights are pulled on first service start and cached under local model directory.
 
 ## Runtime Notes

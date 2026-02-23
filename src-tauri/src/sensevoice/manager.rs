@@ -35,6 +35,8 @@ const VOXTRAL_CONTAINER_NAME: &str = "vtt-sensevoice-service";
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const VOXTRAL_INTERNAL_PORT: u16 = 8000;
+const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
+const VOXTRAL_ATTENTION_BACKEND: &str = "TORCH_SDPA";
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const HEALTH_REQUEST_TIMEOUT_SECS: u64 = 2;
@@ -527,9 +529,15 @@ fn run_startup_task(
     > {
             check_start_cancelled(&cancel_flag)?;
             let local_model = normalize_local_model(&local_model);
-            let sensevoice = store
+            let mut sensevoice = store
                 .load_sensevoice()
                 .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+            if local_model == LOCAL_MODEL_VOXTRAL && sensevoice.device != VOXTRAL_REQUIRED_DEVICE {
+                sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
+                store
+                    .save_sensevoice(&sensevoice)
+                    .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+            }
             if !sensevoice.installed {
                 return Err(SenseVoiceError::Config(
                     "SenseVoice 尚未安装，请先完成下载".to_string(),
@@ -1231,6 +1239,10 @@ fn run_voxtral_service_container(
         .arg(VOXTRAL_IMAGE_TAG)
         .arg("--model")
         .arg(model_id)
+        .arg("--device")
+        .arg(VOXTRAL_REQUIRED_DEVICE)
+        .arg("--attention-backend")
+        .arg(VOXTRAL_ATTENTION_BACKEND)
         .arg("--host")
         .arg("0.0.0.0")
         .arg("--port")
@@ -1245,40 +1257,9 @@ fn run_voxtral_service_container(
     }
 
     let _ = remove_container_if_exists(runtime_container_name(LOCAL_MODEL_VOXTRAL));
-
-    let mut cpu_command = docker_command();
-    cpu_command
-        .arg("run")
-        .arg("-d")
-        .arg("--name")
-        .arg(runtime_container_name(LOCAL_MODEL_VOXTRAL))
-        .arg("-p")
-        .arg(format!("{publish_host}:{host_port}:{VOXTRAL_INTERNAL_PORT}"))
-        .arg("--mount")
-        .arg(bind_mount(model_dir, "/root/.cache/huggingface"))
-        .arg("--ipc=host")
-        .arg(VOXTRAL_IMAGE_TAG)
-        .arg("--model")
-        .arg(model_id)
-        .arg("--host")
-        .arg("0.0.0.0")
-        .arg("--port")
-        .arg(VOXTRAL_INTERNAL_PORT.to_string())
-        .arg("--enforce-eager")
-        .arg("--device")
-        .arg("cpu");
-    hide_window(&mut cpu_command);
-    let cpu_output = cpu_command
-        .output()
-        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
-    if cpu_output.status.success() {
-        return Ok(());
-    }
-
     let gpu_error = docker_output_detail(&gpu_output);
-    let cpu_error = docker_output_detail(&cpu_output);
     Err(SenseVoiceError::Process(format!(
-        "启动 Voxtral 容器失败（已尝试 GPU 与 CPU）。GPU: {gpu_error}；CPU: {cpu_error}"
+        "启动 Voxtral 容器失败：Voxtral 仅支持 CUDA GPU，并已禁用 FlashAttention（使用 TORCH_SDPA）。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
     )))
 }
 

@@ -95,6 +95,19 @@ const createId = () =>
 const normalizeLocalModel = (value: string | undefined) =>
   value === "voxtral" ? "voxtral" : "sensevoice";
 
+const normalizeSenseVoiceDevice = (
+  localModel: string | undefined,
+  device: string | undefined
+) => {
+  if (normalizeLocalModel(localModel) === "voxtral") {
+    return "cuda";
+  }
+  if (device === "cpu" || device === "cuda") {
+    return device;
+  }
+  return "auto";
+};
+
 const getDefaultModelId = (localModel: string) =>
   normalizeLocalModel(localModel) === "voxtral"
     ? DEFAULT_VOXTRAL_MODEL_ID
@@ -137,6 +150,10 @@ function App() {
         sensevoice: {
           ...settings.sensevoice,
           localModel: normalizeLocalModel(settings.sensevoice.localModel),
+          device: normalizeSenseVoiceDevice(
+            settings.sensevoice.localModel,
+            settings.sensevoice.device
+          ),
         },
       });
     }
@@ -1010,6 +1027,14 @@ function App() {
                         // 防止停止服务后残留阶段导致按钮持续禁用
                         (running && (progressStage === "verify" || progressStage === "warmup"));
                       const stopBusy = sensevoiceLoading;
+                      const selectedLocalModel = normalizeLocalModel(
+                        draft.sensevoice.localModel
+                      );
+                      const isVoxtralSelected = selectedLocalModel === "voxtral";
+                      const currentDevice = normalizeSenseVoiceDevice(
+                        selectedLocalModel,
+                        draft.sensevoice.device
+                      );
 
                       return (
                         <>
@@ -1037,17 +1062,22 @@ function App() {
                     <label className="field">
                       <span>{t("sensevoice.localModel")}</span>
                       <CustomSelect
-  value={normalizeLocalModel(draft.sensevoice.localModel)}
+  value={selectedLocalModel}
   onChange={(value) =>
     updateDraft((prev) => {
       const nextLocalModel = normalizeLocalModel(value);
       const nextDefaultModelId = getDefaultModelId(nextLocalModel);
+      const nextDevice = normalizeSenseVoiceDevice(
+        nextLocalModel,
+        prev.sensevoice.device
+      );
       return {
         ...prev,
         sensevoice: {
           ...prev.sensevoice,
           localModel: nextLocalModel,
           modelId: nextDefaultModelId,
+          device: nextDevice,
         },
       };
     })
@@ -1100,13 +1130,17 @@ function App() {
                     <label className="field">
                       <span>{t("sensevoice.device")}</span>
                       <CustomSelect
-  value={draft.sensevoice.device}
+  value={currentDevice}
   onChange={(value) =>
     updateDraft((prev) => ({
       ...prev,
-      sensevoice: { ...prev.sensevoice, device: value },
+      sensevoice: {
+        ...prev.sensevoice,
+        device: normalizeSenseVoiceDevice(prev.sensevoice.localModel, value),
+      },
     }))
   }
+  disabled={isVoxtralSelected}
   options={[
     { value: "auto", label: t("sensevoice.deviceAuto") },
     { value: "cpu", label: t("sensevoice.deviceCpu") },
@@ -1114,6 +1148,11 @@ function App() {
   ]}
 />
                     </label>
+                    {isVoxtralSelected ? (
+                      <div className="sensevoice-hint">
+                        {t("sensevoice.voxtralCudaOnlyHint")}
+                      </div>
+                    ) : null}
 
                     {sensevoiceProgress ? (
                       <div className="sensevoice-progress">
