@@ -285,24 +285,11 @@ pub fn run() {
                     let _ = window.hide();
                 }
                 let window_clone = window.clone();
-                let app_for_close = app_handle.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
+                        dev_eprintln!("窗口关闭请求已拦截，改为隐藏到托盘并保持后台运行");
                         let _ = window_clone.hide();
-                        let app_for_stop = app_for_close.clone();
-                        std::thread::spawn(move || {
-                            let state = app_for_stop.state::<AppState>();
-                            let Ok(mut manager) = state.sensevoice_manager.lock() else {
-                                dev_eprintln!("关闭窗口时获取 SenseVoice 锁失败");
-                                return;
-                            };
-                            if let Err(err) =
-                                manager.stop_service(&app_for_stop, &state.settings_store)
-                            {
-                                dev_eprintln!("关闭窗口时停止 SenseVoice 服务失败: {err}");
-                            }
-                        });
                     }
                 });
             }
