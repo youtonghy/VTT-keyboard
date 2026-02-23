@@ -18,6 +18,22 @@ SenseVoice local mode now runs with Docker only. Python runtime on host is no lo
    - First run will build image `vtt-sensevoice:local` and download model.
 4. Click `Start Service` to run the containerized service.
 
+## Local Models (SenseVoice / Voxtral)
+
+Local mode supports switching between two models:
+
+- `SenseVoice` (default)
+- `mistralai/Voxtral-Mini-4B-Realtime-2602` (via vLLM Docker image)
+
+When switching local models while the service is running, the app will stop the previous container first, then start the new one automatically.
+
+Voxtral runtime notes:
+
+- Docker image: `vllm/vllm-openai:latest`
+- API endpoint: `POST /v1/audio/transcriptions`
+- Startup tries GPU (`--runtime nvidia --gpus all`) first, then falls back to CPU if GPU startup fails.
+- Model weights are pulled on first service start and cached under local model directory.
+
 ## Runtime Notes
 
 - Container name: `vtt-sensevoice-service`

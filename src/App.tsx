@@ -31,6 +31,8 @@ const parseList = (value: string) =>
     .filter(Boolean);
 
 const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
+const DEFAULT_SENSEVOICE_MODEL_ID = "iic/SenseVoiceSmall";
+const DEFAULT_VOXTRAL_MODEL_ID = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 
 const logDebug = (..._args: unknown[]) => {};
 
@@ -90,6 +92,14 @@ const createId = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const normalizeLocalModel = (value: string | undefined) =>
+  value === "voxtral" ? "voxtral" : "sensevoice";
+
+const getDefaultModelId = (localModel: string) =>
+  normalizeLocalModel(localModel) === "voxtral"
+    ? DEFAULT_VOXTRAL_MODEL_ID
+    : DEFAULT_SENSEVOICE_MODEL_ID;
+
 function App() {
   const { t, i18n } = useTranslation();
   const { settings, loading, saveSettings } = useSettings();
@@ -122,7 +132,13 @@ function App() {
 
   useEffect(() => {
     if (settings) {
-      setDraft(settings);
+      setDraft({
+        ...settings,
+        sensevoice: {
+          ...settings.sensevoice,
+          localModel: normalizeLocalModel(settings.sensevoice.localModel),
+        },
+      });
     }
   }, [settings]);
 
@@ -1017,6 +1033,42 @@ function App() {
                         })}
                       </span>
                     </div>
+
+                    <label className="field">
+                      <span>{t("sensevoice.localModel")}</span>
+                      <CustomSelect
+  value={normalizeLocalModel(draft.sensevoice.localModel)}
+  onChange={(value) =>
+    updateDraft((prev) => {
+      const previousLocalModel = normalizeLocalModel(prev.sensevoice.localModel);
+      const nextLocalModel = normalizeLocalModel(value);
+      const previousDefaultModelId = getDefaultModelId(previousLocalModel);
+      const nextDefaultModelId = getDefaultModelId(nextLocalModel);
+      const shouldReplaceModelId =
+        !prev.sensevoice.modelId ||
+        prev.sensevoice.modelId === previousDefaultModelId;
+      return {
+        ...prev,
+        sensevoice: {
+          ...prev.sensevoice,
+          localModel: nextLocalModel,
+          modelId: shouldReplaceModelId ? nextDefaultModelId : prev.sensevoice.modelId,
+        },
+      };
+    })
+  }
+  options={[
+    {
+      value: "sensevoice",
+      label: t("sensevoice.localModelSenseVoice"),
+    },
+    {
+      value: "voxtral",
+      label: t("sensevoice.localModelVoxtral"),
+    }
+  ]}
+/>
+                    </label>
 
                     <label className="field">
                       <span>{t("sensevoice.serviceUrl")}</span>

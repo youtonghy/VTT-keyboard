@@ -38,16 +38,35 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
         .unwrap_or("recording.wav");
 
     let client = Client::new();
+    let local_model = if settings.sensevoice.local_model.eq_ignore_ascii_case("voxtral") {
+        "voxtral"
+    } else {
+        "sensevoice"
+    };
     for attempt in 0..2 {
-        let form = multipart::Form::new()
+        let mut form = multipart::Form::new()
             .part(
                 "file",
                 multipart::Part::bytes(file_bytes.clone()).file_name(file_name.to_string()),
-            )
-            .text("language", "auto".to_string());
+            );
+        let endpoint = if local_model == "voxtral" {
+            let model_id = if settings.sensevoice.model_id.trim().is_empty() {
+                "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string()
+            } else {
+                settings.sensevoice.model_id.trim().to_string()
+            };
+            form = form
+                .text("model", model_id)
+                .text("language", "auto".to_string())
+                .text("response_format", "json".to_string());
+            "/v1/audio/transcriptions"
+        } else {
+            form = form.text("language", "auto".to_string());
+            "/api/v1/asr"
+        };
 
         let response = client
-            .post(format!("{service_url}/api/v1/asr"))
+            .post(format!("{service_url}{endpoint}"))
             .multipart(form)
             .send()
             .map_err(|err| SenseVoiceError::Request(err.to_string()))?;

@@ -28,8 +28,13 @@ const SERVER_SCRIPT: &str = include_str!("scripts/server.py");
 const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
 const DOCKERFILE_TXT: &str = include_str!("scripts/Dockerfile");
 
-const SERVICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
+const SENSEVOICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
+const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:latest";
 const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
+const VOXTRAL_CONTAINER_NAME: &str = "vtt-sensevoice-service";
+const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
+const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
+const VOXTRAL_INTERNAL_PORT: u16 = 8000;
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const HEALTH_REQUEST_TIMEOUT_SECS: u64 = 2;
@@ -47,6 +52,7 @@ pub struct SenseVoiceStatus {
     pub installed: bool,
     pub enabled: bool,
     pub running: bool,
+    pub local_model: String,
     pub service_url: String,
     pub model_id: String,
     pub device: String,
@@ -71,6 +77,30 @@ struct SenseVoiceRuntimeLog {
     stream: String,
     line: String,
     ts: i64,
+}
+
+fn normalize_local_model(value: &str) -> &str {
+    if value.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
+        LOCAL_MODEL_VOXTRAL
+    } else {
+        LOCAL_MODEL_SENSEVOICE
+    }
+}
+
+fn runtime_image_tag(local_model: &str) -> &'static str {
+    if local_model == LOCAL_MODEL_VOXTRAL {
+        VOXTRAL_IMAGE_TAG
+    } else {
+        SENSEVOICE_IMAGE_TAG
+    }
+}
+
+fn runtime_container_name(local_model: &str) -> &'static str {
+    if local_model == LOCAL_MODEL_VOXTRAL {
+        VOXTRAL_CONTAINER_NAME
+    } else {
+        SERVICE_CONTAINER_NAME
+    }
 }
 
 pub struct SenseVoiceManager {
@@ -106,6 +136,7 @@ impl SenseVoiceManager {
             installed: sensevoice.installed,
             enabled: sensevoice.enabled,
             running,
+            local_model: sensevoice.local_model,
             service_url: sensevoice.service_url,
             model_id: sensevoice.model_id,
             device: sensevoice.device,
@@ -129,17 +160,21 @@ impl SenseVoiceManager {
         let sensevoice = store
             .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        let local_model = normalize_local_model(&sensevoice.local_model);
         let paths = ensure_paths(app)?;
-        write_runtime_files(&paths)?;
+        if local_model == LOCAL_MODEL_SENSEVOICE {
+            write_runtime_files(&paths)?;
+        }
         let job = WorkerJob {
+            local_model: local_model.to_string(),
             service_url: sensevoice.service_url,
             model_id: sensevoice.model_id,
             device: sensevoice.device,
             runtime_dir: paths.runtime_dir.to_string_lossy().to_string(),
             models_dir: paths.models_dir.to_string_lossy().to_string(),
             state_file: paths.state_file.to_string_lossy().to_string(),
-            image_tag: SERVICE_IMAGE_TAG.to_string(),
-            container_name: SERVICE_CONTAINER_NAME.to_string(),
+            image_tag: runtime_image_tag(local_model).to_string(),
+            container_name: runtime_container_name(local_model).to_string(),
         };
         self.spawn_prepare_worker(app, store, &job)?;
         self.status(store)
@@ -183,8 +218,9 @@ impl SenseVoiceManager {
         let app_handle = app.clone();
         let store_clone = store.clone();
         let cancel_flag = Arc::clone(&self.start_cancel_flag);
+        let local_model = normalize_local_model(&sensevoice.local_model).to_string();
         thread::spawn(move || {
-            run_startup_task(app_handle, store_clone, cancel_flag);
+            run_startup_task(app_handle, store_clone, cancel_flag, local_model);
         });
 
         self.status(store)
@@ -200,8 +236,7 @@ impl SenseVoiceManager {
         self.start_in_progress = false;
         self.container_running_cache.store(false, Ordering::Relaxed);
         self.stop_log_stream();
-        let _ = stop_container(SERVICE_CONTAINER_NAME);
-        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+        stop_all_runtime_containers();
         self.container_name = None;
         let _ = self.update_state(store, "idle", "", None, None);
         // 通知前端进度已终止，清除残留的 verify/warmup 阶段状态
@@ -220,7 +255,7 @@ impl SenseVoiceManager {
     #[allow(dead_code)]
     fn is_running(&mut self) -> bool {
         self.reconcile_prepare_task();
-        let running = docker_container_running(SERVICE_CONTAINER_NAME).unwrap_or(false);
+        let running = is_any_runtime_running();
         self.container_running_cache
             .store(running, Ordering::Relaxed);
         if running {
@@ -229,6 +264,16 @@ impl SenseVoiceManager {
             self.container_name = None;
             self.stop_log_stream();
         }
+        running
+    }
+
+    pub fn has_running_runtime(&mut self) -> bool {
+        self.reconcile_prepare_task();
+        if self.start_in_progress {
+            return true;
+        }
+        let running = is_any_runtime_running();
+        self.container_running_cache.store(running, Ordering::Relaxed);
         running
     }
 
@@ -463,12 +508,16 @@ impl Drop for SenseVoiceManager {
     fn drop(&mut self) {
         self.stop_prepare_task();
         self.stop_log_stream();
-        let _ = stop_container(SERVICE_CONTAINER_NAME);
-        let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+        stop_all_runtime_containers();
     }
 }
 
-fn run_startup_task(app: AppHandle, store: SettingsStore, cancel_flag: Arc<AtomicBool>) {
+fn run_startup_task(
+    app: AppHandle,
+    store: SettingsStore,
+    cancel_flag: Arc<AtomicBool>,
+    local_model: String,
+) {
     let mut runtime_tail: Option<Arc<Mutex<VecDeque<String>>>> = None;
     let mut log_path: Option<PathBuf> = None;
 
@@ -477,6 +526,7 @@ fn run_startup_task(app: AppHandle, store: SettingsStore, cancel_flag: Arc<Atomi
         SenseVoiceError,
     > {
             check_start_cancelled(&cancel_flag)?;
+            let local_model = normalize_local_model(&local_model);
             let sensevoice = store
                 .load_sensevoice()
                 .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
@@ -487,28 +537,43 @@ fn run_startup_task(app: AppHandle, store: SettingsStore, cancel_flag: Arc<Atomi
             }
 
             let paths = ensure_paths(&app)?;
-            write_runtime_files(&paths)?;
+            if local_model == LOCAL_MODEL_SENSEVOICE {
+                write_runtime_files(&paths)?;
+            }
             check_start_cancelled(&cancel_flag)?;
             ensure_docker_available()?;
             check_start_cancelled(&cancel_flag)?;
-            ensure_runtime_image(&app, &paths.runtime_dir)?;
+            if local_model == LOCAL_MODEL_SENSEVOICE {
+                ensure_runtime_image(&app, &paths.runtime_dir)?;
+            } else {
+                ensure_voxtral_image(&app)?;
+            }
             check_start_cancelled(&cancel_flag)?;
 
             let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
             let publish_host = normalize_publish_host(&host)?;
-            let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
             let current_log_path = paths.runtime_dir.join("server.log");
             log_path = Some(current_log_path.clone());
 
-            let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
-            run_service_container(
-                &publish_host,
-                port,
-                &paths.models_dir,
-                &sensevoice.model_id,
-                &sensevoice.device,
-                &hub,
-            )?;
+            stop_all_runtime_containers();
+            if local_model == LOCAL_MODEL_SENSEVOICE {
+                let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
+                run_service_container(
+                    &publish_host,
+                    port,
+                    &paths.models_dir,
+                    &sensevoice.model_id,
+                    &sensevoice.device,
+                    &hub,
+                )?;
+            } else {
+                run_voxtral_service_container(
+                    &publish_host,
+                    port,
+                    &paths.models_dir,
+                    &sensevoice.model_id,
+                )?;
+            }
             check_start_cancelled(&cancel_flag)?;
 
             let current_runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
@@ -531,7 +596,7 @@ fn run_startup_task(app: AppHandle, store: SettingsStore, cancel_flag: Arc<Atomi
                     Arc::clone(&current_runtime_tail),
                     Arc::clone(&startup_completed),
                 )?;
-                manager.container_name = Some(SERVICE_CONTAINER_NAME.to_string());
+                manager.container_name = Some(runtime_container_name(local_model).to_string());
             }
 
             wait_service_reachable(
@@ -764,8 +829,7 @@ fn report_monitor_failure(
         Some(full_message),
     );
     cleanup_runtime_state(app);
-    let _ = stop_container(SERVICE_CONTAINER_NAME);
-    let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+    stop_all_runtime_containers();
 }
 
 fn handle_startup_failure(
@@ -802,8 +866,7 @@ fn handle_startup_failure(
     }
 
     cleanup_runtime_state(app);
-    let _ = stop_container(SERVICE_CONTAINER_NAME);
-    let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+    stop_all_runtime_containers();
 }
 
 fn cleanup_runtime_state(app: &AppHandle) {
@@ -1003,7 +1066,7 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
     let stamp_path = runtime_dir.join(IMAGE_STAMP_FILE);
     let expected_stamp = runtime_stamp();
     let previous_stamp = fs::read_to_string(&stamp_path).unwrap_or_default();
-    let has_image = docker_image_exists(SERVICE_IMAGE_TAG);
+    let has_image = docker_image_exists(SENSEVOICE_IMAGE_TAG);
 
     if has_image && previous_stamp.trim() == expected_stamp {
         return Ok(());
@@ -1013,7 +1076,7 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
         stage: "install".to_string(),
         message: "Building Docker image".to_string(),
         percent: Some(35),
-        detail: Some(format!("Building image {SERVICE_IMAGE_TAG}")),
+        detail: Some(format!("Building image {SENSEVOICE_IMAGE_TAG}")),
     };
     let _ = app.emit("sensevoice-progress", payload);
 
@@ -1021,7 +1084,7 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
     build
         .arg("build")
         .arg("-t")
-        .arg(SERVICE_IMAGE_TAG)
+        .arg(SENSEVOICE_IMAGE_TAG)
         .arg(runtime_dir);
     run_command_streaming(
         &mut build,
@@ -1042,6 +1105,40 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
     )?;
 
     fs::write(stamp_path, expected_stamp).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    Ok(())
+}
+
+fn ensure_voxtral_image(app: &AppHandle) -> Result<(), SenseVoiceError> {
+    if docker_image_exists(VOXTRAL_IMAGE_TAG) {
+        return Ok(());
+    }
+    let payload = SenseVoiceProgress {
+        stage: "install".to_string(),
+        message: "Pulling Voxtral Docker image".to_string(),
+        percent: Some(35),
+        detail: Some(format!("Pulling image {VOXTRAL_IMAGE_TAG}")),
+    };
+    let _ = app.emit("sensevoice-progress", payload);
+
+    let mut pull = docker_command();
+    pull.arg("pull").arg(VOXTRAL_IMAGE_TAG);
+    run_command_streaming(
+        &mut pull,
+        "拉取 Voxtral Docker 镜像",
+        Duration::from_secs(DOCKER_BUILD_TIMEOUT_SECS),
+        |line| {
+            let detail = normalize_log_line(line);
+            if !detail.is_empty() {
+                let payload = SenseVoiceProgress {
+                    stage: "install".to_string(),
+                    message: "Pulling Voxtral Docker image".to_string(),
+                    percent: Some(35),
+                    detail: Some(detail),
+                };
+                let _ = app.emit("sensevoice-progress", payload);
+            }
+        },
+    )?;
     Ok(())
 }
 
@@ -1092,7 +1189,7 @@ fn run_service_container(
         .arg("SENSEVOICE_HOST=0.0.0.0")
         .arg("-e")
         .arg(format!("SENSEVOICE_PORT={port}"))
-        .arg(SERVICE_IMAGE_TAG);
+        .arg(SENSEVOICE_IMAGE_TAG);
 
     hide_window(&mut command);
     let output = command
@@ -1107,6 +1204,90 @@ fn run_service_container(
     Err(SenseVoiceError::Process(format!(
         "启动 SenseVoice 容器失败: {details}"
     )))
+}
+
+fn run_voxtral_service_container(
+    publish_host: &str,
+    host_port: u16,
+    model_dir: &Path,
+    model_id: &str,
+) -> Result<(), SenseVoiceError> {
+    fs::create_dir_all(model_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    let mut gpu_command = docker_command();
+    gpu_command
+        .arg("run")
+        .arg("-d")
+        .arg("--name")
+        .arg(runtime_container_name(LOCAL_MODEL_VOXTRAL))
+        .arg("--runtime")
+        .arg("nvidia")
+        .arg("--gpus")
+        .arg("all")
+        .arg("-p")
+        .arg(format!("{publish_host}:{host_port}:{VOXTRAL_INTERNAL_PORT}"))
+        .arg("--mount")
+        .arg(bind_mount(model_dir, "/root/.cache/huggingface"))
+        .arg("--ipc=host")
+        .arg(VOXTRAL_IMAGE_TAG)
+        .arg("--model")
+        .arg(model_id)
+        .arg("--host")
+        .arg("0.0.0.0")
+        .arg("--port")
+        .arg(VOXTRAL_INTERNAL_PORT.to_string())
+        .arg("--enforce-eager");
+    hide_window(&mut gpu_command);
+    let gpu_output = gpu_command
+        .output()
+        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+    if gpu_output.status.success() {
+        return Ok(());
+    }
+
+    let _ = remove_container_if_exists(runtime_container_name(LOCAL_MODEL_VOXTRAL));
+
+    let mut cpu_command = docker_command();
+    cpu_command
+        .arg("run")
+        .arg("-d")
+        .arg("--name")
+        .arg(runtime_container_name(LOCAL_MODEL_VOXTRAL))
+        .arg("-p")
+        .arg(format!("{publish_host}:{host_port}:{VOXTRAL_INTERNAL_PORT}"))
+        .arg("--mount")
+        .arg(bind_mount(model_dir, "/root/.cache/huggingface"))
+        .arg("--ipc=host")
+        .arg(VOXTRAL_IMAGE_TAG)
+        .arg("--model")
+        .arg(model_id)
+        .arg("--host")
+        .arg("0.0.0.0")
+        .arg("--port")
+        .arg(VOXTRAL_INTERNAL_PORT.to_string())
+        .arg("--enforce-eager")
+        .arg("--device")
+        .arg("cpu");
+    hide_window(&mut cpu_command);
+    let cpu_output = cpu_command
+        .output()
+        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
+    if cpu_output.status.success() {
+        return Ok(());
+    }
+
+    let gpu_error = docker_output_detail(&gpu_output);
+    let cpu_error = docker_output_detail(&cpu_output);
+    Err(SenseVoiceError::Process(format!(
+        "启动 Voxtral 容器失败（已尝试 GPU 与 CPU）。GPU: {gpu_error}；CPU: {cpu_error}"
+    )))
+}
+
+fn docker_output_detail(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 fn stop_container(name: &str) -> Result<(), SenseVoiceError> {
@@ -1171,6 +1352,27 @@ fn docker_container_running(name: &str) -> Result<bool, SenseVoiceError> {
         )));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim() == "true")
+}
+
+fn stop_all_runtime_containers() {
+    let _ = stop_container(SERVICE_CONTAINER_NAME);
+    let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
+    if VOXTRAL_CONTAINER_NAME != SERVICE_CONTAINER_NAME {
+        let _ = stop_container(VOXTRAL_CONTAINER_NAME);
+        let _ = remove_container_if_exists(VOXTRAL_CONTAINER_NAME);
+    }
+}
+
+fn is_any_runtime_running() -> bool {
+    if docker_container_running(SERVICE_CONTAINER_NAME).unwrap_or(false) {
+        return true;
+    }
+    if VOXTRAL_CONTAINER_NAME != SERVICE_CONTAINER_NAME
+        && docker_container_running(VOXTRAL_CONTAINER_NAME).unwrap_or(false)
+    {
+        return true;
+    }
+    false
 }
 
 fn bind_mount(source: &Path, target: &str) -> String {
@@ -1563,42 +1765,52 @@ fn extract_port_from_url(service_url: &str) -> Option<u16> {
 /// 通过 docker exec 在容器内部执行 wget 健康检查，绕过 Docker Desktop/WSL2 端口映射延迟。
 /// 容器内不一定有 curl，优先用 wget（BusyBox/Alpine 均内置），失败后尝试 python3。
 fn docker_exec_health_check(container: &str, port: u16) -> bool {
-    let health_url = format!("http://127.0.0.1:{port}/health");
+    let mut health_urls = vec![format!("http://127.0.0.1:{port}/health")];
+    if port != VOXTRAL_INTERNAL_PORT {
+        health_urls.push(format!(
+            "http://127.0.0.1:{VOXTRAL_INTERNAL_PORT}/health"
+        ));
+    }
 
-    // 尝试 wget
-    let wget_ok = {
+    for health_url in health_urls {
+        // 尝试 wget
+        let wget_ok = {
+            let mut cmd = docker_command();
+            cmd.arg("exec")
+                .arg(container)
+                .arg("wget")
+                .arg("-qO-")
+                .arg("--timeout=2")
+                .arg(&health_url);
+            hide_window(&mut cmd);
+            cmd.output()
+                .map(|o| {
+                    if o.status.success() {
+                        let body = String::from_utf8_lossy(&o.stdout);
+                        return body.contains("{") || body.len() > 0;
+                    }
+                    false
+                })
+                .unwrap_or(false)
+        };
+        if wget_ok {
+            return true;
+        }
+
+        // 备选：python3 urllib
         let mut cmd = docker_command();
         cmd.arg("exec")
             .arg(container)
-            .arg("wget")
-            .arg("-qO-")
-            .arg("--timeout=2")
-            .arg(&health_url);
+            .arg("python3")
+            .arg("-c")
+            .arg(format!(
+                "import urllib.request; r=urllib.request.urlopen('{}',timeout=2); print(r.read())",
+                health_url
+            ));
         hide_window(&mut cmd);
-        cmd.output()
-            .map(|o| {
-                if o.status.success() {
-                    let body = String::from_utf8_lossy(&o.stdout);
-                    return body.contains("{") || body.len() > 0;
-                }
-                false
-            })
-            .unwrap_or(false)
-    };
-    if wget_ok {
-        return true;
+        if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
+            return true;
+        }
     }
-
-    // 备选：python3 urllib
-    let mut cmd = docker_command();
-    cmd.arg("exec")
-        .arg(container)
-        .arg("python3")
-        .arg("-c")
-        .arg(format!(
-            "import urllib.request; r=urllib.request.urlopen('{}',timeout=2); print(r.read())",
-            health_url
-        ));
-    hide_window(&mut cmd);
-    cmd.output().map(|o| o.status.success()).unwrap_or(false)
+    false
 }

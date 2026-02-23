@@ -232,6 +232,8 @@ impl Default for VolcengineSettings {
 pub struct SenseVoiceSettings {
     pub enabled: bool,
     pub installed: bool,
+    #[serde(default = "default_local_model")]
+    pub local_model: String,
     pub service_url: String,
     pub model_id: String,
     pub device: String,
@@ -239,11 +241,16 @@ pub struct SenseVoiceSettings {
     pub last_error: String,
 }
 
+fn default_local_model() -> String {
+    "sensevoice".to_string()
+}
+
 impl Default for SenseVoiceSettings {
     fn default() -> Self {
         Self {
             enabled: false,
             installed: false,
+            local_model: default_local_model(),
             service_url: "http://127.0.0.1:28765".to_string(),
             model_id: "iic/SenseVoiceSmall".to_string(),
             device: "auto".to_string(),
@@ -390,6 +397,11 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
 }
 
 fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
+    if !matches!(sensevoice.local_model.as_str(), "sensevoice" | "voxtral") {
+        return Err(SettingsError::Serde(
+            "本地模型仅支持 sensevoice/voxtral".to_string(),
+        ));
+    }
     if sensevoice.service_url.trim().is_empty() {
         return Err(SettingsError::Serde(
             "SenseVoice 服务地址不能为空".to_string(),

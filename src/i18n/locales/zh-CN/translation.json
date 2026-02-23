@@ -81,6 +81,9 @@
     "stream": "启用流式"
   },
   "sensevoice": {
+    "localModel": "本地模型",
+    "localModelSenseVoice": "SenseVoice",
+    "localModelVoxtral": "Voxtral",
     "serviceUrl": "服务地址",
     "modelId": "模型 ID",
     "device": "推理设备",

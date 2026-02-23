@@ -60,11 +60,27 @@ fn get_settings(state: State<AppState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-fn update_settings(state: State<AppState>, settings: Settings) -> Result<(), String> {
+fn update_settings(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    settings: Settings,
+) -> Result<(), String> {
+    let previous_local_model = state
+        .settings_store
+        .load()
+        .map_err(|err| err.to_string())?
+        .sensevoice
+        .local_model;
     state
         .settings_store
         .save(&settings)
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    maybe_restart_local_runtime_if_switched(
+        &app,
+        &state,
+        &previous_local_model,
+        &settings.sensevoice.local_model,
+    )
 }
 
 #[tauri::command]
@@ -77,13 +93,60 @@ fn get_sensevoice_settings(state: State<AppState>) -> Result<SenseVoiceSettings,
 
 #[tauri::command]
 fn update_sensevoice_settings(
+    app: tauri::AppHandle,
     state: State<AppState>,
     sensevoice: SenseVoiceSettings,
 ) -> Result<(), String> {
+    let previous_local_model = state
+        .settings_store
+        .load_sensevoice()
+        .map_err(|err| err.to_string())?
+        .local_model;
     state
         .settings_store
         .save_sensevoice(&sensevoice)
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    maybe_restart_local_runtime_if_switched(
+        &app,
+        &state,
+        &previous_local_model,
+        &sensevoice.local_model,
+    )
+}
+
+fn normalize_local_model(value: &str) -> &str {
+    if value.eq_ignore_ascii_case("voxtral") {
+        "voxtral"
+    } else {
+        "sensevoice"
+    }
+}
+
+fn maybe_restart_local_runtime_if_switched(
+    app: &tauri::AppHandle,
+    state: &State<AppState>,
+    previous_local_model: &str,
+    next_local_model: &str,
+) -> Result<(), String> {
+    let previous = normalize_local_model(previous_local_model);
+    let next = normalize_local_model(next_local_model);
+    if previous == next {
+        return Ok(());
+    }
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+    if !manager.has_running_runtime() {
+        return Ok(());
+    }
+    manager
+        .stop_service(app, &state.settings_store)
+        .map_err(|err| err.to_string())?;
+    manager
+        .start_service_async(app, &state.settings_store)
+        .map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

@@ -15,10 +15,15 @@ const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const DOCKER_BUILD_TIMEOUT_SECS: u64 = 40 * 60;
 const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 60 * 60;
 const IMAGE_STAMP_FILE: &str = "image.stamp";
+const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
+const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
+const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:latest";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkerJob {
+    #[serde(default = "default_local_model")]
+    pub local_model: String,
     pub service_url: String,
     pub model_id: String,
     pub device: String,
@@ -27,6 +32,10 @@ pub struct WorkerJob {
     pub state_file: String,
     pub image_tag: String,
     pub container_name: String,
+}
+
+fn default_local_model() -> String {
+    LOCAL_MODEL_SENSEVOICE.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,10 +91,29 @@ pub fn run_worker(job_file: &str) -> i32 {
 }
 
 fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
+    let local_model = normalize_local_model(&job.local_model);
     emit_progress("prepare", "Preparing runtime", Some(5), None);
     emit_state("preparing", "", None, None);
 
     ensure_docker_available()?;
+
+    if local_model == LOCAL_MODEL_VOXTRAL {
+        emit_progress("install", "Pulling Voxtral Docker image", Some(35), None);
+        ensure_voxtral_image(|line| {
+            emit_progress(
+                "install",
+                "Pulling Voxtral Docker image",
+                Some(35),
+                Some(line.to_string()),
+            );
+        })?;
+        emit_state("ready", "", Some(true), Some(true));
+        emit_progress("done", "Voxtral runtime prepared", Some(100), None);
+        emit_event(&WorkerEvent::Done {
+            message: "Voxtral prepare completed".to_string(),
+        });
+        return Ok(());
+    }
 
     emit_progress("install", "Building Docker image", Some(35), None);
     ensure_runtime_image(job, |line| {
@@ -182,6 +210,28 @@ where
     Ok(())
 }
 
+fn ensure_voxtral_image<F>(mut on_line: F) -> Result<(), String>
+where
+    F: FnMut(&str),
+{
+    if docker_image_exists(VOXTRAL_IMAGE_TAG) {
+        return Ok(());
+    }
+    let mut pull = docker_command();
+    pull.arg("pull").arg(VOXTRAL_IMAGE_TAG);
+    run_command_streaming(
+        &mut pull,
+        "拉取 Voxtral Docker 镜像",
+        Duration::from_secs(DOCKER_BUILD_TIMEOUT_SECS),
+        |line| {
+            let detail = normalize_log_line(line);
+            if !detail.is_empty() {
+                on_line(&detail);
+            }
+        },
+    )
+}
+
 fn runtime_stamp(runtime_dir: &Path) -> Result<String, String> {
     let files = ["prepare.py", "server.py", "requirements.txt", "Dockerfile"];
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -191,6 +241,14 @@ fn runtime_stamp(runtime_dir: &Path) -> Result<String, String> {
         data.hash(&mut hasher);
     }
     Ok(format!("{:x}", hasher.finish()))
+}
+
+fn normalize_local_model(value: &str) -> &str {
+    if value.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
+        LOCAL_MODEL_VOXTRAL
+    } else {
+        LOCAL_MODEL_SENSEVOICE
+    }
 }
 
 fn docker_image_exists(image: &str) -> bool {

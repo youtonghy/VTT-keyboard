@@ -81,6 +81,9 @@
     "stream": "Enable Streaming"
   },
   "sensevoice": {
+    "localModel": "Local Model",
+    "localModelSenseVoice": "SenseVoice",
+    "localModelVoxtral": "Voxtral",
     "serviceUrl": "Service URL",
     "modelId": "Model ID",
     "device": "Inference Device",

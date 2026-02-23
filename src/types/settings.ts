@@ -79,6 +79,7 @@ export interface VolcengineSettings {
 export interface SenseVoiceSettings {
   enabled: boolean;
   installed: boolean;
+  localModel: string;
   serviceUrl: string;
   modelId: string;
   device: string;

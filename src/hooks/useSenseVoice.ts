@@ -7,6 +7,7 @@ export interface SenseVoiceStatus {
   installed: boolean;
   enabled: boolean;
   running: boolean;
+  localModel: string;
   serviceUrl: string;
   modelId: string;
   device: string;
@@ -31,6 +32,7 @@ const defaultStatus: SenseVoiceStatus = {
   installed: false,
   enabled: false,
   running: false,
+  localModel: "sensevoice",
   serviceUrl: "",
   modelId: "",
   device: "auto",
