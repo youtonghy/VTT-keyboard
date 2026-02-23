@@ -31,7 +31,7 @@ const parseList = (value: string) =>
     .filter(Boolean);
 
 const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
-const DEFAULT_SENSEVOICE_MODEL_ID = "iic/SenseVoiceSmall";
+const DEFAULT_SENSEVOICE_MODEL_ID = "FunAudioLLM/SenseVoiceSmall";
 const DEFAULT_VOXTRAL_MODEL_ID = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 
 const logDebug = (..._args: unknown[]) => {};

@@ -252,7 +252,7 @@ impl Default for SenseVoiceSettings {
             installed: false,
             local_model: default_local_model(),
             service_url: "http://127.0.0.1:28765".to_string(),
-            model_id: "iic/SenseVoiceSmall".to_string(),
+            model_id: "FunAudioLLM/SenseVoiceSmall".to_string(),
             device: "auto".to_string(),
             download_state: "idle".to_string(),
             last_error: String::new(),
