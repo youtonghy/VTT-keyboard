@@ -17,7 +17,8 @@ const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 60 * 60;
 const IMAGE_STAMP_FILE: &str = "image.stamp";
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
-const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
+const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
+const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,20 +98,26 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
 
     ensure_docker_available()?;
 
-    if local_model == LOCAL_MODEL_VOXTRAL {
-        emit_progress("install", "Pulling Voxtral Docker image", Some(35), None);
-        ensure_voxtral_image(|line| {
+    if is_vllm_local_model(local_model) {
+        let model_display = vllm_model_display_name(local_model);
+        emit_progress("install", "Pulling vLLM Docker image", Some(35), None);
+        ensure_vllm_image(|line| {
             emit_progress(
                 "install",
-                "Pulling Voxtral Docker image",
+                "Pulling vLLM Docker image",
                 Some(35),
                 Some(line.to_string()),
             );
         })?;
         emit_state("ready", "", Some(true), Some(true));
-        emit_progress("done", "Voxtral runtime prepared", Some(100), None);
+        emit_progress(
+            "done",
+            &format!("{model_display} runtime prepared"),
+            Some(100),
+            None,
+        );
         emit_event(&WorkerEvent::Done {
-            message: "Voxtral prepare completed".to_string(),
+            message: format!("{model_display} prepare completed"),
         });
         return Ok(());
     }
@@ -210,18 +217,18 @@ where
     Ok(())
 }
 
-fn ensure_voxtral_image<F>(mut on_line: F) -> Result<(), String>
+fn ensure_vllm_image<F>(mut on_line: F) -> Result<(), String>
 where
     F: FnMut(&str),
 {
-    if docker_image_exists(VOXTRAL_IMAGE_TAG) {
+    if docker_image_exists(VLLM_IMAGE_TAG) {
         return Ok(());
     }
     let mut pull = docker_command();
-    pull.arg("pull").arg(VOXTRAL_IMAGE_TAG);
+    pull.arg("pull").arg(VLLM_IMAGE_TAG);
     run_command_streaming(
         &mut pull,
-        "拉取 Voxtral Docker 镜像",
+        "拉取 vLLM Docker 镜像",
         Duration::from_secs(DOCKER_BUILD_TIMEOUT_SECS),
         |line| {
             let detail = normalize_log_line(line);
@@ -246,8 +253,22 @@ fn runtime_stamp(runtime_dir: &Path) -> Result<String, String> {
 fn normalize_local_model(value: &str) -> &str {
     if value.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
         LOCAL_MODEL_VOXTRAL
+    } else if value.eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR) {
+        LOCAL_MODEL_QWEN3_ASR
     } else {
         LOCAL_MODEL_SENSEVOICE
+    }
+}
+
+fn is_vllm_local_model(local_model: &str) -> bool {
+    matches!(local_model, LOCAL_MODEL_VOXTRAL | LOCAL_MODEL_QWEN3_ASR)
+}
+
+fn vllm_model_display_name(local_model: &str) -> &'static str {
+    match local_model {
+        LOCAL_MODEL_VOXTRAL => "Voxtral",
+        LOCAL_MODEL_QWEN3_ASR => "Qwen3-ASR",
+        _ => "vLLM",
     }
 }
 

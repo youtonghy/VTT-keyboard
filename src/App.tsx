@@ -33,6 +33,16 @@ const parseList = (value: string) =>
 const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
 const DEFAULT_SENSEVOICE_MODEL_ID = "FunAudioLLM/SenseVoiceSmall";
 const DEFAULT_VOXTRAL_MODEL_ID = "mistralai/Voxtral-Mini-4B-Realtime-2602";
+const DEFAULT_QWEN3_ASR_MODEL_ID = "Qwen/Qwen3-ASR-1.7B";
+const QWEN3_ASR_CUSTOM_VARIANT = "__custom__";
+const QWEN3_ASR_MODEL_VARIANTS = [
+  { value: "Qwen/Qwen3-ASR-1.7B", labelKey: "sensevoice.qwenVariant17b" },
+  { value: "Qwen/Qwen3-ASR-0.6B", labelKey: "sensevoice.qwenVariant06b" },
+  {
+    value: "Qwen/Qwen3-ForcedAligner-0.6B",
+    labelKey: "sensevoice.qwenVariantForcedAligner",
+  },
+] as const;
 
 const logDebug = (..._args: unknown[]) => {};
 
@@ -92,14 +102,26 @@ const createId = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const normalizeLocalModel = (value: string | undefined) =>
-  value === "voxtral" ? "voxtral" : "sensevoice";
+const normalizeLocalModel = (value: string | undefined) => {
+  if (value === "voxtral") {
+    return "voxtral";
+  }
+  if (value === "qwen3-asr") {
+    return "qwen3-asr";
+  }
+  return "sensevoice";
+};
+
+const isCudaOnlyLocalModel = (localModel: string | undefined) => {
+  const normalized = normalizeLocalModel(localModel);
+  return normalized === "voxtral" || normalized === "qwen3-asr";
+};
 
 const normalizeSenseVoiceDevice = (
   localModel: string | undefined,
   device: string | undefined
 ) => {
-  if (normalizeLocalModel(localModel) === "voxtral") {
+  if (isCudaOnlyLocalModel(localModel)) {
     return "cuda";
   }
   if (device === "cpu" || device === "cuda") {
@@ -108,10 +130,33 @@ const normalizeSenseVoiceDevice = (
   return "auto";
 };
 
-const getDefaultModelId = (localModel: string) =>
-  normalizeLocalModel(localModel) === "voxtral"
-    ? DEFAULT_VOXTRAL_MODEL_ID
-    : DEFAULT_SENSEVOICE_MODEL_ID;
+const getDefaultModelId = (localModel: string) => {
+  const normalized = normalizeLocalModel(localModel);
+  if (normalized === "voxtral") {
+    return DEFAULT_VOXTRAL_MODEL_ID;
+  }
+  if (normalized === "qwen3-asr") {
+    return DEFAULT_QWEN3_ASR_MODEL_ID;
+  }
+  return DEFAULT_SENSEVOICE_MODEL_ID;
+};
+
+const normalizeSenseVoiceModelId = (localModel: string, modelId: string | undefined) => {
+  const trimmed = modelId?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  return getDefaultModelId(localModel);
+};
+
+const getQwenVariantByModelId = (modelId: string | undefined) => {
+  const trimmed = modelId?.trim();
+  if (!trimmed) {
+    return DEFAULT_QWEN3_ASR_MODEL_ID;
+  }
+  const matched = QWEN3_ASR_MODEL_VARIANTS.find((option) => option.value === trimmed);
+  return matched ? matched.value : QWEN3_ASR_CUSTOM_VARIANT;
+};
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -145,13 +190,18 @@ function App() {
 
   useEffect(() => {
     if (settings) {
+      const normalizedLocalModel = normalizeLocalModel(settings.sensevoice.localModel);
       setDraft({
         ...settings,
         sensevoice: {
           ...settings.sensevoice,
-          localModel: normalizeLocalModel(settings.sensevoice.localModel),
+          localModel: normalizedLocalModel,
+          modelId: normalizeSenseVoiceModelId(
+            normalizedLocalModel,
+            settings.sensevoice.modelId
+          ),
           device: normalizeSenseVoiceDevice(
-            settings.sensevoice.localModel,
+            normalizedLocalModel,
             settings.sensevoice.device
           ),
         },
@@ -1031,9 +1081,14 @@ function App() {
                         draft.sensevoice.localModel
                       );
                       const isVoxtralSelected = selectedLocalModel === "voxtral";
+                      const isQwenSelected = selectedLocalModel === "qwen3-asr";
+                      const isCudaOnlySelected = isCudaOnlyLocalModel(selectedLocalModel);
                       const currentDevice = normalizeSenseVoiceDevice(
                         selectedLocalModel,
                         draft.sensevoice.device
+                      );
+                      const selectedQwenVariant = getQwenVariantByModelId(
+                        draft.sensevoice.modelId
                       );
 
                       return (
@@ -1090,10 +1145,45 @@ function App() {
     {
       value: "voxtral",
       label: t("sensevoice.localModelVoxtral"),
+    },
+    {
+      value: "qwen3-asr",
+      label: t("sensevoice.localModelQwen3Asr"),
     }
   ]}
 />
                     </label>
+
+                    {isQwenSelected ? (
+                      <label className="field">
+                        <span>{t("sensevoice.qwenVariant")}</span>
+                        <CustomSelect
+  value={selectedQwenVariant}
+  onChange={(value) => {
+    if (value === QWEN3_ASR_CUSTOM_VARIANT) {
+      return;
+    }
+    updateDraft((prev) => ({
+      ...prev,
+      sensevoice: {
+        ...prev.sensevoice,
+        modelId: value,
+      },
+    }));
+  }}
+  options={[
+    ...QWEN3_ASR_MODEL_VARIANTS.map((option) => ({
+      value: option.value,
+      label: t(option.labelKey),
+    })),
+    {
+      value: QWEN3_ASR_CUSTOM_VARIANT,
+      label: t("sensevoice.qwenVariantCustom"),
+    }
+  ]}
+/>
+                      </label>
+                    ) : null}
 
                     <label className="field">
                       <span>{t("sensevoice.serviceUrl")}</span>
@@ -1131,26 +1221,31 @@ function App() {
                       <span>{t("sensevoice.device")}</span>
                       <CustomSelect
   value={currentDevice}
-  onChange={(value) =>
-    updateDraft((prev) => ({
-      ...prev,
-      sensevoice: {
-        ...prev.sensevoice,
-        device: normalizeSenseVoiceDevice(prev.sensevoice.localModel, value),
-      },
-    }))
-  }
-  disabled={isVoxtralSelected}
-  options={[
-    { value: "auto", label: t("sensevoice.deviceAuto") },
-    { value: "cpu", label: t("sensevoice.deviceCpu") },
+	  onChange={(value) =>
+	    updateDraft((prev) => ({
+	      ...prev,
+	      sensevoice: {
+	        ...prev.sensevoice,
+	        device: normalizeSenseVoiceDevice(prev.sensevoice.localModel, value),
+	      },
+	    }))
+	  }
+	  disabled={isCudaOnlySelected}
+	  options={[
+	    { value: "auto", label: t("sensevoice.deviceAuto") },
+	    { value: "cpu", label: t("sensevoice.deviceCpu") },
     { value: "cuda", label: t("sensevoice.deviceCuda") }
   ]}
 />
                     </label>
-                    {isVoxtralSelected ? (
+	                    {isVoxtralSelected ? (
+	                      <div className="sensevoice-hint">
+	                        {t("sensevoice.voxtralCudaOnlyHint")}
+	                      </div>
+	                    ) : null}
+                    {isQwenSelected ? (
                       <div className="sensevoice-hint">
-                        {t("sensevoice.voxtralCudaOnlyHint")}
+                        {t("sensevoice.qwenCudaOnlyHint")}
                       </div>
                     ) : null}
 

@@ -18,12 +18,13 @@ SenseVoice local mode now runs with Docker only. Python runtime on host is no lo
    - First run will build image `vtt-sensevoice:local` and download model.
 4. Click `Start Service` to run the containerized service.
 
-## Local Models (SenseVoice / Voxtral)
+## Local Models (SenseVoice / Voxtral / Qwen3-ASR)
 
-Local mode supports switching between two models:
+Local mode supports switching between three local models:
 
 - `SenseVoice` (default)
 - `mistralai/Voxtral-Mini-4B-Realtime-2602` (via vLLM Docker image)
+- `Qwen3-ASR` (via vLLM Docker image, default variant `Qwen/Qwen3-ASR-1.7B`)
 
 When switching local models while the service is running, the app will stop the previous container first, then start the new one automatically.
 
@@ -35,6 +36,16 @@ Voxtral runtime notes:
 - Service bootstrap installs runtime dependency automatically: `mistral-common[soundfile]>=1.9.0`.
 - CPU fallback is disabled for Voxtral.
 - Model weights are pulled on first service start and cached under local model directory.
+
+Qwen3-ASR runtime notes:
+
+- Docker image: `vllm/vllm-openai:nightly`
+- API endpoint: `POST /v1/audio/transcriptions`
+- Preset model variants:
+  - `Qwen/Qwen3-ASR-1.7B` (default)
+  - `Qwen/Qwen3-ASR-0.6B`
+  - `Qwen/Qwen3-ForcedAligner-0.6B`
+- CUDA GPU is required via Docker GPU runtime (`--runtime nvidia --gpus all`).
 
 ## Runtime Notes
 

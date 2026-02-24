@@ -7,6 +7,11 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
+const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
+const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
+const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
+const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
+
 #[derive(Deserialize)]
 struct SenseVoiceResponse {
     text: String,
@@ -38,8 +43,18 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
         .unwrap_or("recording.wav");
 
     let client = Client::new();
-    let local_model = if settings.sensevoice.local_model.eq_ignore_ascii_case("voxtral") {
-        "voxtral"
+    let local_model = if settings
+        .sensevoice
+        .local_model
+        .eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL)
+    {
+        LOCAL_MODEL_VOXTRAL
+    } else if settings
+        .sensevoice
+        .local_model
+        .eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR)
+    {
+        LOCAL_MODEL_QWEN3_ASR
     } else {
         "sensevoice"
     };
@@ -49,9 +64,16 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
                 "file",
                 multipart::Part::bytes(file_bytes.clone()).file_name(file_name.to_string()),
             );
-        let endpoint = if local_model == "voxtral" {
+        let endpoint = if local_model == "sensevoice" {
+            form = form.text("language", "auto".to_string());
+            "/api/v1/asr"
+        } else {
             let model_id = if settings.sensevoice.model_id.trim().is_empty() {
-                "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string()
+                if local_model == LOCAL_MODEL_VOXTRAL {
+                    DEFAULT_VOXTRAL_MODEL_ID.to_string()
+                } else {
+                    DEFAULT_QWEN3_ASR_MODEL_ID.to_string()
+                }
             } else {
                 settings.sensevoice.model_id.trim().to_string()
             };
@@ -60,9 +82,6 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
                 .text("language", "auto".to_string())
                 .text("response_format", "json".to_string());
             "/v1/audio/transcriptions"
-        } else {
-            form = form.text("language", "auto".to_string());
-            "/api/v1/asr"
         };
 
         let response = client

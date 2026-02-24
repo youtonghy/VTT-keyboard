@@ -14,7 +14,11 @@ const SETTINGS_KEY_FILE: &str = "settings.key";
 const SETTINGS_STORE_KEY: &str = "payload";
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
+const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
+const QWEN3_ASR_REQUIRED_DEVICE: &str = "cuda";
+const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
+const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
@@ -407,6 +411,20 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
     if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
         sensevoice.local_model = LOCAL_MODEL_VOXTRAL.to_string();
         sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
+        if sensevoice.model_id.trim().is_empty() {
+            sensevoice.model_id = DEFAULT_VOXTRAL_MODEL_ID.to_string();
+        }
+        return;
+    }
+    if sensevoice
+        .local_model
+        .eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR)
+    {
+        sensevoice.local_model = LOCAL_MODEL_QWEN3_ASR.to_string();
+        sensevoice.device = QWEN3_ASR_REQUIRED_DEVICE.to_string();
+        if sensevoice.model_id.trim().is_empty() {
+            sensevoice.model_id = DEFAULT_QWEN3_ASR_MODEL_ID.to_string();
+        }
         return;
     }
     if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_SENSEVOICE) {
@@ -417,10 +435,10 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
 fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
     if !matches!(
         sensevoice.local_model.as_str(),
-        LOCAL_MODEL_SENSEVOICE | LOCAL_MODEL_VOXTRAL
+        LOCAL_MODEL_SENSEVOICE | LOCAL_MODEL_VOXTRAL | LOCAL_MODEL_QWEN3_ASR
     ) {
         return Err(SettingsError::Serde(
-            "本地模型仅支持 sensevoice/voxtral".to_string(),
+            "本地模型仅支持 sensevoice/voxtral/qwen3-asr".to_string(),
         ));
     }
     if sensevoice.service_url.trim().is_empty() {
@@ -459,6 +477,13 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
     {
         return Err(SettingsError::Serde(
             "Voxtral 仅支持 CUDA 设备".to_string(),
+        ));
+    }
+    if sensevoice.local_model == LOCAL_MODEL_QWEN3_ASR
+        && sensevoice.device != QWEN3_ASR_REQUIRED_DEVICE
+    {
+        return Err(SettingsError::Serde(
+            "Qwen3-ASR 仅支持 CUDA 设备".to_string(),
         ));
     }
     Ok(())

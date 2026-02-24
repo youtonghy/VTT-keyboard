@@ -29,14 +29,16 @@ const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
 const DOCKERFILE_TXT: &str = include_str!("scripts/Dockerfile");
 
 const SENSEVOICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
-const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
+const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
-const VOXTRAL_CONTAINER_NAME: &str = "vtt-sensevoice-service";
+const VLLM_CONTAINER_NAME: &str = "vtt-sensevoice-service";
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
-const VOXTRAL_INTERNAL_PORT: u16 = 8000;
-const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
+const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
+const VLLM_INTERNAL_PORT: u16 = 8000;
+const VLLM_REQUIRED_DEVICE: &str = "cuda";
 const VOXTRAL_ATTENTION_BACKEND: &str = "TRITON_ATTN";
+const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const HEALTH_REQUEST_TIMEOUT_SECS: u64 = 2;
@@ -84,22 +86,28 @@ struct SenseVoiceRuntimeLog {
 fn normalize_local_model(value: &str) -> &str {
     if value.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
         LOCAL_MODEL_VOXTRAL
+    } else if value.eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR) {
+        LOCAL_MODEL_QWEN3_ASR
     } else {
         LOCAL_MODEL_SENSEVOICE
     }
 }
 
+fn is_vllm_local_model(local_model: &str) -> bool {
+    matches!(local_model, LOCAL_MODEL_VOXTRAL | LOCAL_MODEL_QWEN3_ASR)
+}
+
 fn runtime_image_tag(local_model: &str) -> &'static str {
-    if local_model == LOCAL_MODEL_VOXTRAL {
-        VOXTRAL_IMAGE_TAG
+    if is_vllm_local_model(local_model) {
+        VLLM_IMAGE_TAG
     } else {
         SENSEVOICE_IMAGE_TAG
     }
 }
 
 fn runtime_container_name(local_model: &str) -> &'static str {
-    if local_model == LOCAL_MODEL_VOXTRAL {
-        VOXTRAL_CONTAINER_NAME
+    if is_vllm_local_model(local_model) {
+        VLLM_CONTAINER_NAME
     } else {
         SERVICE_CONTAINER_NAME
     }
@@ -532,8 +540,8 @@ fn run_startup_task(
             let mut sensevoice = store
                 .load_sensevoice()
                 .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
-            if local_model == LOCAL_MODEL_VOXTRAL && sensevoice.device != VOXTRAL_REQUIRED_DEVICE {
-                sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
+            if is_vllm_local_model(local_model) && sensevoice.device != VLLM_REQUIRED_DEVICE {
+                sensevoice.device = VLLM_REQUIRED_DEVICE.to_string();
                 store
                     .save_sensevoice(&sensevoice)
                     .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
@@ -554,7 +562,7 @@ fn run_startup_task(
             if local_model == LOCAL_MODEL_SENSEVOICE {
                 ensure_runtime_image(&app, &paths.runtime_dir)?;
             } else {
-                ensure_voxtral_image(&app)?;
+                ensure_vllm_image(&app)?;
             }
             check_start_cancelled(&cancel_flag)?;
 
@@ -575,11 +583,13 @@ fn run_startup_task(
                     &hub,
                 )?;
             } else {
-                run_voxtral_service_container(
+                let model_id = resolve_vllm_model_id(local_model, &sensevoice.model_id);
+                run_vllm_service_container(
+                    local_model,
                     &publish_host,
                     port,
                     &paths.models_dir,
-                    &sensevoice.model_id,
+                    &model_id,
                 )?;
             }
             check_start_cancelled(&cancel_flag)?;
@@ -1116,30 +1126,30 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
     Ok(())
 }
 
-fn ensure_voxtral_image(app: &AppHandle) -> Result<(), SenseVoiceError> {
-    if docker_image_exists(VOXTRAL_IMAGE_TAG) {
+fn ensure_vllm_image(app: &AppHandle) -> Result<(), SenseVoiceError> {
+    if docker_image_exists(VLLM_IMAGE_TAG) {
         return Ok(());
     }
     let payload = SenseVoiceProgress {
         stage: "install".to_string(),
-        message: "Pulling Voxtral Docker image".to_string(),
+        message: "Pulling vLLM Docker image".to_string(),
         percent: Some(35),
-        detail: Some(format!("Pulling image {VOXTRAL_IMAGE_TAG}")),
+        detail: Some(format!("Pulling image {VLLM_IMAGE_TAG}")),
     };
     let _ = app.emit("sensevoice-progress", payload);
 
     let mut pull = docker_command();
-    pull.arg("pull").arg(VOXTRAL_IMAGE_TAG);
+    pull.arg("pull").arg(VLLM_IMAGE_TAG);
     run_command_streaming(
         &mut pull,
-        "拉取 Voxtral Docker 镜像",
+        "拉取 vLLM Docker 镜像",
         Duration::from_secs(DOCKER_BUILD_TIMEOUT_SECS),
         |line| {
             let detail = normalize_log_line(line);
             if !detail.is_empty() {
                 let payload = SenseVoiceProgress {
                     stage: "install".to_string(),
-                    message: "Pulling Voxtral Docker image".to_string(),
+                    message: "Pulling vLLM Docker image".to_string(),
                     percent: Some(35),
                     detail: Some(detail),
                 };
@@ -1214,7 +1224,20 @@ fn run_service_container(
     )))
 }
 
-fn run_voxtral_service_container(
+fn resolve_vllm_model_id(local_model: &str, model_id: &str) -> String {
+    let trimmed = model_id.trim();
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    match local_model {
+        LOCAL_MODEL_VOXTRAL => "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string(),
+        LOCAL_MODEL_QWEN3_ASR => DEFAULT_QWEN3_ASR_MODEL_ID.to_string(),
+        _ => DEFAULT_QWEN3_ASR_MODEL_ID.to_string(),
+    }
+}
+
+fn run_vllm_service_container(
+    local_model: &str,
     publish_host: &str,
     host_port: u16,
     model_dir: &Path,
@@ -1222,27 +1245,33 @@ fn run_voxtral_service_container(
 ) -> Result<(), SenseVoiceError> {
     fs::create_dir_all(model_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
     let escaped_model_id = model_id.replace('\'', "'\\''");
-    let vllm_command = format!(
-        "pip install --no-cache-dir \"mistral-common[soundfile]>=1.9.0\" && vllm serve '{escaped_model_id}' --attention-backend {VOXTRAL_ATTENTION_BACKEND} --host 0.0.0.0 --port {VOXTRAL_INTERNAL_PORT} --enforce-eager"
-    );
+    let vllm_command = if local_model == LOCAL_MODEL_VOXTRAL {
+        format!(
+            "pip install --no-cache-dir \"mistral-common[soundfile]>=1.9.0\" && vllm serve '{escaped_model_id}' --attention-backend {VOXTRAL_ATTENTION_BACKEND} --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager"
+        )
+    } else {
+        format!(
+            "vllm serve '{escaped_model_id}' --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager"
+        )
+    };
     let mut gpu_command = docker_command();
     gpu_command
         .arg("run")
         .arg("-d")
         .arg("--name")
-        .arg(runtime_container_name(LOCAL_MODEL_VOXTRAL))
+        .arg(runtime_container_name(local_model))
         .arg("--runtime")
         .arg("nvidia")
         .arg("--gpus")
         .arg("all")
         .arg("-p")
-        .arg(format!("{publish_host}:{host_port}:{VOXTRAL_INTERNAL_PORT}"))
+        .arg(format!("{publish_host}:{host_port}:{VLLM_INTERNAL_PORT}"))
         .arg("--mount")
         .arg(bind_mount(model_dir, "/root/.cache/huggingface"))
         .arg("--ipc=host")
         .arg("--entrypoint")
         .arg("/bin/bash")
-        .arg(VOXTRAL_IMAGE_TAG)
+        .arg(VLLM_IMAGE_TAG)
         .arg("-lc")
         .arg(vllm_command);
     hide_window(&mut gpu_command);
@@ -1253,10 +1282,15 @@ fn run_voxtral_service_container(
         return Ok(());
     }
 
-    let _ = remove_container_if_exists(runtime_container_name(LOCAL_MODEL_VOXTRAL));
+    let _ = remove_container_if_exists(runtime_container_name(local_model));
     let gpu_error = docker_output_detail(&gpu_output);
+    if local_model == LOCAL_MODEL_VOXTRAL {
+        return Err(SenseVoiceError::Process(format!(
+            "启动 Voxtral 容器失败：Voxtral 仅支持 CUDA GPU，并已禁用 FlashAttention（使用 TRITON_ATTN）。容器会在启动时自动安装 mistral-common[soundfile] 依赖。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
+        )));
+    }
     Err(SenseVoiceError::Process(format!(
-        "启动 Voxtral 容器失败：Voxtral 仅支持 CUDA GPU，并已禁用 FlashAttention（使用 TRITON_ATTN）。容器会在启动时自动安装 mistral-common[soundfile] 依赖。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
+        "启动 Qwen3-ASR 容器失败：Qwen3-ASR 当前通过 vLLM 在 CUDA GPU 上运行。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
     )))
 }
 
@@ -1335,9 +1369,9 @@ fn docker_container_running(name: &str) -> Result<bool, SenseVoiceError> {
 fn stop_all_runtime_containers() {
     let _ = stop_container(SERVICE_CONTAINER_NAME);
     let _ = remove_container_if_exists(SERVICE_CONTAINER_NAME);
-    if VOXTRAL_CONTAINER_NAME != SERVICE_CONTAINER_NAME {
-        let _ = stop_container(VOXTRAL_CONTAINER_NAME);
-        let _ = remove_container_if_exists(VOXTRAL_CONTAINER_NAME);
+    if VLLM_CONTAINER_NAME != SERVICE_CONTAINER_NAME {
+        let _ = stop_container(VLLM_CONTAINER_NAME);
+        let _ = remove_container_if_exists(VLLM_CONTAINER_NAME);
     }
 }
 
@@ -1345,8 +1379,8 @@ fn is_any_runtime_running() -> bool {
     if docker_container_running(SERVICE_CONTAINER_NAME).unwrap_or(false) {
         return true;
     }
-    if VOXTRAL_CONTAINER_NAME != SERVICE_CONTAINER_NAME
-        && docker_container_running(VOXTRAL_CONTAINER_NAME).unwrap_or(false)
+    if VLLM_CONTAINER_NAME != SERVICE_CONTAINER_NAME
+        && docker_container_running(VLLM_CONTAINER_NAME).unwrap_or(false)
     {
         return true;
     }
@@ -1744,9 +1778,9 @@ fn extract_port_from_url(service_url: &str) -> Option<u16> {
 /// 容器内不一定有 curl，优先用 wget（BusyBox/Alpine 均内置），失败后尝试 python3。
 fn docker_exec_health_check(container: &str, port: u16) -> bool {
     let mut health_urls = vec![format!("http://127.0.0.1:{port}/health")];
-    if port != VOXTRAL_INTERNAL_PORT {
+    if port != VLLM_INTERNAL_PORT {
         health_urls.push(format!(
-            "http://127.0.0.1:{VOXTRAL_INTERNAL_PORT}/health"
+            "http://127.0.0.1:{VLLM_INTERNAL_PORT}/health"
         ));
     }
 

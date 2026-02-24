@@ -117,6 +117,8 @@ fn update_sensevoice_settings(
 fn normalize_local_model(value: &str) -> &str {
     if value.eq_ignore_ascii_case("voxtral") {
         "voxtral"
+    } else if value.eq_ignore_ascii_case("qwen3-asr") {
+        "qwen3-asr"
     } else {
         "sensevoice"
     }
