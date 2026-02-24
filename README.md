@@ -29,9 +29,10 @@ When switching local models while the service is running, the app will stop the 
 
 Voxtral runtime notes:
 
-- Docker image: `vllm/vllm-openai:latest`
+- Docker image: `vllm/vllm-openai:nightly`
 - API endpoint: `POST /v1/audio/transcriptions`
-- Voxtral is CUDA-only via Docker GPU runtime (`--runtime nvidia --gpus all`), with FlashAttention disabled (`--attention-backend TORCH_SDPA`).
+- Voxtral is CUDA-only via Docker GPU runtime (`--runtime nvidia --gpus all`), with FlashAttention disabled (`--attention-backend TRITON_ATTN`).
+- Service bootstrap installs runtime dependency automatically: `mistral-common[soundfile]>=1.9.0`.
 - CPU fallback is disabled for Voxtral.
 - Model weights are pulled on first service start and cached under local model directory.
 

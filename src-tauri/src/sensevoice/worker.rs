@@ -17,7 +17,7 @@ const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 60 * 60;
 const IMAGE_STAMP_FILE: &str = "image.stamp";
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
-const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:latest";
+const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

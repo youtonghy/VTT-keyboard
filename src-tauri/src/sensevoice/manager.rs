@@ -29,14 +29,14 @@ const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
 const DOCKERFILE_TXT: &str = include_str!("scripts/Dockerfile");
 
 const SENSEVOICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
-const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:latest";
+const VOXTRAL_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
 const VOXTRAL_CONTAINER_NAME: &str = "vtt-sensevoice-service";
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const VOXTRAL_INTERNAL_PORT: u16 = 8000;
 const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
-const VOXTRAL_ATTENTION_BACKEND: &str = "TORCH_SDPA";
+const VOXTRAL_ATTENTION_BACKEND: &str = "TRITON_ATTN";
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const HEALTH_REQUEST_TIMEOUT_SECS: u64 = 2;
@@ -1221,6 +1221,10 @@ fn run_voxtral_service_container(
     model_id: &str,
 ) -> Result<(), SenseVoiceError> {
     fs::create_dir_all(model_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    let escaped_model_id = model_id.replace('\'', "'\\''");
+    let vllm_command = format!(
+        "pip install --no-cache-dir \"mistral-common[soundfile]>=1.9.0\" && vllm serve '{escaped_model_id}' --attention-backend {VOXTRAL_ATTENTION_BACKEND} --host 0.0.0.0 --port {VOXTRAL_INTERNAL_PORT} --enforce-eager"
+    );
     let mut gpu_command = docker_command();
     gpu_command
         .arg("run")
@@ -1236,15 +1240,11 @@ fn run_voxtral_service_container(
         .arg("--mount")
         .arg(bind_mount(model_dir, "/root/.cache/huggingface"))
         .arg("--ipc=host")
+        .arg("--entrypoint")
+        .arg("/bin/bash")
         .arg(VOXTRAL_IMAGE_TAG)
-        .arg(model_id)
-        .arg("--attention-backend")
-        .arg(VOXTRAL_ATTENTION_BACKEND)
-        .arg("--host")
-        .arg("0.0.0.0")
-        .arg("--port")
-        .arg(VOXTRAL_INTERNAL_PORT.to_string())
-        .arg("--enforce-eager");
+        .arg("-lc")
+        .arg(vllm_command);
     hide_window(&mut gpu_command);
     let gpu_output = gpu_command
         .output()
@@ -1256,7 +1256,7 @@ fn run_voxtral_service_container(
     let _ = remove_container_if_exists(runtime_container_name(LOCAL_MODEL_VOXTRAL));
     let gpu_error = docker_output_detail(&gpu_output);
     Err(SenseVoiceError::Process(format!(
-        "启动 Voxtral 容器失败：Voxtral 仅支持 CUDA GPU，并已禁用 FlashAttention（使用 TORCH_SDPA）。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
+        "启动 Voxtral 容器失败：Voxtral 仅支持 CUDA GPU，并已禁用 FlashAttention（使用 TRITON_ATTN）。容器会在启动时自动安装 mistral-common[soundfile] 依赖。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
     )))
 }
 
