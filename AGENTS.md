@@ -7,3 +7,4 @@
 - 每完成一项任务后自动创建一次 Git commit，并保持提交信息清晰, 使用简体中文。
 - 每项任务结束前运行 `cargo check`，确保无报错。
 - 在对文件编辑操作前需要先Use the Read tool, 之后才能编辑.
+- 你在WSL中, 需要通过PowerShell来调用docker.
