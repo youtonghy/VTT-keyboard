@@ -39,7 +39,13 @@ const VLLM_INTERNAL_PORT: u16 = 8000;
 const VLLM_REQUIRED_DEVICE: &str = "cuda";
 const VLLM_GPU_MEMORY_UTILIZATION: f32 = 0.8;
 const VOXTRAL_ATTENTION_BACKEND: &str = "TRITON_ATTN";
+const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
+const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
+    "Qwen/Qwen3-ASR-1.7B",
+    "Qwen/Qwen3-ASR-0.6B",
+    "Qwen/Qwen3-ForcedAligner-0.6B",
+];
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const VLLM_SERVICE_START_TIMEOUT_SECS: u64 = 5 * 60;
@@ -1235,15 +1241,20 @@ fn run_service_container(
 }
 
 fn resolve_vllm_model_id(local_model: &str, model_id: &str) -> String {
-    let trimmed = model_id.trim();
-    if !trimmed.is_empty() {
-        return trimmed.to_string();
-    }
     match local_model {
-        LOCAL_MODEL_VOXTRAL => "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string(),
-        LOCAL_MODEL_QWEN3_ASR => DEFAULT_QWEN3_ASR_MODEL_ID.to_string(),
+        LOCAL_MODEL_VOXTRAL => DEFAULT_VOXTRAL_MODEL_ID.to_string(),
+        LOCAL_MODEL_QWEN3_ASR => normalize_qwen3_asr_model_id(model_id).to_string(),
         _ => DEFAULT_QWEN3_ASR_MODEL_ID.to_string(),
     }
+}
+
+fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
+    let trimmed = model_id.trim();
+    QWEN3_ASR_ALLOWED_MODEL_IDS
+        .iter()
+        .copied()
+        .find(|candidate| *candidate == trimmed)
+        .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
 }
 
 fn run_vllm_service_container(

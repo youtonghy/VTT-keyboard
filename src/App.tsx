@@ -34,7 +34,6 @@ const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
 const DEFAULT_SENSEVOICE_MODEL_ID = "FunAudioLLM/SenseVoiceSmall";
 const DEFAULT_VOXTRAL_MODEL_ID = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 const DEFAULT_QWEN3_ASR_MODEL_ID = "Qwen/Qwen3-ASR-1.7B";
-const QWEN3_ASR_CUSTOM_VARIANT = "__custom__";
 const QWEN3_ASR_MODEL_VARIANTS = [
   { value: "Qwen/Qwen3-ASR-1.7B", labelKey: "sensevoice.qwenVariant17b" },
   { value: "Qwen/Qwen3-ASR-0.6B", labelKey: "sensevoice.qwenVariant06b" },
@@ -142,11 +141,16 @@ const getDefaultModelId = (localModel: string) => {
 };
 
 const normalizeSenseVoiceModelId = (localModel: string, modelId: string | undefined) => {
-  const trimmed = modelId?.trim();
-  if (trimmed) {
-    return trimmed;
+  const normalized = normalizeLocalModel(localModel);
+  if (normalized !== "qwen3-asr") {
+    return getDefaultModelId(normalized);
   }
-  return getDefaultModelId(localModel);
+  const trimmed = modelId?.trim();
+  if (!trimmed) {
+    return DEFAULT_QWEN3_ASR_MODEL_ID;
+  }
+  const matched = QWEN3_ASR_MODEL_VARIANTS.find((option) => option.value === trimmed);
+  return matched ? matched.value : DEFAULT_QWEN3_ASR_MODEL_ID;
 };
 
 const getQwenVariantByModelId = (modelId: string | undefined) => {
@@ -155,7 +159,7 @@ const getQwenVariantByModelId = (modelId: string | undefined) => {
     return DEFAULT_QWEN3_ASR_MODEL_ID;
   }
   const matched = QWEN3_ASR_MODEL_VARIANTS.find((option) => option.value === trimmed);
-  return matched ? matched.value : QWEN3_ASR_CUSTOM_VARIANT;
+  return matched ? matched.value : DEFAULT_QWEN3_ASR_MODEL_ID;
 };
 
 function App() {
@@ -1159,28 +1163,19 @@ function App() {
                         <span>{t("sensevoice.qwenVariant")}</span>
                         <CustomSelect
   value={selectedQwenVariant}
-  onChange={(value) => {
-    if (value === QWEN3_ASR_CUSTOM_VARIANT) {
-      return;
-    }
+  onChange={(value) =>
     updateDraft((prev) => ({
       ...prev,
       sensevoice: {
         ...prev.sensevoice,
         modelId: value,
       },
-    }));
-  }}
-  options={[
-    ...QWEN3_ASR_MODEL_VARIANTS.map((option) => ({
-      value: option.value,
-      label: t(option.labelKey),
-    })),
-    {
-      value: QWEN3_ASR_CUSTOM_VARIANT,
-      label: t("sensevoice.qwenVariantCustom"),
-    }
-  ]}
+    }))
+  }
+  options={QWEN3_ASR_MODEL_VARIANTS.map((option) => ({
+    value: option.value,
+    label: t(option.labelKey),
+  }))}
 />
                       </label>
                     ) : null}
@@ -1195,22 +1190,6 @@ function App() {
                             sensevoice: {
                               ...prev.sensevoice,
                               serviceUrl: event.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    </label>
-
-                    <label className="field">
-                      <span>{t("sensevoice.modelId")}</span>
-                      <input
-                        value={draft.sensevoice.modelId}
-                        onChange={(event) =>
-                          updateDraft((prev) => ({
-                            ...prev,
-                            sensevoice: {
-                              ...prev.sensevoice,
-                              modelId: event.target.value,
                             },
                           }))
                         }

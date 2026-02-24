@@ -11,6 +11,11 @@ const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
+const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
+    "Qwen/Qwen3-ASR-1.7B",
+    "Qwen/Qwen3-ASR-0.6B",
+    "Qwen/Qwen3-ForcedAligner-0.6B",
+];
 
 #[derive(Deserialize)]
 struct SenseVoiceResponse {
@@ -68,15 +73,7 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
             form = form.text("language", "auto".to_string());
             "/api/v1/asr"
         } else {
-            let model_id = if settings.sensevoice.model_id.trim().is_empty() {
-                if local_model == LOCAL_MODEL_VOXTRAL {
-                    DEFAULT_VOXTRAL_MODEL_ID.to_string()
-                } else {
-                    DEFAULT_QWEN3_ASR_MODEL_ID.to_string()
-                }
-            } else {
-                settings.sensevoice.model_id.trim().to_string()
-            };
+            let model_id = resolve_vllm_model_id(local_model, &settings.sensevoice.model_id);
             form = form
                 .text("model", model_id)
                 .text("response_format", "json".to_string());
@@ -108,6 +105,23 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
     Err(SenseVoiceError::Request(
         "SenseVoice 服务暂不可用，请稍后重试".to_string(),
     ))
+}
+
+fn resolve_vllm_model_id(local_model: &str, model_id: &str) -> String {
+    match local_model {
+        LOCAL_MODEL_VOXTRAL => DEFAULT_VOXTRAL_MODEL_ID.to_string(),
+        LOCAL_MODEL_QWEN3_ASR => normalize_qwen3_asr_model_id(model_id).to_string(),
+        _ => DEFAULT_QWEN3_ASR_MODEL_ID.to_string(),
+    }
+}
+
+fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
+    let trimmed = model_id.trim();
+    QWEN3_ASR_ALLOWED_MODEL_IDS
+        .iter()
+        .copied()
+        .find(|candidate| *candidate == trimmed)
+        .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
 }
 
 fn is_warming_up_error(body: &str) -> bool {

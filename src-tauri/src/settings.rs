@@ -17,8 +17,14 @@ const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
 const QWEN3_ASR_REQUIRED_DEVICE: &str = "cuda";
+const DEFAULT_SENSEVOICE_MODEL_ID: &str = "FunAudioLLM/SenseVoiceSmall";
 const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
+const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
+    "Qwen/Qwen3-ASR-1.7B",
+    "Qwen/Qwen3-ASR-0.6B",
+    "Qwen/Qwen3-ForcedAligner-0.6B",
+];
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
@@ -411,9 +417,7 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
     if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
         sensevoice.local_model = LOCAL_MODEL_VOXTRAL.to_string();
         sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
-        if sensevoice.model_id.trim().is_empty() {
-            sensevoice.model_id = DEFAULT_VOXTRAL_MODEL_ID.to_string();
-        }
+        sensevoice.model_id = DEFAULT_VOXTRAL_MODEL_ID.to_string();
         return;
     }
     if sensevoice
@@ -422,14 +426,20 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
     {
         sensevoice.local_model = LOCAL_MODEL_QWEN3_ASR.to_string();
         sensevoice.device = QWEN3_ASR_REQUIRED_DEVICE.to_string();
-        if sensevoice.model_id.trim().is_empty() {
-            sensevoice.model_id = DEFAULT_QWEN3_ASR_MODEL_ID.to_string();
-        }
+        sensevoice.model_id = normalize_qwen3_asr_model_id(&sensevoice.model_id).to_string();
         return;
     }
-    if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_SENSEVOICE) {
-        sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
-    }
+    sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
+    sensevoice.model_id = DEFAULT_SENSEVOICE_MODEL_ID.to_string();
+}
+
+fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
+    let trimmed = model_id.trim();
+    QWEN3_ASR_ALLOWED_MODEL_IDS
+        .iter()
+        .copied()
+        .find(|candidate| *candidate == trimmed)
+        .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
 }
 
 fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
@@ -466,6 +476,27 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
     if sensevoice.model_id.trim().is_empty() {
         return Err(SettingsError::Serde(
             "SenseVoice 模型 ID 不能为空".to_string(),
+        ));
+    }
+    if sensevoice.local_model == LOCAL_MODEL_SENSEVOICE
+        && sensevoice.model_id != DEFAULT_SENSEVOICE_MODEL_ID
+    {
+        return Err(SettingsError::Serde(
+            "SenseVoice 模型 ID 必须使用默认值".to_string(),
+        ));
+    }
+    if sensevoice.local_model == LOCAL_MODEL_VOXTRAL
+        && sensevoice.model_id != DEFAULT_VOXTRAL_MODEL_ID
+    {
+        return Err(SettingsError::Serde(
+            "Voxtral 模型 ID 必须使用默认值".to_string(),
+        ));
+    }
+    if sensevoice.local_model == LOCAL_MODEL_QWEN3_ASR
+        && !QWEN3_ASR_ALLOWED_MODEL_IDS.contains(&sensevoice.model_id.as_str())
+    {
+        return Err(SettingsError::Serde(
+            "Qwen3-ASR 模型 ID 仅支持预设值".to_string(),
         ));
     }
     if !matches!(sensevoice.device.as_str(), "auto" | "cpu" | "cuda") {
