@@ -548,7 +548,13 @@ fn run_startup_task(
     let mut log_path: Option<PathBuf> = None;
 
     let result = (|| -> Result<
-        (String, PathBuf, Arc<Mutex<VecDeque<String>>>, Arc<AtomicBool>),
+        (
+            String,
+            String,
+            PathBuf,
+            Arc<Mutex<VecDeque<String>>>,
+            Arc<AtomicBool>,
+        ),
         SenseVoiceError,
     > {
             check_start_cancelled(&cancel_flag)?;
@@ -651,6 +657,7 @@ fn run_startup_task(
 
             Ok((
                 sensevoice.service_url,
+                local_model.to_string(),
                 current_log_path,
                 current_runtime_tail,
                 running_cache,
@@ -658,11 +665,12 @@ fn run_startup_task(
         })();
 
     match result {
-        Ok((service_url, monitor_log_path, monitor_runtime_tail, running_cache)) => {
+        Ok((service_url, local_model, monitor_log_path, monitor_runtime_tail, running_cache)) => {
             finish_start_task(&app, &cancel_flag);
             spawn_health_monitor(
                 app,
                 store,
+                local_model,
                 service_url,
                 monitor_log_path,
                 monitor_runtime_tail,
@@ -688,6 +696,7 @@ fn run_startup_task(
 fn spawn_health_monitor(
     app: AppHandle,
     store: SettingsStore,
+    local_model: String,
     service_url: String,
     log_path: PathBuf,
     runtime_tail: Arc<Mutex<VecDeque<String>>>,
@@ -696,7 +705,10 @@ fn spawn_health_monitor(
 ) {
     thread::spawn(move || {
         let client = health_client();
-        let url = format!("{}/health", service_url.trim_end_matches('/'));
+        let local_model = normalize_local_model(&local_model).to_string();
+        let container_name = runtime_container_name(&local_model).to_string();
+        let is_vllm_model = is_vllm_local_model(&local_model);
+        let health_url = format!("{}/health", service_url.trim_end_matches('/'));
         let started = Instant::now();
         let mut warned = false;
         let mut last_warmup_emit = Instant::now()
@@ -711,7 +723,7 @@ fn spawn_health_monitor(
                 return;
             }
 
-            match docker_container_running(SERVICE_CONTAINER_NAME) {
+            match docker_container_running(&container_name) {
                 Ok(true) => {
                     // 更新缓存，供 status() / start_service_async() 快速读取
                     running_cache.store(true, Ordering::Relaxed);
@@ -740,15 +752,11 @@ fn spawn_health_monitor(
                 }
             }
 
-            if let Ok(response) = client.get(&url).send() {
+            if let Ok(response) = client.get(&health_url).send() {
                 let status = response.status();
                 let body = response.text().unwrap_or_default();
                 if status.is_success() {
-                    let ready = serde_json::from_str::<Value>(&body)
-                        .ok()
-                        .and_then(|json| json.get("ready").and_then(|v| v.as_bool()))
-                        .unwrap_or(false);
-                    if ready {
+                    if is_service_ready(&client, &service_url, &body, is_vllm_model) {
                         let _ = update_state_in_store(&store, "ready", "", None, None);
                         emit_progress_payload(
                             &app,
@@ -933,6 +941,48 @@ fn health_client() -> reqwest::blocking::Client {
         .timeout(Duration::from_secs(HEALTH_REQUEST_TIMEOUT_SECS))
         .build()
         .unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
+fn is_service_ready(
+    client: &reqwest::blocking::Client,
+    service_url: &str,
+    health_body: &str,
+    is_vllm_model: bool,
+) -> bool {
+    match parse_health_ready_field(health_body) {
+        Some(ready) => ready,
+        None if is_vllm_model => check_vllm_models_ready(client, service_url),
+        None => false,
+    }
+}
+
+fn parse_health_ready_field(body: &str) -> Option<bool> {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|json| json.get("ready").and_then(|value| value.as_bool()))
+}
+
+fn check_vllm_models_ready(client: &reqwest::blocking::Client, service_url: &str) -> bool {
+    let models_url = format!("{}/v1/models", service_url.trim_end_matches('/'));
+    let Ok(response) = client.get(&models_url).send() else {
+        return false;
+    };
+    if !response.status().is_success() {
+        return false;
+    }
+    let body = response.text().unwrap_or_default();
+    parse_vllm_models_response_ready(&body)
+}
+
+fn parse_vllm_models_response_ready(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .map(|json| {
+            json.get("data")
+                .and_then(|value| value.as_array())
+                .is_some_and(|models| !models.is_empty())
+        })
+        .unwrap_or(false)
 }
 
 fn handle_worker_event(app: &AppHandle, store: &SettingsStore, event: WorkerEvent) {
@@ -1846,4 +1896,47 @@ fn docker_exec_health_check(container: &str, port: u16) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_health_ready_field, parse_vllm_models_response_ready};
+
+    #[test]
+    fn parse_health_ready_field_returns_true() {
+        assert_eq!(
+            parse_health_ready_field(r#"{"status":"ok","ready":true}"#),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn parse_health_ready_field_returns_false() {
+        assert_eq!(
+            parse_health_ready_field(r#"{"status":"ok","ready":false}"#),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn parse_health_ready_field_returns_none_when_missing() {
+        assert_eq!(
+            parse_health_ready_field(r#"{"status":"ok","loading":true}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_vllm_models_response_ready_returns_true_for_non_empty_data() {
+        assert!(parse_vllm_models_response_ready(
+            r#"{"object":"list","data":[{"id":"Qwen/Qwen3-ASR-1.7B"}]}"#
+        ));
+    }
+
+    #[test]
+    fn parse_vllm_models_response_ready_returns_false_for_empty_data() {
+        assert!(!parse_vllm_models_response_ready(
+            r#"{"object":"list","data":[]}"#
+        ));
+    }
 }

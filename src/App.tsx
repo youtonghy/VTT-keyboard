@@ -1061,36 +1061,40 @@ function App() {
                       const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
                       const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
                       const progressStage = sensevoiceProgress?.stage ?? "";
+                      const isReady = state === "ready";
+                      const isWarmupStage =
+                        progressStage === "verify" || progressStage === "warmup";
+                      const effectiveProgressStage =
+                        isReady && isWarmupStage ? "done" : progressStage;
                       const isWarming =
-                        progressStage === "verify" ||
-                        progressStage === "warmup" ||
-                        (running && state === "running");
+                        !isReady && (isWarmupStage || (running && state === "running"));
                       const showProgressBar =
                         !!sensevoiceProgress &&
-                        (progressStage === "prepare" || progressStage === "install");
+                        (effectiveProgressStage === "prepare" ||
+                          effectiveProgressStage === "install");
                       const stageLabelKey =
-                        progressStage === "verify"
+                        effectiveProgressStage === "verify"
                           ? "started"
-                          : progressStage === "warmup"
+                          : effectiveProgressStage === "warmup"
                             ? "warmup"
-                            : progressStage === "done"
+                            : effectiveProgressStage === "done"
                               ? "ready"
-                              : progressStage === "error"
+                              : effectiveProgressStage === "error"
                                 ? "error"
                                 : isWarming
                                   ? "warmup"
                                   : "";
                       const prepareBusy =
                         sensevoiceLoading ||
-                        progressStage === "prepare" ||
-                        progressStage === "install";
+                        effectiveProgressStage === "prepare" ||
+                        effectiveProgressStage === "install";
                       const startBusy =
                         sensevoiceLoading ||
-                        progressStage === "prepare" ||
-                        progressStage === "install" ||
+                        effectiveProgressStage === "prepare" ||
+                        effectiveProgressStage === "install" ||
                         // 仅在服务仍在运行时，verify/warmup 阶段才禁用启动按钮
                         // 防止停止服务后残留阶段导致按钮持续禁用
-                        (running && (progressStage === "verify" || progressStage === "warmup"));
+                        (running && !isReady && isWarmupStage);
                       const stopBusy = sensevoiceLoading;
                       const selectedLocalModel = normalizeLocalModel(
                         draft.sensevoice.localModel

@@ -49,6 +49,17 @@ export function useSenseVoice(monitoringEnabled = false) {
   const refreshStatus = useCallback(async () => {
     const next = await invoke<SenseVoiceStatus>("get_sensevoice_status");
     setStatus(next);
+    if (next.downloadState === "ready" || !next.running) {
+      setProgress((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        if (prev.stage === "verify" || prev.stage === "warmup") {
+          return null;
+        }
+        return prev;
+      });
+    }
     return next;
   }, []);
 
