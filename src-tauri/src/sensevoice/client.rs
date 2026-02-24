@@ -33,6 +33,16 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
             "SenseVoice 尚未安装，请先下载模型".to_string(),
         ));
     }
+    if settings
+        .sensevoice
+        .download_state
+        .trim()
+        .eq_ignore_ascii_case("running")
+    {
+        return Err(SenseVoiceError::Request(
+            "SenseVoice 模型正在预热中，请稍后重试".to_string(),
+        ));
+    }
 
     let service_url = settings.sensevoice.service_url.trim().trim_end_matches('/');
     if service_url.is_empty() {

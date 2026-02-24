@@ -173,6 +173,10 @@ function App() {
     "vtt.sidebar.collapsed",
     false
   );
+  const [sensevoiceLogsExpanded, setSensevoiceLogsExpanded] = usePersistentBoolean(
+    "vtt.sensevoice.logs.expanded",
+    false
+  );
   const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
   const {
     status: sensevoiceStatus,
@@ -1057,6 +1061,13 @@ function App() {
                       const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
                       const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
                       const progressStage = sensevoiceProgress?.stage ?? "";
+                      const isWarming =
+                        progressStage === "verify" ||
+                        progressStage === "warmup" ||
+                        (running && state === "running");
+                      const showProgressBar =
+                        !!sensevoiceProgress &&
+                        (progressStage === "prepare" || progressStage === "install");
                       const stageLabelKey =
                         progressStage === "verify"
                           ? "started"
@@ -1066,7 +1077,7 @@ function App() {
                               ? "ready"
                               : progressStage === "error"
                                 ? "error"
-                                : running && state === "running"
+                                : isWarming
                                   ? "warmup"
                                   : "";
                       const prepareBusy =
@@ -1106,9 +1117,11 @@ function App() {
                       </span>
                       <span>
                         {t("sensevoice.running")}:{" "}
-                        {running
-                          ? t("sensevoice.runningNow")
-                          : t("sensevoice.stopped")}
+                        {isWarming
+                          ? t("sensevoice.warmingNow")
+                          : running
+                            ? t("sensevoice.runningNow")
+                            : t("sensevoice.stopped")}
                       </span>
                       <span>
                         {t("sensevoice.state")}:{" "}
@@ -1228,11 +1241,11 @@ function App() {
                       </div>
                     ) : null}
 
-                    {sensevoiceProgress ? (
+                    {showProgressBar ? (
                       <div className="sensevoice-progress">
-                        <span>{sensevoiceProgress.message}</span>
+                        <span>{sensevoiceProgress?.message}</span>
                         <span>
-                          {sensevoiceProgress.percent !== undefined
+                          {sensevoiceProgress?.percent !== undefined
                             ? `${sensevoiceProgress.percent}%`
                             : ""}
                         </span>
@@ -1255,8 +1268,19 @@ function App() {
 
                     {sensevoiceLogLines.length > 0 ? (
                       <div className="sensevoice-log">
-                        <div className="sensevoice-log-title">{t("sensevoice.logTitle")}</div>
-                        <pre>{sensevoiceLogLines.join("\n")}</pre>
+                        <div className="sensevoice-log-header">
+                          <div className="sensevoice-log-title">{t("sensevoice.logTitle")}</div>
+                          <button
+                            type="button"
+                            className="sensevoice-log-toggle"
+                            onClick={() => setSensevoiceLogsExpanded((prev) => !prev)}
+                          >
+                            {sensevoiceLogsExpanded
+                              ? t("sensevoice.logCollapse")
+                              : t("sensevoice.logExpand")}
+                          </button>
+                        </div>
+                        {sensevoiceLogsExpanded ? <pre>{sensevoiceLogLines.join("\n")}</pre> : null}
                       </div>
                     ) : null}
 

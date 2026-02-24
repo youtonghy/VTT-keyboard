@@ -385,12 +385,33 @@
   }
 
   .sensevoice-log-title {
-    @apply mb-2 text-sm font-semibold;
+    @apply text-sm font-semibold;
     color: var(--color-text-primary);
   }
 
+  .sensevoice-log-header {
+    @apply flex items-center justify-between gap-3;
+  }
+
+  .sensevoice-log-toggle {
+    @apply rounded-md border px-2 py-1 text-xs transition-colors;
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+    background-color: transparent;
+  }
+
+  .sensevoice-log-toggle:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent-strong);
+  }
+
+  .sensevoice-log-toggle:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
   .sensevoice-log pre {
-    @apply m-0 max-h-44 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed;
+    @apply mt-2 mb-0 max-h-44 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed;
     color: var(--color-text-secondary);
   }
 

@@ -102,6 +102,7 @@
     "installed": "Installed",
     "running": "Service",
     "runningNow": "Running",
+    "warmingNow": "Warming up",
     "stopped": "Stopped",
     "yes": "Yes",
     "no": "No",
@@ -111,6 +112,8 @@
     "devConsoleHint": "In development mode, runtime logs are printed to the terminal.",
     "serverLogHint": "If startup fails, check local log: sensevoice/runtime/server.log",
     "logTitle": "Runtime Logs",
+    "logExpand": "Expand",
+    "logCollapse": "Collapse",
     "installTimeout": "Docker image build or model download timed out. Check your network and retry.",
     "prepareSuccess": "Local model is ready",
     "prepareQueued": "Background prepare started. Please follow progress status.",
@@ -132,7 +135,7 @@
       "preparing": "Preparing",
       "downloading": "Downloading",
       "validating": "Validating",
-      "running": "Running (Warmup)",
+      "running": "Warming up",
       "ready": "Ready",
       "error": "Failed"
     }
