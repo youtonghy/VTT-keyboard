@@ -79,7 +79,6 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
             };
             form = form
                 .text("model", model_id)
-                .text("language", "auto".to_string())
                 .text("response_format", "json".to_string());
             "/v1/audio/transcriptions"
         };

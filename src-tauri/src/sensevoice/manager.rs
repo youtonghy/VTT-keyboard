@@ -37,10 +37,12 @@ const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const VLLM_INTERNAL_PORT: u16 = 8000;
 const VLLM_REQUIRED_DEVICE: &str = "cuda";
+const VLLM_GPU_MEMORY_UTILIZATION: f32 = 0.8;
 const VOXTRAL_ATTENTION_BACKEND: &str = "TRITON_ATTN";
 const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
+const VLLM_SERVICE_START_TIMEOUT_SECS: u64 = 5 * 60;
 const HEALTH_REQUEST_TIMEOUT_SECS: u64 = 2;
 const HEALTH_MONITOR_WARN_SECS: u64 = 120;
 const HEALTH_MONITOR_INTERVAL_MILLIS: u64 = 1000;
@@ -110,6 +112,14 @@ fn runtime_container_name(local_model: &str) -> &'static str {
         VLLM_CONTAINER_NAME
     } else {
         SERVICE_CONTAINER_NAME
+    }
+}
+
+fn service_start_timeout(local_model: &str) -> Duration {
+    if is_vllm_local_model(local_model) {
+        Duration::from_secs(VLLM_SERVICE_START_TIMEOUT_SECS)
+    } else {
+        Duration::from_secs(SERVICE_START_TIMEOUT_SECS)
     }
 }
 
@@ -619,7 +629,7 @@ fn run_startup_task(
 
             wait_service_reachable(
                 &sensevoice.service_url,
-                Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
+                service_start_timeout(local_model),
                 &current_log_path,
                 &current_runtime_tail,
                 &cancel_flag,
@@ -1247,11 +1257,11 @@ fn run_vllm_service_container(
     let escaped_model_id = model_id.replace('\'', "'\\''");
     let vllm_command = if local_model == LOCAL_MODEL_VOXTRAL {
         format!(
-            "pip install --no-cache-dir \"mistral-common[soundfile]>=1.9.0\" && vllm serve '{escaped_model_id}' --attention-backend {VOXTRAL_ATTENTION_BACKEND} --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager"
+            "pip install --no-cache-dir \"vllm[audio]\" \"mistral-common[soundfile]>=1.9.0\" && vllm serve '{escaped_model_id}' --attention-backend {VOXTRAL_ATTENTION_BACKEND} --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager --gpu-memory-utilization {VLLM_GPU_MEMORY_UTILIZATION}"
         )
     } else {
         format!(
-            "vllm serve '{escaped_model_id}' --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager"
+            "pip install --no-cache-dir \"vllm[audio]\" && vllm serve '{escaped_model_id}' --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager --gpu-memory-utilization {VLLM_GPU_MEMORY_UTILIZATION} --max-model-len 12288"
         )
     };
     let mut gpu_command = docker_command();
