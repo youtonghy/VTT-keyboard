@@ -111,6 +111,13 @@ const normalizeLocalModel = (value: string | undefined) => {
   return "sensevoice";
 };
 
+const normalizeStopMode = (value: string | undefined) => {
+  if (value === "pause") {
+    return "pause";
+  }
+  return "stop";
+};
+
 const isCudaOnlyLocalModel = (localModel: string | undefined) => {
   const normalized = normalizeLocalModel(localModel);
   return normalized === "voxtral" || normalized === "qwen3-asr";
@@ -204,6 +211,7 @@ function App() {
         sensevoice: {
           ...settings.sensevoice,
           localModel: normalizedLocalModel,
+          stopMode: normalizeStopMode(settings.sensevoice.stopMode),
           modelId: normalizeSenseVoiceModelId(
             normalizedLocalModel,
             settings.sensevoice.modelId
@@ -571,7 +579,12 @@ function App() {
     try {
       await stopSenseVoiceService();
       await refreshSenseVoiceStatus();
-      toast.success(t("sensevoice.stopSuccess"));
+      const stopMode = normalizeStopMode(draft.sensevoice.stopMode);
+      if (stopMode === "pause") {
+        toast.success(t("sensevoice.pauseSuccess"));
+      } else {
+        toast.success(t("sensevoice.stopSuccess"));
+      }
     } catch (error) {
       toast.error(t("sensevoice.stopError", { error: toErrorMessage(error) }));
     }
@@ -1058,6 +1071,7 @@ function App() {
                     {(() => {
                       const installed = sensevoiceStatus.installed;
                       const running = sensevoiceStatus.running;
+                      const runtimeState = sensevoiceStatus.runtimeState || "stopped";
                       const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
                       const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
                       const progressStage = sensevoiceProgress?.stage ?? "";
@@ -1077,13 +1091,19 @@ function App() {
                           ? "started"
                           : effectiveProgressStage === "warmup"
                             ? "warmup"
+                            : effectiveProgressStage === "resuming"
+                              ? "resuming"
+                              : effectiveProgressStage === "paused"
+                                ? "paused"
                             : effectiveProgressStage === "done"
                               ? "ready"
                               : effectiveProgressStage === "error"
                                 ? "error"
-                                : isWarming
-                                  ? "warmup"
-                                  : "";
+                                : runtimeState === "paused"
+                                  ? "paused"
+                                  : isWarming
+                                    ? "warmup"
+                                    : "";
                       const prepareBusy =
                         sensevoiceLoading ||
                         effectiveProgressStage === "prepare" ||
@@ -1106,6 +1126,7 @@ function App() {
                         selectedLocalModel,
                         draft.sensevoice.device
                       );
+                      const stopMode = normalizeStopMode(draft.sensevoice.stopMode);
                       const selectedQwenVariant = getQwenVariantByModelId(
                         draft.sensevoice.modelId
                       );
@@ -1123,7 +1144,9 @@ function App() {
                         {t("sensevoice.running")}:{" "}
                         {isWarming
                           ? t("sensevoice.warmingNow")
-                          : running
+                          : runtimeState === "paused"
+                            ? t("sensevoice.pausedNow")
+                            : running
                             ? t("sensevoice.runningNow")
                             : t("sensevoice.stopped")}
                       </span>
@@ -1234,6 +1257,27 @@ function App() {
   ]}
 />
                     </label>
+
+                    <label className="field">
+                      <span>{t("sensevoice.stopMode")}</span>
+                      <CustomSelect
+  value={stopMode}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      sensevoice: {
+        ...prev.sensevoice,
+        stopMode: normalizeStopMode(value),
+      },
+    }))
+  }
+  options={[
+    { value: "stop", label: t("sensevoice.stopModeStop") },
+    { value: "pause", label: t("sensevoice.stopModePause") },
+  ]}
+/>
+                    </label>
+                    <div className="sensevoice-hint">{t("sensevoice.stopModeHint")}</div>
 	                    {isVoxtralSelected ? (
 	                      <div className="sensevoice-hint">
 	                        {t("sensevoice.voxtralCudaOnlyHint")}

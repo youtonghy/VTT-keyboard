@@ -80,6 +80,7 @@ export interface SenseVoiceSettings {
   enabled: boolean;
   installed: boolean;
   localModel: string;
+  stopMode: "stop" | "pause";
   serviceUrl: string;
   modelId: string;
   device: string;

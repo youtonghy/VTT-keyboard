@@ -7,6 +7,7 @@ export interface SenseVoiceStatus {
   installed: boolean;
   enabled: boolean;
   running: boolean;
+  runtimeState: "stopped" | "running" | "paused" | "starting";
   localModel: string;
   serviceUrl: string;
   modelId: string;
@@ -32,6 +33,7 @@ const defaultStatus: SenseVoiceStatus = {
   installed: false,
   enabled: false,
   running: false,
+  runtimeState: "stopped",
   localModel: "sensevoice",
   serviceUrl: "",
   modelId: "",
@@ -121,7 +123,7 @@ export function useSenseVoice(monitoringEnabled = false) {
     const unlisten = listen<SenseVoiceProgress>("sensevoice-progress", (event) => {
       const payload = event.payload;
       // 收到 stopped 事件时清除 progress，防止残留阶段禁用启动按钮
-      if (payload.stage === "stopped") {
+      if (payload.stage === "stopped" || payload.stage === "paused") {
         setProgress(null);
         void refreshStatus().catch(() => {});
         return;

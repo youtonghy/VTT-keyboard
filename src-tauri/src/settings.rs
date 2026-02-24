@@ -17,6 +17,8 @@ const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
 const QWEN3_ASR_REQUIRED_DEVICE: &str = "cuda";
+const STOP_MODE_STOP: &str = "stop";
+const STOP_MODE_PAUSE: &str = "pause";
 const DEFAULT_SENSEVOICE_MODEL_ID: &str = "FunAudioLLM/SenseVoiceSmall";
 const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
@@ -247,6 +249,8 @@ pub struct SenseVoiceSettings {
     pub installed: bool,
     #[serde(default = "default_local_model")]
     pub local_model: String,
+    #[serde(default = "default_stop_mode")]
+    pub stop_mode: String,
     pub service_url: String,
     pub model_id: String,
     pub device: String,
@@ -258,12 +262,17 @@ fn default_local_model() -> String {
     "sensevoice".to_string()
 }
 
+fn default_stop_mode() -> String {
+    STOP_MODE_STOP.to_string()
+}
+
 impl Default for SenseVoiceSettings {
     fn default() -> Self {
         Self {
             enabled: false,
             installed: false,
             local_model: default_local_model(),
+            stop_mode: default_stop_mode(),
             service_url: "http://127.0.0.1:28765".to_string(),
             model_id: "FunAudioLLM/SenseVoiceSmall".to_string(),
             device: "auto".to_string(),
@@ -414,6 +423,7 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
 }
 
 fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
+    sensevoice.stop_mode = normalize_stop_mode(&sensevoice.stop_mode).to_string();
     if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
         sensevoice.local_model = LOCAL_MODEL_VOXTRAL.to_string();
         sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
@@ -431,6 +441,14 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
     }
     sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
     sensevoice.model_id = DEFAULT_SENSEVOICE_MODEL_ID.to_string();
+}
+
+fn normalize_stop_mode(mode: &str) -> &str {
+    if mode.eq_ignore_ascii_case(STOP_MODE_PAUSE) {
+        STOP_MODE_PAUSE
+    } else {
+        STOP_MODE_STOP
+    }
 }
 
 fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
@@ -502,6 +520,11 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
     if !matches!(sensevoice.device.as_str(), "auto" | "cpu" | "cuda") {
         return Err(SettingsError::Serde(
             "SenseVoice 推理设备仅支持 auto/cpu/cuda".to_string(),
+        ));
+    }
+    if !matches!(sensevoice.stop_mode.as_str(), STOP_MODE_STOP | STOP_MODE_PAUSE) {
+        return Err(SettingsError::Serde(
+            "SenseVoice 停止模式仅支持 stop/pause".to_string(),
         ));
     }
     if sensevoice.local_model == LOCAL_MODEL_VOXTRAL && sensevoice.device != VOXTRAL_REQUIRED_DEVICE

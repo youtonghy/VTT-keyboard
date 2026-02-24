@@ -143,7 +143,7 @@ fn maybe_restart_local_runtime_if_switched(
         return Ok(());
     }
     manager
-        .stop_service(app, &state.settings_store)
+        .stop_service_force(app, &state.settings_store)
         .map_err(|err| err.to_string())?;
     manager
         .start_service_async(app, &state.settings_store)
@@ -277,6 +277,10 @@ fn set_tray_menu(
                     }
                 }
                 "quit" => {
+                    let state = app.state::<AppState>();
+                    if let Ok(mut manager) = state.sensevoice_manager.lock() {
+                        manager.pause_runtime_for_exit(app);
+                    }
                     app.exit(0);
                 }
                 _ => {}

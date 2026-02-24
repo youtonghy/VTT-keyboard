@@ -91,6 +91,10 @@
     "qwenVariantForcedAligner": "Qwen3-ForcedAligner-0.6B",
     "serviceUrl": "Service URL",
     "device": "Inference Device",
+    "stopMode": "Stop Service Mode",
+    "stopModeStop": "Hard stop (stop/rm)",
+    "stopModePause": "Pause container",
+    "stopModeHint": "This only affects the Stop button. App exit will still pause the container for faster next startup.",
     "deviceAuto": "Auto (Prefer GPU)",
     "deviceCpu": "CPU",
     "deviceCuda": "CUDA",
@@ -102,6 +106,7 @@
     "installed": "Installed",
     "running": "Service",
     "runningNow": "Running",
+    "pausedNow": "Paused",
     "warmingNow": "Warming up",
     "stopped": "Stopped",
     "yes": "Yes",
@@ -122,10 +127,13 @@
     "startQueued": "Local model startup is running in background; model warmup is in progress.",
     "startSuccess": "Local model service started",
     "startError": "Local model start failed: {{error}}",
+    "pauseSuccess": "Local model service paused",
     "stopSuccess": "Local model service stopped",
     "stopError": "Local model stop failed: {{error}}",
     "stageStatus": {
       "started": "Started (model warmup in progress)",
+      "resuming": "Resuming",
+      "paused": "Paused",
       "warmup": "Warming up",
       "ready": "Ready",
       "error": "Startup failed"
@@ -136,6 +144,7 @@
       "downloading": "Downloading",
       "validating": "Validating",
       "running": "Warming up",
+      "paused": "Paused",
       "ready": "Ready",
       "error": "Failed"
     }

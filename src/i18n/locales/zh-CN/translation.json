@@ -91,6 +91,10 @@
     "qwenVariantForcedAligner": "Qwen3-ForcedAligner-0.6B",
     "serviceUrl": "服务地址",
     "device": "推理设备",
+    "stopMode": "停止服务模式",
+    "stopModeStop": "彻底停止（stop/rm）",
+    "stopModePause": "暂停容器（pause）",
+    "stopModeHint": "仅影响“停止服务”按钮；应用退出时会自动暂停容器，以便下次快速恢复。",
     "deviceAuto": "自动（优先 GPU）",
     "deviceCpu": "CPU",
     "deviceCuda": "CUDA",
@@ -102,6 +106,7 @@
     "installed": "已安装",
     "running": "服务状态",
     "runningNow": "运行中",
+    "pausedNow": "已暂停",
     "warmingNow": "预热中",
     "stopped": "未运行",
     "yes": "是",
@@ -122,10 +127,13 @@
     "startQueued": "本地模型已在后台启动，模型预热中。",
     "startSuccess": "本地模型服务已启动",
     "startError": "本地模型启动失败：{{error}}",
+    "pauseSuccess": "本地模型服务已暂停",
     "stopSuccess": "本地模型服务已停止",
     "stopError": "本地模型停止失败：{{error}}",
     "stageStatus": {
       "started": "已启动（模型预热中）",
+      "resuming": "恢复中",
+      "paused": "已暂停",
       "warmup": "预热中",
       "ready": "就绪",
       "error": "启动异常"
@@ -136,6 +144,7 @@
       "downloading": "下载中",
       "validating": "校验中",
       "running": "预热中",
+      "paused": "已暂停",
       "ready": "可用",
       "error": "失败"
     }
