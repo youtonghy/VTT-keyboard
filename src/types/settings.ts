@@ -10,6 +10,7 @@ export interface Settings {
   triggers: TriggerCard[];
   appearance: AppearanceSettings;
   startup: StartupSettings;
+  history: HistorySettings;
 }
 
 export interface ShortcutSettings {
@@ -66,6 +67,10 @@ export interface AppearanceSettings {
 
 export interface StartupSettings {
   launchOnBoot: boolean;
+}
+
+export interface HistorySettings {
+  enabled: boolean;
 }
 
 export interface VolcengineSettings {

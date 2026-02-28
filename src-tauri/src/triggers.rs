@@ -1,5 +1,5 @@
 use crate::openai::{self, OpenAiError};
-use crate::settings::{Settings, TriggerCard};
+use crate::settings::{Settings, TriggerCard, TriggerMatch, TriggerMatchMode};
 use regex::Regex;
 
 const VALUE_PLACEHOLDER: &str = "{value}";
@@ -9,6 +9,8 @@ const SENTENCE_DELIMITERS: [char; 12] =
 pub struct TriggerResult {
     pub output: String,
     pub triggered: bool,
+    pub triggered_by_keyword: bool,
+    pub trigger_matches: Vec<TriggerMatch>,
 }
 
 pub fn apply_triggers(
@@ -19,6 +21,8 @@ pub fn apply_triggers(
     let sentences = split_sentences(input);
     let mut output = input.to_string();
     let mut triggered = false;
+    let mut triggered_by_keyword = false;
+    let mut trigger_matches = Vec::new();
 
     for card in settings.triggers.iter().filter(|card| card.enabled) {
         let matched = match_card(card, &sentences).or_else(|| {
@@ -56,11 +60,30 @@ pub fn apply_triggers(
             {
                 log(&format!("触发卡片 {} 结果: {}", card.id, output));
             }
+            if matched_by_keyword {
+                triggered_by_keyword = true;
+            }
+            trigger_matches.push(TriggerMatch {
+                trigger_id: card.id.clone(),
+                trigger_title: card.title.clone(),
+                keyword: card.keyword.clone(),
+                matched_value: value,
+                mode: if matched_by_keyword {
+                    TriggerMatchMode::Keyword
+                } else {
+                    TriggerMatchMode::Auto
+                },
+            });
             triggered = true;
         }
     }
 
-    Ok(TriggerResult { output, triggered })
+    Ok(TriggerResult {
+        output,
+        triggered,
+        triggered_by_keyword,
+        trigger_matches,
+    })
 }
 
 fn split_sentences(input: &str) -> Vec<String> {

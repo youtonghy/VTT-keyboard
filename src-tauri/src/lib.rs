@@ -12,7 +12,9 @@ mod volcengine;
 
 use recorder::RecorderService;
 use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
-use settings::{SenseVoiceSettings, Settings, SettingsStore, TranscriptionProvider};
+use settings::{
+    SenseVoiceSettings, Settings, SettingsStore, TranscriptionHistoryItem, TranscriptionProvider,
+};
 use std::fs;
 use std::sync::Mutex;
 use tauri::{Manager, State, WindowEvent, Wry};
@@ -189,6 +191,22 @@ fn stop_recording(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_transcription_history(state: State<AppState>) -> Result<Vec<TranscriptionHistoryItem>, String> {
+    state
+        .settings_store
+        .load_transcription_history()
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn clear_transcription_history(state: State<AppState>) -> Result<(), String> {
+    state
+        .settings_store
+        .clear_transcription_history()
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 fn get_sensevoice_status(state: State<AppState>) -> Result<SenseVoiceStatus, String> {
     let mut manager = state
         .sensevoice_manager
@@ -343,7 +361,10 @@ pub fn run() {
             let is_autostart_launch = std::env::args().any(|arg| arg == "--autostart");
             app.manage(AppState {
                 recorder: RecorderService::new(),
-                transcription_dispatcher: TranscriptionDispatcher::new(store.clone()),
+                transcription_dispatcher: TranscriptionDispatcher::new(
+                    app_handle.clone(),
+                    store.clone(),
+                ),
                 settings_store: store,
                 sensevoice_manager: Mutex::new(SenseVoiceManager::new()),
                 tray_state: Mutex::new(TrayState::default()),
@@ -398,6 +419,8 @@ pub fn run() {
             import_settings,
             start_recording,
             stop_recording,
+            get_transcription_history,
+            clear_transcription_history,
             get_sensevoice_status,
             prepare_sensevoice,
             start_sensevoice_service,

@@ -458,6 +458,45 @@
     @apply md:col-span-2;
   }
 
+  .history-list {
+    @apply flex flex-col gap-2;
+  }
+
+  .history-item {
+    @apply flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-2 text-left;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .history-item-content {
+    @apply min-w-0 flex-1 truncate text-sm font-medium;
+    color: var(--color-text-primary);
+  }
+
+  .history-item-time {
+    @apply shrink-0 text-xs;
+    color: var(--color-text-secondary);
+  }
+
+  .history-item.failed .history-item-content {
+    color: #cc334f;
+  }
+
+  .history-item.triggered .history-item-content {
+    color: var(--color-accent-strong);
+  }
+
+  .history-empty {
+    @apply rounded-xl border px-3 py-2 text-sm;
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .history-actions {
+    @apply pt-2;
+  }
+
   .settings-actions {
     @apply flex min-h-8 items-center;
   }
@@ -497,6 +536,90 @@
 
   main button.secondary {
     @apply w-full md:w-auto;
+  }
+
+  main button.danger {
+    border-color: #cc334f;
+    color: #fff;
+    background-color: #cc334f;
+  }
+
+  main button.danger:hover:not(:disabled) {
+    border-color: color-mix(in oklab, #cc334f 88%, #911f37);
+    color: #fff;
+    background-color: color-mix(in oklab, #cc334f 88%, #911f37);
+  }
+
+  .history-dialog-backdrop {
+    @apply fixed inset-0 z-[70] flex items-center justify-center p-4;
+    background-color: color-mix(in oklab, #0a1220 45%, transparent);
+    backdrop-filter: blur(2px);
+  }
+
+  .history-dialog {
+    @apply w-full max-w-2xl rounded-2xl border p-4 md:p-5;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 98%, transparent);
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
+  }
+
+  .history-dialog-header {
+    @apply mb-4 flex items-center justify-between gap-3;
+  }
+
+  .history-dialog-header h4 {
+    @apply m-0 text-base font-semibold;
+    color: var(--color-text-primary);
+  }
+
+  .history-dialog-close {
+    @apply h-8 w-8 rounded-lg border p-0;
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+    background-color: transparent;
+  }
+
+  .history-dialog-close:hover {
+    border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
+  }
+
+  .history-dialog-body {
+    @apply grid gap-3;
+  }
+
+  .history-detail-row {
+    @apply rounded-xl border p-3;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+  }
+
+  .history-detail-row > span {
+    @apply mb-1 block text-xs font-medium;
+    color: var(--color-text-secondary);
+  }
+
+  .history-detail-row > strong {
+    @apply block text-sm font-medium;
+    color: var(--color-text-primary);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .history-trigger-list {
+    @apply m-0 list-none space-y-1 p-0;
+  }
+
+  .history-trigger-list li {
+    @apply text-sm;
+    color: var(--color-text-primary);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .history-error-text {
+    color: #cc334f !important;
   }
 
   .language-switcher {

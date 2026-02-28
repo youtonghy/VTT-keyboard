@@ -6,9 +6,10 @@ import { SegmentedControl } from "./components/SegmentedControl";
 import { CustomSelect } from "./components/CustomSelect";
 import { Toaster, toast } from "sonner";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
@@ -21,6 +22,8 @@ import { useAutostart } from "./hooks/useAutostart";
 import { usePersistentBoolean } from "./hooks/usePersistentBoolean";
 import { useSenseVoice } from "./hooks/useSenseVoice";
 import { useSettings } from "./hooks/useSettings";
+import { HistoryDetailDialog } from "./components/HistoryDetailDialog";
+import type { TranscriptionHistoryItem } from "./types/history";
 import type { Settings } from "./types/settings";
 
 const listToString = (values: string[]) => values.join(", ");
@@ -42,6 +45,7 @@ const QWEN3_ASR_MODEL_VARIANTS = [
     labelKey: "sensevoice.qwenVariantForcedAligner",
   },
 ] as const;
+const MAX_HISTORY_ITEMS = 200;
 
 const logDebug = (..._args: unknown[]) => {};
 
@@ -169,6 +173,19 @@ const getQwenVariantByModelId = (modelId: string | undefined) => {
   return matched ? matched.value : DEFAULT_QWEN3_ASR_MODEL_ID;
 };
 
+const formatHistoryTime = (timestampMs: number) => {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+    return "--:-- --/--";
+  }
+  const value = new Date(timestampMs);
+  if (Number.isNaN(value.getTime())) {
+    return "--:-- --/--";
+  }
+  const hour = String(value.getHours()).padStart(2, "0");
+  const minute = String(value.getMinutes()).padStart(2, "0");
+  return `${hour}:${minute} ${value.getDate()}/${value.getMonth() + 1}`;
+};
+
 function App() {
   const { t, i18n } = useTranslation();
   const { settings, loading, saveSettings } = useSettings();
@@ -202,6 +219,20 @@ function App() {
     version: string;
     buildDate: string;
   } | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyItems, setHistoryItems] = useState<TranscriptionHistoryItem[]>([]);
+  const [selectedHistoryItem, setSelectedHistoryItem] =
+    useState<TranscriptionHistoryItem | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const items = await invoke<TranscriptionHistoryItem[]>("get_transcription_history");
+      setHistoryItems(items.slice(0, MAX_HISTORY_ITEMS));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (settings) {
@@ -365,6 +396,33 @@ function App() {
     });
   }, [i18n.language, t]);
 
+  useEffect(() => {
+    const unlisten = listen<TranscriptionHistoryItem>(
+      "transcription-history-appended",
+      (event) => {
+        setHistoryItems((prev) => {
+          if (prev.some((item) => item.id === event.payload.id)) {
+            return prev;
+          }
+          return [event.payload, ...prev].slice(0, MAX_HISTORY_ITEMS);
+        });
+      }
+    );
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== "history") {
+      setSelectedHistoryItem(null);
+      return;
+    }
+    void loadHistory().catch((error) => {
+      toast.error(t("history.loadError", { error: toErrorMessage(error) }));
+    });
+  }, [activeSection, loadHistory, t]);
+
   const navItems = useMemo(
     () => [
       { id: "general", label: t("nav.general") },
@@ -373,6 +431,7 @@ function App() {
       { id: "speech", label: t("nav.speech") },
       { id: "text", label: t("nav.text") },
       { id: "triggers", label: t("nav.triggers") },
+      { id: "history", label: t("nav.history") },
       { id: "about", label: t("nav.about") },
     ],
     [t]
@@ -502,6 +561,21 @@ function App() {
       toast.success(t("data.exportSuccess"));
     } catch (err) {
       toast.error(t("data.exportError"));
+    }
+  };
+
+  const handleClearHistory = async () => {
+    const confirmed = window.confirm(t("history.clearConfirm"));
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await invoke("clear_transcription_history");
+      setHistoryItems([]);
+      setSelectedHistoryItem(null);
+      toast.success(t("history.clearSuccess"));
+    } catch (error) {
+      toast.error(t("history.clearError", { error: toErrorMessage(error) }));
     }
   };
 
@@ -1587,6 +1661,73 @@ function App() {
               </SettingsCard>
             ) : null}
 
+            {activeSection === "history" ? (
+              <SettingsCard
+                title={t("history.title")}
+                description={t("history.description")}
+              >
+                <label className="field checkbox">
+                  <input
+                    type="checkbox"
+                    checked={draft.history.enabled}
+                    onChange={(event) =>
+                      updateDraft((prev) => ({
+                        ...prev,
+                        history: {
+                          ...prev.history,
+                          enabled: event.target.checked,
+                        },
+                      }))
+                    }
+                  />
+                  <span>{t("history.enabled")}</span>
+                </label>
+
+                {historyLoading ? (
+                  <div className="history-empty">{t("history.loading")}</div>
+                ) : historyItems.length === 0 ? (
+                  <div className="history-empty">{t("history.empty")}</div>
+                ) : (
+                  <div className="history-list">
+                    {historyItems.map((item) => {
+                      const isFailed = item.status === "failed";
+                      const isKeywordTriggered = !isFailed && item.triggeredByKeyword;
+                      const mainText = isFailed
+                        ? t("history.failed")
+                        : isKeywordTriggered
+                          ? item.finalText || t("history.emptyText")
+                          : item.transcriptionText || t("history.emptyText");
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`history-item ${isFailed ? "failed" : ""} ${isKeywordTriggered ? "triggered" : ""}`}
+                          onClick={() => setSelectedHistoryItem(item)}
+                        >
+                          <span className="history-item-content">{mainText}</span>
+                          <span className="history-item-time">
+                            {formatHistoryTime(item.timestampMs)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="history-actions">
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={handleClearHistory}
+                    disabled={historyItems.length === 0}
+                  >
+                    {t("history.clear")}
+                  </button>
+                </div>
+              </SettingsCard>
+            ) : null}
+
             {activeSection === "about" && appInfo ? (
               <SettingsCard
                 title={t("about.title")}
@@ -1624,6 +1765,10 @@ function App() {
         </div>
         
       </main>
+      <HistoryDetailDialog
+        item={selectedHistoryItem}
+        onClose={() => setSelectedHistoryItem(null)}
+      />
     </>
   );
 }

@@ -6,6 +6,7 @@ import {
   Type, 
   Zap, 
   Info,
+  History,
   ChevronLeft,
   ChevronRight,
   LucideIcon
@@ -32,6 +33,7 @@ const iconMap: Record<string, LucideIcon> = {
   speech: MessageSquare,
   text: Type,
   triggers: Zap,
+  history: History,
   about: Info,
 };
 

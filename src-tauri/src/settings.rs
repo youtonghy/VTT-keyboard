@@ -12,6 +12,8 @@ use url::Url;
 const SETTINGS_FILE: &str = "settings.json";
 const SETTINGS_KEY_FILE: &str = "settings.key";
 const SETTINGS_STORE_KEY: &str = "payload";
+const HISTORY_STORE_KEY: &str = "transcriptionHistory";
+pub const MAX_TRANSCRIPTION_HISTORY_ITEMS: usize = 200;
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
@@ -59,6 +61,8 @@ pub struct Settings {
     pub appearance: AppearanceSettings,
     #[serde(default)]
     pub startup: StartupSettings,
+    #[serde(default)]
+    pub history: HistorySettings,
 }
 
 impl Default for Settings {
@@ -102,6 +106,7 @@ impl Default for Settings {
                 theme: "system".to_string(),
             },
             startup: StartupSettings::default(),
+            history: HistorySettings::default(),
         }
     }
 }
@@ -209,6 +214,56 @@ impl Default for StartupSettings {
             launch_on_boot: false,
         }
     }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistorySettings {
+    pub enabled: bool,
+}
+
+impl Default for HistorySettings {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TriggerMatch {
+    pub trigger_id: String,
+    pub trigger_title: String,
+    pub keyword: String,
+    pub matched_value: String,
+    pub mode: TriggerMatchMode,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TriggerMatchMode {
+    Keyword,
+    Auto,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptionHistoryStatus {
+    Success,
+    Failed,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionHistoryItem {
+    pub id: String,
+    pub timestamp_ms: u64,
+    pub status: TranscriptionHistoryStatus,
+    pub transcription_text: String,
+    pub final_text: String,
+    pub triggered: bool,
+    pub triggered_by_keyword: bool,
+    pub trigger_matches: Vec<TriggerMatch>,
+    pub error_message: Option<String>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -338,6 +393,49 @@ impl SettingsStore {
         self.persist_settings(&settings)
     }
 
+    pub fn load_transcription_history(&self) -> Result<Vec<TranscriptionHistoryItem>, SettingsError> {
+        let store = self
+            .app
+            .store(SETTINGS_FILE)
+            .map_err(|err| SettingsError::Store(err.to_string()))?;
+        let Some(payload) = store.get(HISTORY_STORE_KEY) else {
+            return Ok(Vec::new());
+        };
+        let Some(encoded) = payload.as_str() else {
+            return Ok(Vec::new());
+        };
+        let key = self.load_or_create_key()?;
+        let decrypted = match decrypt_payload(encoded, &key) {
+            Ok(value) => value,
+            Err(_) => return Ok(Vec::new()),
+        };
+        match serde_json::from_str::<Vec<TranscriptionHistoryItem>>(&decrypted) {
+            Ok(mut history) => {
+                if history.len() > MAX_TRANSCRIPTION_HISTORY_ITEMS {
+                    history.truncate(MAX_TRANSCRIPTION_HISTORY_ITEMS);
+                }
+                Ok(history)
+            }
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+
+    pub fn append_transcription_history(
+        &self,
+        item: TranscriptionHistoryItem,
+    ) -> Result<(), SettingsError> {
+        let mut history = self.load_transcription_history()?;
+        history.insert(0, item);
+        if history.len() > MAX_TRANSCRIPTION_HISTORY_ITEMS {
+            history.truncate(MAX_TRANSCRIPTION_HISTORY_ITEMS);
+        }
+        self.persist_transcription_history(&history)
+    }
+
+    pub fn clear_transcription_history(&self) -> Result<(), SettingsError> {
+        self.persist_transcription_history(&[])
+    }
+
     fn persist_settings(&self, settings: &Settings) -> Result<(), SettingsError> {
         let json =
             serde_json::to_string(settings).map_err(|err| SettingsError::Serde(err.to_string()))?;
@@ -349,6 +447,28 @@ impl SettingsStore {
             .map_err(|err| SettingsError::Store(err.to_string()))?;
         store.set(
             SETTINGS_STORE_KEY.to_string(),
+            serde_json::Value::String(encrypted),
+        );
+        store
+            .save()
+            .map_err(|err| SettingsError::Store(err.to_string()))?;
+        Ok(())
+    }
+
+    fn persist_transcription_history(
+        &self,
+        history: &[TranscriptionHistoryItem],
+    ) -> Result<(), SettingsError> {
+        let json =
+            serde_json::to_string(history).map_err(|err| SettingsError::Serde(err.to_string()))?;
+        let key = self.load_or_create_key()?;
+        let encrypted = encrypt_payload(&json, &key)?;
+        let store = self
+            .app
+            .store(SETTINGS_FILE)
+            .map_err(|err| SettingsError::Store(err.to_string()))?;
+        store.set(
+            HISTORY_STORE_KEY.to_string(),
             serde_json::Value::String(encrypted),
         );
         store
