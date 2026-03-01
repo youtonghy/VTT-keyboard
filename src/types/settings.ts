@@ -8,6 +8,7 @@ export interface Settings {
   volcengine: VolcengineSettings;
   sensevoice: SenseVoiceSettings;
   triggers: TriggerCard[];
+  output: OutputSettings;
   appearance: AppearanceSettings;
   startup: StartupSettings;
   history: HistorySettings;
@@ -59,6 +60,10 @@ export interface TriggerCard {
   keyword: string;
   promptTemplate: string;
   variables: string[];
+}
+
+export interface OutputSettings {
+  removeNewlines: boolean;
 }
 
 export interface AppearanceSettings {

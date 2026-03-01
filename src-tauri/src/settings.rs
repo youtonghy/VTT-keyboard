@@ -58,6 +58,8 @@ pub struct Settings {
     pub sensevoice: SenseVoiceSettings,
     #[serde(default = "default_triggers")]
     pub triggers: Vec<TriggerCard>,
+    #[serde(default)]
+    pub output: OutputSettings,
     pub appearance: AppearanceSettings,
     #[serde(default)]
     pub startup: StartupSettings,
@@ -102,6 +104,7 @@ impl Default for Settings {
             volcengine: VolcengineSettings::default(),
             sensevoice: SenseVoiceSettings::default(),
             triggers: default_triggers(),
+            output: OutputSettings::default(),
             appearance: AppearanceSettings {
                 theme: "system".to_string(),
             },
@@ -194,6 +197,20 @@ pub struct TriggerCard {
     pub keyword: String,
     pub prompt_template: String,
     pub variables: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputSettings {
+    pub remove_newlines: bool,
+}
+
+impl Default for OutputSettings {
+    fn default() -> Self {
+        Self {
+            remove_newlines: false,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

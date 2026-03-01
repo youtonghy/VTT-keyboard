@@ -740,6 +740,25 @@ function App() {
     <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={14} /></span>
   </Tooltip>
 </label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.output.removeNewlines}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          output: {
+                            ...prev.output,
+                            removeNewlines: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    <span>{t("general.removeNewlines")}</span>
+  <Tooltip content={t("general.removeNewlinesHint")}>
+    <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={14} /></span>
+  </Tooltip>
+</label>
                 </SettingsCard>
                 <SettingsCard title={t("data.title")} description={t("data.description")}>
                   <div className="button-row">

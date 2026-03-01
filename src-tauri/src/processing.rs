@@ -94,6 +94,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
         }
     };
     let history_enabled = settings.history.enabled;
+    let remove_newlines = settings.output.remove_newlines;
 
     if recording.samples.is_empty() {
         dev_log("录音为空，跳过转写");
@@ -138,7 +139,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             Ok(value) => value,
             Err(message) => {
                 cleanup_files(&paths);
-                let partial = transcripts.join(" ");
+                let partial = normalize_text_for_output(&transcripts.join(" "), remove_newlines);
                 return ProcessingOutcome::failed(
                     history_enabled,
                     partial.clone(),
@@ -156,7 +157,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
 
     cleanup_files(&paths);
 
-    let combined = transcripts.join(" ");
+    let combined = normalize_text_for_output(&transcripts.join(" "), remove_newlines);
     dev_log(&format!("合并转写结果: {}", combined));
     let logger = |message: &str| dev_log(message);
     let result = match triggers::apply_triggers(&settings, &combined, &logger) {
@@ -178,6 +179,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
         if result.triggered { "已触发" } else { "未触发" }
     ));
     dev_log(&format!("触发词输出: {}", result.output));
+    let final_output = normalize_text_for_output(&result.output, remove_newlines);
 
     if result.triggered {
         dev_log("复制原文到剪贴板");
@@ -185,7 +187,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             return processing_paste_error(
                 history_enabled,
                 &combined,
-                &result.output,
+                &final_output,
                 result.triggered,
                 result.triggered_by_keyword,
                 result.trigger_matches,
@@ -194,11 +196,11 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
         }
     }
     dev_log("写入并粘贴处理后的文本");
-    if let Err(err) = paste::write_and_paste(&result.output) {
+    if let Err(err) = paste::write_and_paste(&final_output) {
         return processing_paste_error(
             history_enabled,
             &combined,
-            &result.output,
+            &final_output,
             result.triggered,
             result.triggered_by_keyword,
             result.trigger_matches,
@@ -209,7 +211,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     ProcessingOutcome::success(
         history_enabled,
         combined,
-        result.output,
+        final_output,
         result.triggered,
         result.triggered_by_keyword,
         result.trigger_matches,
@@ -251,6 +253,20 @@ fn cleanup_files(paths: &[std::path::PathBuf]) {
     }
 }
 
+fn normalize_text_for_output(text: &str, remove_newlines: bool) -> String {
+    if remove_newlines {
+        remove_line_breaks(text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn remove_line_breaks(text: &str) -> String {
+    text.chars()
+        .filter(|ch| *ch != '\n' && *ch != '\r')
+        .collect()
+}
+
 fn processing_audio_error(history_enabled: bool, err: AudioProcessingError) -> ProcessingOutcome {
     ProcessingOutcome::failed(
         history_enabled,
@@ -281,4 +297,30 @@ fn processing_paste_error(
         trigger_matches,
         format!("写入剪贴板失败: {err}"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_line_breaks;
+
+    #[test]
+    fn remove_line_breaks_removes_crlf_lf_and_cr() {
+        let input = "a\r\nb\nc\rd";
+        let output = remove_line_breaks(input);
+        assert_eq!(output, "abcd");
+    }
+
+    #[test]
+    fn remove_line_breaks_keeps_text_without_line_breaks() {
+        let input = "single line text";
+        let output = remove_line_breaks(input);
+        assert_eq!(output, "single line text");
+    }
+
+    #[test]
+    fn remove_line_breaks_returns_empty_for_only_line_breaks() {
+        let input = "\r\n\n\r";
+        let output = remove_line_breaks(input);
+        assert!(output.is_empty());
+    }
 }

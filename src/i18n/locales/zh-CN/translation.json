@@ -27,6 +27,8 @@
     "language": "界面语言",
     "launchOnBoot": "开机自启",
     "launchOnBootHint": "系统登录后自动在后台启动，并默认隐藏到托盘。",
+    "removeNewlines": "移除换行",
+    "removeNewlinesHint": "启用后会删除转写和触发结果中的全部换行，确保输出始终为单行。",
     "launchOnBootSyncError": "开机自启同步失败：{{error}}"
   },
   "data": {

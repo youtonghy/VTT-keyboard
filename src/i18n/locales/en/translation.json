@@ -27,6 +27,8 @@
     "language": "Language",
     "launchOnBoot": "Launch on Boot",
     "launchOnBootHint": "Auto start in background after login and keep the window hidden to tray.",
+    "removeNewlines": "Remove line breaks",
+    "removeNewlinesHint": "When enabled, all line breaks are removed from transcription and trigger results so output always stays on one line.",
     "launchOnBootSyncError": "Failed to sync launch on boot: {{error}}"
   },
   "data": {
