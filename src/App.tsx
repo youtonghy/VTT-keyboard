@@ -46,6 +46,7 @@ const QWEN3_ASR_MODEL_VARIANTS = [
   },
 ] as const;
 const MAX_HISTORY_ITEMS = 200;
+const HISTORY_PREVIEW_MAX_CHARS = 50;
 
 const logDebug = (..._args: unknown[]) => {};
 
@@ -184,6 +185,20 @@ const formatHistoryTime = (timestampMs: number) => {
   const hour = String(value.getHours()).padStart(2, "0");
   const minute = String(value.getMinutes()).padStart(2, "0");
   return `${hour}:${minute} ${value.getDate()}/${value.getMonth() + 1}`;
+};
+
+const buildHistoryPreview = (text: string, maxChars: number, ellipsis: string) => {
+  const chars = Array.from(text);
+  if (chars.length <= maxChars) {
+    return {
+      preview: text,
+      truncated: false,
+    };
+  }
+  return {
+    preview: `${chars.slice(0, maxChars).join("")}${ellipsis}`,
+    truncated: true,
+  };
 };
 
 function App() {
@@ -1716,6 +1731,11 @@ function App() {
                         : isKeywordTriggered
                           ? item.finalText || t("history.emptyText")
                           : item.transcriptionText || t("history.emptyText");
+                      const { preview, truncated } = buildHistoryPreview(
+                        mainText,
+                        HISTORY_PREVIEW_MAX_CHARS,
+                        t("history.previewEllipsis")
+                      );
 
                       return (
                         <button
@@ -1724,7 +1744,12 @@ function App() {
                           className={`history-item ${isFailed ? "failed" : ""} ${isKeywordTriggered ? "triggered" : ""}`}
                           onClick={() => setSelectedHistoryItem(item)}
                         >
-                          <span className="history-item-content">{mainText}</span>
+                          <span
+                            className="history-item-content"
+                            title={truncated ? mainText : undefined}
+                          >
+                            {preview}
+                          </span>
                           <span className="history-item-time">
                             {formatHistoryTime(item.timestampMs)}
                           </span>

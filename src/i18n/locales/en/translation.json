@@ -201,6 +201,7 @@
     "loading": "Loading history...",
     "empty": "No history yet",
     "emptyText": "(empty)",
+    "previewEllipsis": "...",
     "failed": "Failed",
     "none": "None",
     "yes": "Yes",

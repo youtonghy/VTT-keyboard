@@ -469,7 +469,8 @@
   }
 
   .history-item-content {
-    @apply min-w-0 flex-1 truncate text-sm font-medium;
+    @apply min-w-0 flex-1 whitespace-normal text-sm font-medium;
+    overflow-wrap: anywhere;
     color: var(--color-text-primary);
   }
 
