@@ -1,4 +1,4 @@
-import { useRef, useEffect, DragEvent } from "react";
+import { useRef, useLayoutEffect } from "react";
 
 interface PromptTemplateEditorProps {
   value: string;
@@ -17,7 +17,8 @@ function textToHtml(text: string): string {
     .replace(/\n/g, "<br>")
     .replace(
       /\{value\}/g,
-      '&#8203;<span class="prompt-variable" contenteditable="false" data-var="value" draggable="true">{value}</span>&#8203;'
+      // 注意：不加 draggable="true"，使用自定义鼠标事件替代 HTML5 Drag API
+      '&#8203;<span class="prompt-variable" contenteditable="false" data-var="value">{value}</span>&#8203;'
     );
 }
 
@@ -222,98 +223,128 @@ export function PromptTemplateEditor({
 }: PromptTemplateEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const isComposing = useRef(false);
+
+  // 自定义拖拽状态
   const dragSourceRef = useRef<HTMLElement | null>(null);
-  // 始终持有最新 value，避免闭包陈旧引用
+  const dragActiveRef = useRef(false);
+  const dragStartPos = useRef<{ x: number; y: number } | null>(null);
+
+  // 始终持有最新 value/onChange，避免闭包陈旧引用
   const valueRef = useRef(value);
   valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   /**
-   * 通过 ref 直接写 innerHTML，绕开 React reconciliation，
-   * 避免 contentEditable 光标被重置。
+   * Bug 1 修复：改用 useLayoutEffect 替代 useEffect。
+   * useLayoutEffect 在 DOM 变更后、浏览器 paint 之前同步执行，
+   * 确保 innerHTML 在首次绘制前就已填入，避免"空白→有内容"闪烁，
+   * 从而消除用户感知到的"点击时意外插入 {value}"假象。
    */
-  const syncHtml = (text: string) => {
-    if (editorRef.current) editorRef.current.innerHTML = textToHtml(text);
-  };
-
-  // 挂载时初始化；外部 value 变化（且编辑器未聚焦）时同步
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = editorRef.current;
     if (el && document.activeElement !== el && !isComposing.current) {
-      syncHtml(value);
+      el.innerHTML = textToHtml(value);
     }
   }, [value]);
+
+  /**
+   * Bug 2 修复：挂载时注册 document 级别鼠标事件，实现自定义拖拽。
+   * 替代不可靠的 HTML5 Drag API（在 contentEditable 内部会直接移动 DOM 节点，
+   * 绕过 dataTransfer，导致我们的逻辑无法介入）。
+   *
+   * 机制：
+   *   mousedown on .prompt-variable → 记录源 span 和起始坐标
+   *   document mousemove → 超过 4px 后激活拖拽，添加 .dragging 样式
+   *   document mouseup  → 用 caretRangeFromXY 计算落点，在纯文本中执行移动
+   */
+  useLayoutEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      const source = dragSourceRef.current;
+      if (!source) return;
+      const start = dragStartPos.current;
+      if (!start) return;
+
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+
+      // 超过 4px 才激活，防止普通点击误触
+      if (!dragActiveRef.current && Math.sqrt(dx * dx + dy * dy) > 4) {
+        dragActiveRef.current = true;
+        source.classList.add("dragging");
+        document.body.style.cursor = "grabbing";
+      }
+
+      // 激活后阻止文字选中
+      if (dragActiveRef.current) {
+        e.preventDefault();
+      }
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      const source = dragSourceRef.current;
+      const isActive = dragActiveRef.current;
+
+      // 清理拖拽状态
+      if (source) source.classList.remove("dragging");
+      document.body.style.cursor = "";
+      dragSourceRef.current = null;
+      dragActiveRef.current = false;
+      dragStartPos.current = null;
+
+      const editor = editorRef.current;
+      if (!isActive || !source || !editor) return;
+
+      // 计算放置位置（兼容 Chrome/Safari/Firefox）
+      const range = caretRangeFromXY(e.clientX, e.clientY);
+      if (!range) return;
+
+      const dropOff = getTextOffset(editor, range.startContainer, range.startOffset);
+      const curText = htmlToText(editor);
+      const srcIdx = findValueIndex(curText, source, editor);
+
+      // 从文本中移除原始 {value}
+      let next = curText.slice(0, srcIdx) + curText.slice(srcIdx + 7);
+
+      // 若被移除片段在落点之前，需调整偏移量
+      let adj = dropOff;
+      if (srcIdx < dropOff) adj -= 7;
+      adj = Math.max(0, Math.min(adj, next.length));
+
+      // 在新位置插入 {value}
+      next = next.slice(0, adj) + "{value}" + next.slice(adj);
+
+      onChangeRef.current(next);
+      editor.innerHTML = textToHtml(next);
+      editor.focus();
+      setCursorAtTextOffset(editor, adj + 7);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []); // 仅在 mount/unmount 时执行
 
   /* ── 输入同步 ────────────────────────────────────────────────── */
 
   const handleInput = () => {
     const el = editorRef.current;
-    if (el && !isComposing.current && !dragSourceRef.current) {
+    if (el && !isComposing.current && !dragActiveRef.current) {
       onChange(htmlToText(el));
     }
   };
 
-  /* ── 拖拽 ───────────────────────────────────────────────────── */
+  /* ── 鼠标按下：检测是否点在 .prompt-variable 上以启动拖拽 ─── */
 
-  const onDragStart = (e: DragEvent<HTMLDivElement>) => {
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     const t = e.target as HTMLElement;
     if (t.classList?.contains("prompt-variable")) {
       dragSourceRef.current = t;
-      e.dataTransfer.setData("text/plain", "{value}");
-      e.dataTransfer.effectAllowed = "move";
-      t.classList.add("dragging");
+      dragStartPos.current = { x: e.clientX, y: e.clientY };
     }
-  };
-
-  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
-    if (dragSourceRef.current) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-    }
-  };
-
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
-    const editor = editorRef.current;
-    const source = dragSourceRef.current;
-    if (!editor || !source) return;
-
-    // 阻止浏览器默认的 DOM 节点移动行为
-    e.preventDefault();
-    e.stopPropagation();
-
-    const range = caretRangeFromXY(e.clientX, e.clientY);
-    if (!range) {
-      source.classList.remove("dragging");
-      dragSourceRef.current = null;
-      return;
-    }
-
-    const dropOff = getTextOffset(editor, range.startContainer, range.startOffset);
-    const curText = htmlToText(editor);
-    const srcIdx = findValueIndex(curText, source, editor);
-
-    // 从文本中移除原始 {value}
-    let next = curText.slice(0, srcIdx) + curText.slice(srcIdx + 7);
-
-    // 如果被移除的片段在放置点之前，调整偏移量
-    let adj = dropOff;
-    if (srcIdx < dropOff) adj -= 7;
-    adj = Math.max(0, Math.min(adj, next.length));
-
-    // 在新位置插入 {value}
-    next = next.slice(0, adj) + "{value}" + next.slice(adj);
-
-    dragSourceRef.current = null;
-    onChange(next);
-    syncHtml(next);
-
-    // 将光标定位到插入标签之后
-    editor.focus();
-    setCursorAtTextOffset(editor, adj + 7);
-  };
-
-  const onDragEnd = (e: DragEvent<HTMLDivElement>) => {
-    (e.target as HTMLElement).classList?.remove("dragging");
-    dragSourceRef.current = null;
   };
 
   /* ── 按钮插入变量 ───────────────────────────────────────────── */
@@ -335,7 +366,6 @@ export function PromptTemplateEditor({
       span.className = "prompt-variable";
       span.contentEditable = "false";
       span.dataset.var = varName;
-      span.draggable = true;
       span.textContent = `{${varName}}`;
       const zAfter = document.createTextNode("\u200B");
 
@@ -357,7 +387,7 @@ export function PromptTemplateEditor({
       // 兜底：追加到末尾
       const nt = valueRef.current + `{${varName}}`;
       onChange(nt);
-      syncHtml(nt);
+      editor.innerHTML = textToHtml(nt);
     }
   };
 
@@ -371,10 +401,7 @@ export function PromptTemplateEditor({
         contentEditable
         onInput={handleInput}
         onBlur={handleInput}
-        onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
-        onDragEnd={onDragEnd}
+        onMouseDown={handleMouseDown}
         onCompositionStart={() => (isComposing.current = true)}
         onCompositionEnd={() => {
           isComposing.current = false;
