@@ -771,26 +771,16 @@
   }
 
   .prompt-template-editor {
-    @apply min-h-24 min-w-0 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition whitespace-pre-wrap break-words;
+    @apply min-h-24 min-w-0 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition resize-y;
     border-color: var(--color-border);
     color: var(--color-text-primary);
     background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+    font-family: inherit;
   }
 
   .prompt-template-editor:focus {
     border-color: color-mix(in oklab, var(--color-accent) 52%, var(--color-border));
     box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 15%, transparent);
-  }
-
-  .prompt-variable {
-    @apply inline-flex items-center justify-center rounded-md px-1.5 py-0.5 mx-0.5 text-xs font-semibold select-none cursor-grab transition-colors align-middle;
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 15%, var(--color-surface-elevated));
-    border: 1px solid color-mix(in oklab, var(--color-accent) 30%, transparent);
-  }
-
-  .prompt-variable.dragging {
-    @apply opacity-50 cursor-grabbing;
   }
 
   .prompt-variables-bar {
