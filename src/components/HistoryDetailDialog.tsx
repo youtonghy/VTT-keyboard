@@ -28,6 +28,9 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
     return null;
   }
 
+  const hasTriggerDetails = item.triggered;
+  const hasError = Boolean(item.errorMessage?.trim());
+
   return (
     <div className="history-dialog-backdrop" role="presentation" onClick={onClose}>
       <section
@@ -46,55 +49,59 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
 
         <div className="history-dialog-body">
           <div className="history-detail-row">
-            <span>{t("history.detailTriggerEvent")}</span>
-            {item.triggerMatches.length > 0 ? (
-              <ul className="history-trigger-list">
-                {item.triggerMatches.map((match) => (
-                  <li key={`${item.id}-${match.triggerId}-${match.mode}-${match.matchedValue}`}>
-                    {match.triggerTitle} / {match.keyword || t("history.noKeyword")} / {match.matchedValue} / {t(`history.triggerMode.${match.mode}`)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <strong>{t("history.none")}</strong>
-            )}
-          </div>
-
-          <div className="history-detail-row">
             <span>{t("history.detailTranscription")}</span>
             <strong>{item.transcriptionText || t("history.emptyText")}</strong>
           </div>
 
-          <div className="history-detail-row">
-            <span>{t("history.detailTriggered")}</span>
-            <strong>{item.triggeredByKeyword ? t("history.yes") : t("history.no")}</strong>
-          </div>
+          {hasTriggerDetails ? (
+            <>
+              <div className="history-detail-row">
+                <span>{t("history.detailTriggerEvent")}</span>
+                {item.triggerMatches.length > 0 ? (
+                  <ul className="history-trigger-list">
+                    {item.triggerMatches.map((match) => (
+                      <li key={`${item.id}-${match.triggerId}-${match.mode}-${match.matchedValue}`}>
+                        {match.triggerTitle} / {match.keyword || t("history.noKeyword")} / {match.matchedValue} / {t(`history.triggerMode.${match.mode}`)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <strong>{t("history.none")}</strong>
+                )}
+              </div>
 
-          <div className="history-detail-row">
-            <span>{t("history.detailTriggeredWhich")}</span>
-            <strong>
-              {item.triggerMatches.length > 0
-                ? item.triggerMatches.map((match) => match.triggerTitle).join(" / ")
-                : t("history.none")}
-            </strong>
-          </div>
+              <div className="history-detail-row">
+                <span>{t("history.detailTriggered")}</span>
+                <strong>{item.triggeredByKeyword ? t("history.yes") : t("history.no")}</strong>
+              </div>
 
-          <div className="history-detail-row">
-            <span>{t("history.detailOriginal")}</span>
-            <strong>{item.transcriptionText || t("history.emptyText")}</strong>
-          </div>
+              <div className="history-detail-row">
+                <span>{t("history.detailTriggeredWhich")}</span>
+                <strong>
+                  {item.triggerMatches.length > 0
+                    ? item.triggerMatches.map((match) => match.triggerTitle).join(" / ")
+                    : t("history.none")}
+                </strong>
+              </div>
 
-          <div className="history-detail-row">
-            <span>{t("history.detailFinal")}</span>
-            <strong>{item.finalText || t("history.emptyText")}</strong>
-          </div>
+              <div className="history-detail-row">
+                <span>{t("history.detailOriginal")}</span>
+                <strong>{item.transcriptionText || t("history.emptyText")}</strong>
+              </div>
 
-          <div className="history-detail-row">
-            <span>{t("history.detailError")}</span>
-            <strong className={item.errorMessage ? "history-error-text" : ""}>
-              {item.errorMessage || t("history.none")}
-            </strong>
-          </div>
+              <div className="history-detail-row">
+                <span>{t("history.detailFinal")}</span>
+                <strong>{item.finalText || t("history.emptyText")}</strong>
+              </div>
+            </>
+          ) : null}
+
+          {hasError ? (
+            <div className="history-detail-row">
+              <span>{t("history.detailError")}</span>
+              <strong className="history-error-text">{item.errorMessage}</strong>
+            </div>
+          ) : null}
         </div>
       </section>
     </div>
