@@ -43,6 +43,13 @@ struct Segment {
     text: String,
 }
 
+#[derive(Debug)]
+enum ServerEventAction {
+    Continue,
+    TaskStarted,
+    TaskFinished,
+}
+
 pub fn transcribe_asr(settings: &Settings, audio_path: &Path) -> Result<String, AliyunRealtimeError> {
     transcribe_realtime(settings, audio_path, ProviderKind::FunAsr)
 }
@@ -88,6 +95,7 @@ fn transcribe_realtime(
     socket
         .send(Message::Text(start_message))
         .map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
+    wait_for_task_started(&mut socket)?;
 
     let payload = read_wav_as_pcm16k_mono(audio_path)?;
     for chunk in payload.chunks(CHUNK_SIZE_BYTES) {
@@ -159,7 +167,6 @@ fn build_run_task_message(settings: &Settings, provider: ProviderKind, task_id: 
             if let Some(vocabulary_id) = non_empty(&settings.aliyun.asr.vocabulary_id) {
                 parameters["vocabulary_id"] = Value::String(vocabulary_id.to_string());
             }
-            parameters["model"] = Value::String(MODEL_FUN_ASR_REALTIME_V2.to_string());
         }
         ProviderKind::Paraformer => {
             if let Some(vocabulary_id) = non_empty(&settings.aliyun.paraformer.vocabulary_id) {
@@ -170,7 +177,6 @@ fn build_run_task_message(settings: &Settings, provider: ProviderKind, task_id: 
                     serde_json::to_value(&settings.aliyun.paraformer.language_hints)
                         .unwrap_or(Value::Array(Vec::new()));
             }
-            parameters["model"] = Value::String(MODEL_PARAFORMER_REALTIME_V2.to_string());
         }
     }
 
@@ -183,11 +189,54 @@ fn build_run_task_message(settings: &Settings, provider: ProviderKind, task_id: 
         "payload": {
             "task_group": "audio",
             "task": "asr",
-            "function": "recognition"
-        },
-        "parameters": parameters
+            "function": "recognition",
+            "model": match provider {
+                ProviderKind::FunAsr => MODEL_FUN_ASR_REALTIME_V2,
+                ProviderKind::Paraformer => MODEL_PARAFORMER_REALTIME_V2
+            },
+            "parameters": parameters,
+            "input": {}
+        }
     })
     .to_string()
+}
+
+fn wait_for_task_started(
+    socket: &mut WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+) -> Result<(), AliyunRealtimeError> {
+    let mut segments = Vec::new();
+    let mut sequence = 0u64;
+    loop {
+        let message = socket
+            .read()
+            .map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
+        match message {
+            Message::Text(text) => {
+                let value: Value = serde_json::from_str(&text)
+                    .map_err(|err| AliyunRealtimeError::Parse(err.to_string()))?;
+                match handle_server_event(&value, &mut segments, &mut sequence)? {
+                    ServerEventAction::TaskStarted => return Ok(()),
+                    ServerEventAction::TaskFinished => {
+                        return Err(AliyunRealtimeError::Request(
+                            "服务端在任务启动前结束了任务".to_string(),
+                        ))
+                    }
+                    ServerEventAction::Continue => {}
+                }
+            }
+            Message::Close(_) => {
+                return Err(AliyunRealtimeError::WebSocket(
+                    "等待任务启动时连接已关闭".to_string(),
+                ))
+            }
+            Message::Ping(payload) => {
+                socket
+                    .send(Message::Pong(payload))
+                    .map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect_transcription_result(
@@ -204,18 +253,9 @@ fn collect_transcription_result(
             Message::Text(text) => {
                 let value: Value = serde_json::from_str(&text)
                     .map_err(|err| AliyunRealtimeError::Parse(err.to_string()))?;
-                let event = value
-                    .pointer("/header/event")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if event == "task-failed" {
-                    return Err(AliyunRealtimeError::Request(extract_error_message(&value)));
-                }
-                if event == "result-generated" {
-                    collect_segments(&value, &mut segments, &mut sequence);
-                }
-                if event == "task-finished" {
-                    break;
+                match handle_server_event(&value, &mut segments, &mut sequence)? {
+                    ServerEventAction::TaskFinished => break,
+                    ServerEventAction::Continue | ServerEventAction::TaskStarted => {}
                 }
             }
             Message::Close(_) => break,
@@ -247,6 +287,27 @@ fn collect_transcription_result(
         .join(" ")
         .trim()
         .to_string())
+}
+
+fn handle_server_event(
+    value: &Value,
+    segments: &mut Vec<Segment>,
+    sequence: &mut u64,
+) -> Result<ServerEventAction, AliyunRealtimeError> {
+    let event = value
+        .pointer("/header/event")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    match event {
+        "task-failed" => Err(AliyunRealtimeError::Request(extract_error_message(value))),
+        "task-started" => Ok(ServerEventAction::TaskStarted),
+        "task-finished" => Ok(ServerEventAction::TaskFinished),
+        "result-generated" => {
+            collect_segments(value, segments, sequence);
+            Ok(ServerEventAction::Continue)
+        }
+        _ => Ok(ServerEventAction::Continue),
+    }
 }
 
 fn collect_segments(value: &Value, segments: &mut Vec<Segment>, sequence: &mut u64) {
@@ -422,4 +483,65 @@ fn uuid_simple() -> String {
         .unwrap_or_default()
         .as_nanos();
     format!("{timestamp:x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_task_message_contains_required_payload_fields() {
+        let settings = Settings::default();
+        let raw = build_run_task_message(&settings, ProviderKind::FunAsr, "task-1");
+        let value: Value = serde_json::from_str(&raw).expect("run-task json");
+
+        assert_eq!(
+            value.pointer("/payload/model").and_then(|v| v.as_str()),
+            Some(MODEL_FUN_ASR_REALTIME_V2)
+        );
+        assert_eq!(value.pointer("/payload/input"), Some(&json!({})));
+        assert!(value.get("parameters").is_none());
+        assert!(value.pointer("/payload/parameters/model").is_none());
+    }
+
+    #[test]
+    fn handle_server_event_success_sequence() {
+        let mut segments = Vec::new();
+        let mut sequence = 0u64;
+
+        let started = json!({ "header": { "event": "task-started" } });
+        let started_action = handle_server_event(&started, &mut segments, &mut sequence)
+            .expect("task-started should succeed");
+        assert!(matches!(started_action, ServerEventAction::TaskStarted));
+
+        let generated = json!({
+            "header": { "event": "result-generated" },
+            "payload": { "output": { "sentence": { "text": "hello", "begin_time": 1 } } }
+        });
+        let generated_action = handle_server_event(&generated, &mut segments, &mut sequence)
+            .expect("result-generated should succeed");
+        assert!(matches!(generated_action, ServerEventAction::Continue));
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "hello");
+
+        let finished = json!({ "header": { "event": "task-finished" } });
+        let finished_action = handle_server_event(&finished, &mut segments, &mut sequence)
+            .expect("task-finished should succeed");
+        assert!(matches!(finished_action, ServerEventAction::TaskFinished));
+    }
+
+    #[test]
+    fn handle_server_event_task_failed_before_started() {
+        let mut segments = Vec::new();
+        let mut sequence = 0u64;
+        let failed = json!({
+            "header": { "event": "task-failed" },
+            "payload": { "message": "boom" }
+        });
+
+        let err = handle_server_event(&failed, &mut segments, &mut sequence)
+            .expect_err("task-failed should return error");
+        let message = err.to_string();
+        assert!(message.contains("boom"));
+    }
 }
