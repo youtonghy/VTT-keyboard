@@ -71,6 +71,9 @@
     "provider": "Provider",
     "volcengine": "Volcengine",
     "sensevoice": "Local Model",
+    "aliyunAsr": "Aliyun ASR",
+    "aliyunParaformer": "Paraformer",
+    "region": "Region",
     "model": "Model",
     "language": "Language (ISO-639-1)",
     "prompt": "Prompt",
@@ -163,6 +166,14 @@
     "langEnUS": "English",
     "langJaJP": "Japanese",
     "langKoKR": "Korean"
+  },
+  "aliyun": {
+    "apiKey": "API Key",
+    "regionBeijing": "Beijing",
+    "regionSingapore": "Singapore",
+    "vocabularyId": "Vocabulary ID (Optional)",
+    "languageHints": "Language Hints (comma separated, optional)",
+    "paraformerRegionHint": "Paraformer currently supports Beijing region only."
   },
   "text": {
     "title": "Text",

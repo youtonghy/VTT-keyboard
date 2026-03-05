@@ -71,6 +71,9 @@
     "provider": "提供商",
     "volcengine": "火山引擎",
     "sensevoice": "本地模型",
+    "aliyunAsr": "阿里云 ASR",
+    "aliyunParaformer": "Paraformer",
+    "region": "地域",
     "model": "转写模型",
     "language": "语言（ISO-639-1）",
     "prompt": "提示词",
@@ -163,6 +166,14 @@
     "langEnUS": "英语",
     "langJaJP": "日语",
     "langKoKR": "韩语"
+  },
+  "aliyun": {
+    "apiKey": "API Key",
+    "regionBeijing": "北京",
+    "regionSingapore": "新加坡",
+    "vocabularyId": "热词表 ID（可选）",
+    "languageHints": "语言提示（逗号分隔，可选）",
+    "paraformerRegionHint": "Paraformer 当前仅支持北京地域。"
   },
   "text": {
     "title": "文本处理",

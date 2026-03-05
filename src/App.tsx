@@ -32,6 +32,10 @@ const parseList = (value: string) =>
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+const normalizeAliyunRegion = (value: string | undefined) =>
+  value === "singapore" ? "singapore" : "beijing";
+const isAliyunProvider = (provider: Settings["provider"]) =>
+  provider === "aliyun-asr" || provider === "aliyun-paraformer";
 
 const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
 const DEFAULT_SENSEVOICE_MODEL_ID = "FunAudioLLM/SenseVoiceSmall";
@@ -252,6 +256,9 @@ function App() {
   useEffect(() => {
     if (settings) {
       const normalizedLocalModel = normalizeLocalModel(settings.sensevoice.localModel);
+      const normalizedAliyunRegion = normalizeAliyunRegion(settings.aliyun.region);
+      const effectiveAliyunRegion =
+        settings.provider === "aliyun-paraformer" ? "beijing" : normalizedAliyunRegion;
       setDraft({
         ...settings,
         sensevoice: {
@@ -266,6 +273,23 @@ function App() {
             normalizedLocalModel,
             settings.sensevoice.device
           ),
+        },
+        aliyun: {
+          ...settings.aliyun,
+          region: effectiveAliyunRegion,
+          apiKeys: {
+            beijing: settings.aliyun.apiKeys.beijing ?? "",
+            singapore: settings.aliyun.apiKeys.singapore ?? "",
+          },
+          asr: {
+            ...settings.aliyun.asr,
+            vocabularyId: settings.aliyun.asr.vocabularyId ?? "",
+          },
+          paraformer: {
+            ...settings.aliyun.paraformer,
+            vocabularyId: settings.aliyun.paraformer.vocabularyId ?? "",
+            languageHints: settings.aliyun.paraformer.languageHints ?? [],
+          },
         },
       });
     }
@@ -858,12 +882,23 @@ function App() {
     updateDraft((prev) => ({
       ...prev,
       provider: value as Settings["provider"],
+      aliyun: isAliyunProvider(value as Settings["provider"])
+        ? {
+            ...prev.aliyun,
+            region:
+              value === "aliyun-paraformer"
+                ? "beijing"
+                : normalizeAliyunRegion(prev.aliyun.region),
+          }
+        : prev.aliyun,
     }))
   }
   options={[
     { value: "openai", label: "OpenAI" },
     { value: "volcengine", label: t("speech.volcengine") },
-    { value: "sensevoice", label: t("speech.sensevoice") }
+    { value: "sensevoice", label: t("speech.sensevoice") },
+    { value: "aliyun-asr", label: t("speech.aliyunAsr") },
+    { value: "aliyun-paraformer", label: t("speech.aliyunParaformer") }
   ]}
 />
                   </label>
@@ -1171,6 +1206,139 @@ function App() {
                       />
                       <span>{t("volcengine.useFast")}</span>
                     </label>
+                  </SettingsCard>
+                ) : null}
+
+                {draft.provider === "aliyun-asr" || draft.provider === "aliyun-paraformer" ? (
+                  <SettingsCard
+                    title={
+                      draft.provider === "aliyun-asr"
+                        ? t("speech.aliyunAsr")
+                        : t("speech.aliyunParaformer")
+                    }
+                  >
+                    {(() => {
+                      const isParaformer = draft.provider === "aliyun-paraformer";
+                      const selectedRegion = isParaformer
+                        ? "beijing"
+                        : normalizeAliyunRegion(draft.aliyun.region);
+                      const regionApiKey =
+                        selectedRegion === "singapore"
+                          ? draft.aliyun.apiKeys.singapore
+                          : draft.aliyun.apiKeys.beijing;
+                      return (
+                        <>
+                          <label className="field">
+                            <span>{t("speech.region")}</span>
+                            <CustomSelect
+                              value={selectedRegion}
+                              onChange={(value) =>
+                                updateDraft((prev) => ({
+                                  ...prev,
+                                  aliyun: {
+                                    ...prev.aliyun,
+                                    region: isParaformer
+                                      ? "beijing"
+                                      : normalizeAliyunRegion(value),
+                                  },
+                                }))
+                              }
+                              disabled={isParaformer}
+                              options={[
+                                { value: "beijing", label: t("aliyun.regionBeijing") },
+                                { value: "singapore", label: t("aliyun.regionSingapore") },
+                              ]}
+                            />
+                          </label>
+                          {isParaformer ? (
+                            <div className="sensevoice-hint">{t("aliyun.paraformerRegionHint")}</div>
+                          ) : null}
+                          <label className="field">
+                            <span>{t("aliyun.apiKey")}</span>
+                            <input
+                              type="password"
+                              value={regionApiKey}
+                              onChange={(event) =>
+                                updateDraft((prev) => {
+                                  const region = isParaformer
+                                    ? "beijing"
+                                    : normalizeAliyunRegion(prev.aliyun.region);
+                                  return {
+                                    ...prev,
+                                    aliyun: {
+                                      ...prev.aliyun,
+                                      apiKeys: {
+                                        ...prev.aliyun.apiKeys,
+                                        [region]: event.target.value,
+                                      },
+                                    },
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                          {isParaformer ? (
+                            <>
+                              <label className="field">
+                                <span>{t("aliyun.languageHints")}</span>
+                                <input
+                                  value={listToString(draft.aliyun.paraformer.languageHints)}
+                                  onChange={(event) =>
+                                    updateDraft((prev) => ({
+                                      ...prev,
+                                      aliyun: {
+                                        ...prev.aliyun,
+                                        paraformer: {
+                                          ...prev.aliyun.paraformer,
+                                          languageHints: parseList(event.target.value),
+                                        },
+                                      },
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="field">
+                                <span>{t("aliyun.vocabularyId")}</span>
+                                <input
+                                  value={draft.aliyun.paraformer.vocabularyId}
+                                  onChange={(event) =>
+                                    updateDraft((prev) => ({
+                                      ...prev,
+                                      aliyun: {
+                                        ...prev.aliyun,
+                                        paraformer: {
+                                          ...prev.aliyun.paraformer,
+                                          vocabularyId: event.target.value,
+                                        },
+                                      },
+                                    }))
+                                  }
+                                />
+                              </label>
+                            </>
+                          ) : (
+                            <label className="field">
+                              <span>{t("aliyun.vocabularyId")}</span>
+                              <input
+                                value={draft.aliyun.asr.vocabularyId}
+                                onChange={(event) =>
+                                  updateDraft((prev) => ({
+                                    ...prev,
+                                    aliyun: {
+                                      ...prev.aliyun,
+                                      asr: {
+                                        ...prev.aliyun.asr,
+                                        vocabularyId: event.target.value,
+                                      },
+                                    },
+                                  }))
+                                }
+                              />
+                            </label>
+                          )}
+                        </>
+                      );
+                    })()}
                   </SettingsCard>
                 ) : null}
 

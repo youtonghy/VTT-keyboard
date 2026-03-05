@@ -1,4 +1,9 @@
-export type TranscriptionProvider = "openai" | "volcengine" | "sensevoice";
+export type TranscriptionProvider =
+  | "openai"
+  | "volcengine"
+  | "sensevoice"
+  | "aliyun-asr"
+  | "aliyun-paraformer";
 
 export interface Settings {
   shortcut: ShortcutSettings;
@@ -7,6 +12,7 @@ export interface Settings {
   openai: OpenAiSettings;
   volcengine: VolcengineSettings;
   sensevoice: SenseVoiceSettings;
+  aliyun: AliyunSettings;
   triggers: TriggerCard[];
   output: OutputSettings;
   appearance: AppearanceSettings;
@@ -96,4 +102,25 @@ export interface SenseVoiceSettings {
   device: string;
   downloadState: string;
   lastError: string;
+}
+
+export interface AliyunSettings {
+  region: "beijing" | "singapore";
+  apiKeys: AliyunApiKeys;
+  asr: AliyunAsrSettings;
+  paraformer: AliyunParaformerSettings;
+}
+
+export interface AliyunApiKeys {
+  beijing: string;
+  singapore: string;
+}
+
+export interface AliyunAsrSettings {
+  vocabularyId: string;
+}
+
+export interface AliyunParaformerSettings {
+  languageHints: string[];
+  vocabularyId: string;
 }

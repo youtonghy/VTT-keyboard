@@ -17,6 +17,8 @@ pub const MAX_TRANSCRIPTION_HISTORY_ITEMS: usize = 200;
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
+const ALIYUN_REGION_BEIJING: &str = "beijing";
+const ALIYUN_REGION_SINGAPORE: &str = "singapore";
 const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
 const QWEN3_ASR_REQUIRED_DEVICE: &str = "cuda";
 const STOP_MODE_STOP: &str = "stop";
@@ -56,6 +58,8 @@ pub struct Settings {
     pub volcengine: VolcengineSettings,
     #[serde(default)]
     pub sensevoice: SenseVoiceSettings,
+    #[serde(default)]
+    pub aliyun: AliyunSettings,
     #[serde(default = "default_triggers")]
     pub triggers: Vec<TriggerCard>,
     #[serde(default)]
@@ -103,6 +107,7 @@ impl Default for Settings {
             },
             volcengine: VolcengineSettings::default(),
             sensevoice: SenseVoiceSettings::default(),
+            aliyun: AliyunSettings::default(),
             triggers: default_triggers(),
             output: OutputSettings::default(),
             appearance: AppearanceSettings {
@@ -290,6 +295,10 @@ pub enum TranscriptionProvider {
     Openai,
     Volcengine,
     Sensevoice,
+    #[serde(rename = "aliyun-asr")]
+    AliyunAsr,
+    #[serde(rename = "aliyun-paraformer")]
+    AliyunParaformer,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -354,6 +363,59 @@ impl Default for SenseVoiceSettings {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AliyunSettings {
+    #[serde(default = "default_aliyun_region")]
+    pub region: String,
+    #[serde(default)]
+    pub api_keys: AliyunApiKeys,
+    #[serde(default)]
+    pub asr: AliyunAsrSettings,
+    #[serde(default)]
+    pub paraformer: AliyunParaformerSettings,
+}
+
+fn default_aliyun_region() -> String {
+    ALIYUN_REGION_BEIJING.to_string()
+}
+
+impl Default for AliyunSettings {
+    fn default() -> Self {
+        Self {
+            region: default_aliyun_region(),
+            api_keys: AliyunApiKeys::default(),
+            asr: AliyunAsrSettings::default(),
+            paraformer: AliyunParaformerSettings::default(),
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AliyunApiKeys {
+    #[serde(default)]
+    pub beijing: String,
+    #[serde(default)]
+    pub singapore: String,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AliyunAsrSettings {
+    #[serde(default)]
+    pub vocabulary_id: String,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AliyunParaformerSettings {
+    #[serde(default)]
+    pub language_hints: Vec<String>,
+    #[serde(default)]
+    pub vocabulary_id: String,
+}
+
 #[derive(Clone)]
 pub struct SettingsStore {
     app: AppHandle,
@@ -392,6 +454,7 @@ impl SettingsStore {
     pub fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
         let mut normalized = settings.clone();
         normalize_sensevoice_settings(&mut normalized.sensevoice);
+        normalize_aliyun_settings(&mut normalized.aliyun, &normalized.provider);
         validate_settings(&normalized)?;
         self.persist_settings(&normalized)
     }
@@ -556,6 +619,7 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
     }
 
     validate_sensevoice_settings(&settings.sensevoice)?;
+    validate_aliyun_settings(settings)?;
     Ok(())
 }
 
@@ -580,6 +644,33 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
     sensevoice.model_id = DEFAULT_SENSEVOICE_MODEL_ID.to_string();
 }
 
+fn normalize_aliyun_settings(aliyun: &mut AliyunSettings, provider: &TranscriptionProvider) {
+    aliyun.region = normalize_aliyun_region(&aliyun.region).to_string();
+    if matches!(provider, TranscriptionProvider::AliyunParaformer) {
+        aliyun.region = ALIYUN_REGION_BEIJING.to_string();
+    }
+    aliyun.api_keys.beijing = aliyun.api_keys.beijing.trim().to_string();
+    aliyun.api_keys.singapore = aliyun.api_keys.singapore.trim().to_string();
+    aliyun.asr.vocabulary_id = aliyun.asr.vocabulary_id.trim().to_string();
+    aliyun.paraformer.vocabulary_id = aliyun.paraformer.vocabulary_id.trim().to_string();
+    aliyun.paraformer.language_hints = aliyun
+        .paraformer
+        .language_hints
+        .iter()
+        .map(|hint| hint.trim())
+        .filter(|hint| !hint.is_empty())
+        .map(ToString::to_string)
+        .collect();
+}
+
+fn normalize_aliyun_region(region: &str) -> &str {
+    if region.eq_ignore_ascii_case(ALIYUN_REGION_SINGAPORE) {
+        ALIYUN_REGION_SINGAPORE
+    } else {
+        ALIYUN_REGION_BEIJING
+    }
+}
+
 fn normalize_stop_mode(mode: &str) -> &str {
     if mode.eq_ignore_ascii_case(STOP_MODE_PAUSE) {
         STOP_MODE_PAUSE
@@ -595,6 +686,41 @@ fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
         .copied()
         .find(|candidate| *candidate == trimmed)
         .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
+}
+
+fn validate_aliyun_settings(settings: &Settings) -> Result<(), SettingsError> {
+    let region = settings.aliyun.region.as_str();
+    if !matches!(region, ALIYUN_REGION_BEIJING | ALIYUN_REGION_SINGAPORE) {
+        return Err(SettingsError::Serde(
+            "阿里云地域仅支持 beijing/singapore".to_string(),
+        ));
+    }
+
+    if matches!(settings.provider, TranscriptionProvider::AliyunParaformer)
+        && region != ALIYUN_REGION_BEIJING
+    {
+        return Err(SettingsError::Serde(
+            "Paraformer 仅支持北京地域".to_string(),
+        ));
+    }
+
+    if matches!(
+        settings.provider,
+        TranscriptionProvider::AliyunAsr | TranscriptionProvider::AliyunParaformer
+    ) {
+        let api_key = if region == ALIYUN_REGION_SINGAPORE {
+            settings.aliyun.api_keys.singapore.trim()
+        } else {
+            settings.aliyun.api_keys.beijing.trim()
+        };
+        if api_key.is_empty() {
+            return Err(SettingsError::Serde(
+                "当前地域的阿里云 API Key 不能为空".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {

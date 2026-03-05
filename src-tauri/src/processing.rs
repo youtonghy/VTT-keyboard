@@ -1,4 +1,5 @@
 use crate::audio_processing::{self, AudioProcessingError};
+use crate::aliyun_realtime;
 use crate::paste::{self, PasteError};
 use crate::recorder::RecordedAudio;
 use crate::sensevoice;
@@ -133,6 +134,12 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             TranscriptionProvider::Sensevoice => {
                 sensevoice::client::transcribe_audio(&settings, path)
                     .map_err(|err| format!("SenseVoice 转写失败: {err}"))
+            }
+            TranscriptionProvider::AliyunAsr => aliyun_realtime::transcribe_asr(&settings, path)
+                .map_err(|err| format!("阿里云 ASR 转写失败: {err}")),
+            TranscriptionProvider::AliyunParaformer => {
+                aliyun_realtime::transcribe_paraformer(&settings, path)
+                    .map_err(|err| format!("Paraformer 转写失败: {err}"))
             }
         };
         let text = match text {
