@@ -13,7 +13,7 @@ const WS_ENDPOINT_BEIJING: &str = "wss://dashscope.aliyuncs.com/api-ws/v1/infere
 const WS_ENDPOINT_SINGAPORE: &str = "wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference";
 const ALIYUN_REGION_BEIJING: &str = "beijing";
 const ALIYUN_REGION_SINGAPORE: &str = "singapore";
-const MODEL_FUN_ASR_REALTIME_V2: &str = "fun-asr-realtime-v2";
+const MODEL_FUN_ASR_REALTIME: &str = "fun-asr-realtime";
 const MODEL_PARAFORMER_REALTIME_V2: &str = "paraformer-realtime-v2";
 const CHUNK_SIZE_BYTES: usize = 3200;
 
@@ -191,7 +191,7 @@ fn build_run_task_message(settings: &Settings, provider: ProviderKind, task_id: 
             "task": "asr",
             "function": "recognition",
             "model": match provider {
-                ProviderKind::FunAsr => MODEL_FUN_ASR_REALTIME_V2,
+                ProviderKind::FunAsr => MODEL_FUN_ASR_REALTIME,
                 ProviderKind::Paraformer => MODEL_PARAFORMER_REALTIME_V2
             },
             "parameters": parameters,
@@ -497,7 +497,7 @@ mod tests {
 
         assert_eq!(
             value.pointer("/payload/model").and_then(|v| v.as_str()),
-            Some(MODEL_FUN_ASR_REALTIME_V2)
+            Some(MODEL_FUN_ASR_REALTIME)
         );
         assert_eq!(value.pointer("/payload/input"), Some(&json!({})));
         assert!(value.get("parameters").is_none());
