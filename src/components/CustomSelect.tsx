@@ -29,6 +29,23 @@ export function CustomSelect({ value, options, onChange, disabled = false }: Cus
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
+    setIsOpen(false);
+  }, [value]);
+
+  const handleSelect = (nextValue: string) => {
+    setIsOpen(false);
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
   return (
     <div className={`custom-select-container ${disabled ? "disabled" : ""}`} ref={containerRef}>
       <button
@@ -36,6 +53,8 @@ export function CustomSelect({ value, options, onChange, disabled = false }: Cus
         className={`custom-select-trigger ${isOpen ? "open" : ""}`}
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
       >
         <span className="custom-select-value">{selectedOption?.label}</span>
         <ChevronDown size={16} className={`custom-select-icon ${isOpen ? "rotate" : ""}`} />
@@ -43,7 +62,7 @@ export function CustomSelect({ value, options, onChange, disabled = false }: Cus
 
       {isOpen && !disabled && (
         <div className="custom-select-dropdown">
-          <ul className="custom-select-options">
+          <ul className="custom-select-options" role="listbox">
             {options.map((option) => {
               const isSelected = option.value === value;
               return (
@@ -51,10 +70,9 @@ export function CustomSelect({ value, options, onChange, disabled = false }: Cus
                   <button
                     type="button"
                     className={`custom-select-option ${isSelected ? "selected" : ""}`}
-                    onClick={() => {
-                      onChange(option.value);
-                      setIsOpen(false);
-                    }}
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => handleSelect(option.value)}
                   >
                     <span className="custom-select-option-label">{option.label}</span>
                     {isSelected && <Check size={16} className="custom-select-check" />}
