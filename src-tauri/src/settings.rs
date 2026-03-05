@@ -282,6 +282,12 @@ pub struct TranscriptionHistoryItem {
     pub status: TranscriptionHistoryStatus,
     pub transcription_text: String,
     pub final_text: String,
+    #[serde(default)]
+    pub model_group: String,
+    #[serde(default)]
+    pub transcription_elapsed_ms: u64,
+    #[serde(default)]
+    pub recording_duration_ms: u64,
     pub triggered: bool,
     pub triggered_by_keyword: bool,
     pub trigger_matches: Vec<TriggerMatch>,

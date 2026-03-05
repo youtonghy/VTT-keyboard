@@ -3,18 +3,22 @@ use crate::aliyun_realtime;
 use crate::paste::{self, PasteError};
 use crate::recorder::RecordedAudio;
 use crate::sensevoice;
-use crate::settings::{SettingsStore, TranscriptionProvider, TriggerMatch};
+use crate::settings::{Settings, SettingsStore, TranscriptionProvider, TriggerMatch};
 use crate::status_native::{self, StatusType};
 use crate::triggers;
 use crate::volcengine;
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Counter to track status show operations, used to prevent race conditions
 /// when hiding the status window after a delay.
 static STATUS_COUNTER: AtomicU64 = AtomicU64::new(0);
+const VOLCENGINE_FILE_CLUSTER: &str = "volcengine_input_common";
+const VOLCENGINE_STREAMING_CLUSTER: &str = "volcengine_streaming_common";
+const ALIYUN_ASR_MODEL: &str = "fun-asr-realtime";
+const ALIYUN_PARAFORMER_MODEL: &str = "paraformer-realtime-v2";
 
 fn dev_log(message: &str) {
     #[cfg(debug_assertions)]
@@ -28,6 +32,9 @@ pub struct ProcessingOutcome {
     pub history_enabled: bool,
     pub transcription_text: String,
     pub final_text: String,
+    pub model_group: String,
+    pub transcription_elapsed_ms: u64,
+    pub recording_duration_ms: u64,
     pub triggered: bool,
     pub triggered_by_keyword: bool,
     pub trigger_matches: Vec<TriggerMatch>,
@@ -39,6 +46,9 @@ impl ProcessingOutcome {
         history_enabled: bool,
         transcription_text: String,
         final_text: String,
+        model_group: String,
+        transcription_elapsed_ms: u64,
+        recording_duration_ms: u64,
         triggered: bool,
         triggered_by_keyword: bool,
         trigger_matches: Vec<TriggerMatch>,
@@ -47,6 +57,9 @@ impl ProcessingOutcome {
             history_enabled,
             transcription_text,
             final_text,
+            model_group,
+            transcription_elapsed_ms,
+            recording_duration_ms,
             triggered,
             triggered_by_keyword,
             trigger_matches,
@@ -58,6 +71,9 @@ impl ProcessingOutcome {
         history_enabled: bool,
         transcription_text: String,
         final_text: String,
+        model_group: String,
+        transcription_elapsed_ms: u64,
+        recording_duration_ms: u64,
         triggered: bool,
         triggered_by_keyword: bool,
         trigger_matches: Vec<TriggerMatch>,
@@ -67,6 +83,9 @@ impl ProcessingOutcome {
             history_enabled,
             transcription_text,
             final_text,
+            model_group,
+            transcription_elapsed_ms,
+            recording_duration_ms,
             triggered,
             triggered_by_keyword,
             trigger_matches,
@@ -87,6 +106,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                 false,
                 String::new(),
                 String::new(),
+                String::new(),
+                0,
+                0,
                 false,
                 false,
                 Vec::new(),
@@ -96,6 +118,8 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     };
     let history_enabled = settings.history.enabled;
     let remove_newlines = settings.output.remove_newlines;
+    let model_group = resolve_model_group(&settings);
+    let recording_duration_ms = calculate_recording_duration_ms(&recording);
 
     if recording.samples.is_empty() {
         dev_log("录音为空，跳过转写");
@@ -104,11 +128,15 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             history_enabled,
             String::new(),
             String::new(),
+            model_group,
+            0,
+            recording_duration_ms,
             false,
             false,
             Vec::new(),
         );
     }
+    let transcription_started = Instant::now();
     let segment_seconds = settings.recording.segment_seconds.max(1);
     dev_log(&format!(
         "开始转写，采样 {}，分段秒数 {}",
@@ -118,7 +146,13 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     let paths = match audio_processing::write_segments(&recording, segment_seconds) {
         Ok(value) => value,
         Err(err) => {
-            return processing_audio_error(history_enabled, err);
+            return processing_audio_error(
+                history_enabled,
+                model_group,
+                elapsed_since_ms(transcription_started),
+                recording_duration_ms,
+                err,
+            );
         }
     };
     dev_log(&format!("生成 {} 段录音", paths.len()));
@@ -151,6 +185,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                     history_enabled,
                     partial.clone(),
                     partial,
+                    model_group.clone(),
+                    elapsed_since_ms(transcription_started),
+                    recording_duration_ms,
                     false,
                     false,
                     Vec::new(),
@@ -165,6 +202,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     cleanup_files(&paths);
 
     let combined = normalize_text_for_output(&transcripts.join(" "), remove_newlines);
+    let transcription_elapsed_ms = elapsed_since_ms(transcription_started);
     dev_log(&format!("合并转写结果: {}", combined));
     let logger = |message: &str| dev_log(message);
     let result = match triggers::apply_triggers(&settings, &combined, &logger) {
@@ -174,6 +212,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                 history_enabled,
                 combined.clone(),
                 combined,
+                model_group,
+                transcription_elapsed_ms,
+                recording_duration_ms,
                 false,
                 false,
                 Vec::new(),
@@ -195,6 +236,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                 history_enabled,
                 &combined,
                 &final_output,
+                model_group.clone(),
+                transcription_elapsed_ms,
+                recording_duration_ms,
                 result.triggered,
                 result.triggered_by_keyword,
                 result.trigger_matches,
@@ -208,6 +252,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             history_enabled,
             &combined,
             &final_output,
+            model_group.clone(),
+            transcription_elapsed_ms,
+            recording_duration_ms,
             result.triggered,
             result.triggered_by_keyword,
             result.trigger_matches,
@@ -219,6 +266,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
         history_enabled,
         combined,
         final_output,
+        model_group,
+        transcription_elapsed_ms,
+        recording_duration_ms,
         result.triggered,
         result.triggered_by_keyword,
         result.trigger_matches,
@@ -274,11 +324,82 @@ fn remove_line_breaks(text: &str) -> String {
         .collect()
 }
 
-fn processing_audio_error(history_enabled: bool, err: AudioProcessingError) -> ProcessingOutcome {
+fn resolve_model_group(settings: &Settings) -> String {
+    match settings.provider {
+        TranscriptionProvider::Openai => {
+            format!("OpenAI / {}", non_empty_value_or_dash(&settings.openai.speech_to_text.model))
+        }
+        TranscriptionProvider::Volcengine => {
+            if settings.volcengine.use_streaming {
+                format!("Volcengine / {}", VOLCENGINE_STREAMING_CLUSTER)
+            } else if settings.volcengine.use_fast {
+                format!("Volcengine / {} (fast)", VOLCENGINE_FILE_CLUSTER)
+            } else {
+                format!("Volcengine / {}", VOLCENGINE_FILE_CLUSTER)
+            }
+        }
+        TranscriptionProvider::Sensevoice => format!(
+            "{} / {}",
+            sensevoice_model_group_name(&settings.sensevoice.local_model),
+            non_empty_value_or_dash(&settings.sensevoice.model_id)
+        ),
+        TranscriptionProvider::AliyunAsr => {
+            format!("Aliyun ASR / {}", ALIYUN_ASR_MODEL)
+        }
+        TranscriptionProvider::AliyunParaformer => {
+            format!("Aliyun Paraformer / {}", ALIYUN_PARAFORMER_MODEL)
+        }
+    }
+}
+
+fn non_empty_value_or_dash(value: &str) -> &str {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        "-"
+    } else {
+        trimmed
+    }
+}
+
+fn sensevoice_model_group_name(local_model: &str) -> &'static str {
+    if local_model.eq_ignore_ascii_case("voxtral") {
+        "Voxtral"
+    } else if local_model.eq_ignore_ascii_case("qwen3-asr") {
+        "Qwen3-ASR"
+    } else {
+        "SenseVoice"
+    }
+}
+
+fn calculate_recording_duration_ms(recording: &RecordedAudio) -> u64 {
+    let samples_per_second =
+        u64::from(recording.sample_rate).saturating_mul(u64::from(recording.channels));
+    if samples_per_second == 0 {
+        return 0;
+    }
+    let sample_count = recording.samples.len() as u128;
+    let duration_ms = sample_count.saturating_mul(1000) / u128::from(samples_per_second);
+    duration_ms as u64
+}
+
+fn elapsed_since_ms(started: Instant) -> u64 {
+    started.elapsed().as_millis() as u64
+}
+
+fn processing_audio_error(
+    history_enabled: bool,
+    model_group: String,
+    transcription_elapsed_ms: u64,
+    recording_duration_ms: u64,
+    err: AudioProcessingError,
+) -> ProcessingOutcome {
     ProcessingOutcome::failed(
         history_enabled,
         String::new(),
         String::new(),
+        model_group,
+        transcription_elapsed_ms,
+        recording_duration_ms,
         false,
         false,
         Vec::new(),
@@ -290,6 +411,9 @@ fn processing_paste_error(
     history_enabled: bool,
     transcription_text: &str,
     final_text: &str,
+    model_group: String,
+    transcription_elapsed_ms: u64,
+    recording_duration_ms: u64,
     triggered: bool,
     triggered_by_keyword: bool,
     trigger_matches: Vec<TriggerMatch>,
@@ -299,6 +423,9 @@ fn processing_paste_error(
         history_enabled,
         transcription_text.to_string(),
         final_text.to_string(),
+        model_group,
+        transcription_elapsed_ms,
+        recording_duration_ms,
         triggered,
         triggered_by_keyword,
         trigger_matches,
@@ -308,7 +435,12 @@ fn processing_paste_error(
 
 #[cfg(test)]
 mod tests {
-    use super::remove_line_breaks;
+    use super::{calculate_recording_duration_ms, remove_line_breaks, resolve_model_group};
+    use crate::recorder::RecordedAudio;
+    use crate::settings::{
+        AliyunSettings, OpenAiSettings, Settings, SpeechToTextSettings, TranscriptionProvider,
+        VolcengineSettings,
+    };
 
     #[test]
     fn remove_line_breaks_removes_crlf_lf_and_cr() {
@@ -329,5 +461,76 @@ mod tests {
         let input = "\r\n\n\r";
         let output = remove_line_breaks(input);
         assert!(output.is_empty());
+    }
+
+    #[test]
+    fn resolve_model_group_covers_all_providers() {
+        let mut settings = Settings::default();
+
+        settings.provider = TranscriptionProvider::Openai;
+        settings.openai = OpenAiSettings {
+            speech_to_text: SpeechToTextSettings {
+                model: "gpt-4o-transcribe".to_string(),
+                ..settings.openai.speech_to_text.clone()
+            },
+            ..settings.openai.clone()
+        };
+        assert_eq!(
+            resolve_model_group(&settings),
+            "OpenAI / gpt-4o-transcribe"
+        );
+
+        settings.provider = TranscriptionProvider::Volcengine;
+        settings.volcengine = VolcengineSettings {
+            use_streaming: true,
+            use_fast: false,
+            ..settings.volcengine.clone()
+        };
+        assert_eq!(
+            resolve_model_group(&settings),
+            "Volcengine / volcengine_streaming_common"
+        );
+
+        settings.provider = TranscriptionProvider::Sensevoice;
+        settings.sensevoice.local_model = "voxtral".to_string();
+        settings.sensevoice.model_id = "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string();
+        assert_eq!(
+            resolve_model_group(&settings),
+            "Voxtral / mistralai/Voxtral-Mini-4B-Realtime-2602"
+        );
+
+        settings.provider = TranscriptionProvider::AliyunAsr;
+        settings.aliyun = AliyunSettings::default();
+        assert_eq!(resolve_model_group(&settings), "Aliyun ASR / fun-asr-realtime");
+
+        settings.provider = TranscriptionProvider::AliyunParaformer;
+        assert_eq!(
+            resolve_model_group(&settings),
+            "Aliyun Paraformer / paraformer-realtime-v2"
+        );
+    }
+
+    #[test]
+    fn calculate_recording_duration_ms_handles_normal_and_zero_values() {
+        let recording = RecordedAudio {
+            samples: vec![0; 16_000],
+            sample_rate: 16_000,
+            channels: 1,
+        };
+        assert_eq!(calculate_recording_duration_ms(&recording), 1000);
+
+        let zero_rate = RecordedAudio {
+            samples: vec![0; 100],
+            sample_rate: 0,
+            channels: 1,
+        };
+        assert_eq!(calculate_recording_duration_ms(&zero_rate), 0);
+
+        let zero_channels = RecordedAudio {
+            samples: vec![0; 100],
+            sample_rate: 16_000,
+            channels: 0,
+        };
+        assert_eq!(calculate_recording_duration_ms(&zero_channels), 0);
     }
 }

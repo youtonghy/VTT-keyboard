@@ -224,6 +224,9 @@
     "clearError": "清除历史记录失败：{{error}}",
     "loadError": "加载历史记录失败：{{error}}",
     "detailTitle": "历史详情",
+    "detailModelGroup": "模型组",
+    "detailTranscriptionElapsed": "转写耗时",
+    "detailRecordingDuration": "录音时长",
     "detailTriggerEvent": "触发事件",
     "detailTranscription": "转写结果",
     "detailTriggered": "是否触发触发词",
@@ -231,6 +234,8 @@
     "detailOriginal": "原来是什么",
     "detailFinal": "最终结果是什么",
     "detailError": "报错信息",
+    "unknownModelGroup": "未知",
+    "seconds": "{{seconds}} 秒",
     "triggerMode": {
       "keyword": "关键词",
       "auto": "自动"

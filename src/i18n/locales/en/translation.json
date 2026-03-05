@@ -224,6 +224,9 @@
     "clearError": "Failed to clear history: {{error}}",
     "loadError": "Failed to load history: {{error}}",
     "detailTitle": "History Details",
+    "detailModelGroup": "Model group",
+    "detailTranscriptionElapsed": "Transcription elapsed",
+    "detailRecordingDuration": "Recording duration",
     "detailTriggerEvent": "Trigger events",
     "detailTranscription": "Transcription result",
     "detailTriggered": "Triggered by keyword",
@@ -231,6 +234,8 @@
     "detailOriginal": "Original",
     "detailFinal": "Final result",
     "detailError": "Error",
+    "unknownModelGroup": "Unknown",
+    "seconds": "{{seconds}} s",
     "triggerMode": {
       "keyword": "Keyword",
       "auto": "Auto"

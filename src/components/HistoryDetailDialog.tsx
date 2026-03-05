@@ -30,6 +30,18 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
 
   const hasTriggerDetails = item.triggered;
   const hasError = Boolean(item.errorMessage?.trim());
+  const formatMillisecondsAsSeconds = (valueMs: number | undefined) => {
+    if (!Number.isFinite(valueMs) || !valueMs || valueMs <= 0) {
+      return "--";
+    }
+    const seconds = (valueMs / 1000).toFixed(1);
+    return t("history.seconds", { seconds });
+  };
+  const modelGroup = item.modelGroup?.trim()
+    ? item.modelGroup
+    : t("history.unknownModelGroup");
+  const transcriptionElapsed = formatMillisecondsAsSeconds(item.transcriptionElapsedMs);
+  const recordingDuration = formatMillisecondsAsSeconds(item.recordingDurationMs);
 
   return (
     <div className="history-dialog-backdrop" role="presentation" onClick={onClose}>
@@ -48,6 +60,21 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
         </header>
 
         <div className="history-dialog-body">
+          <div className="history-detail-row">
+            <span>{t("history.detailModelGroup")}</span>
+            <strong>{modelGroup}</strong>
+          </div>
+
+          <div className="history-detail-row">
+            <span>{t("history.detailTranscriptionElapsed")}</span>
+            <strong>{transcriptionElapsed}</strong>
+          </div>
+
+          <div className="history-detail-row">
+            <span>{t("history.detailRecordingDuration")}</span>
+            <strong>{recordingDuration}</strong>
+          </div>
+
           <div className="history-detail-row">
             <span>{t("history.detailTranscription")}</span>
             <strong>{item.transcriptionText || t("history.emptyText")}</strong>

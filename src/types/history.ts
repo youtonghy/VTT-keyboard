@@ -16,6 +16,9 @@ export interface TranscriptionHistoryItem {
   status: TranscriptionHistoryStatus;
   transcriptionText: string;
   finalText: string;
+  modelGroup: string;
+  transcriptionElapsedMs: number;
+  recordingDurationMs: number;
   triggered: boolean;
   triggeredByKeyword: boolean;
   triggerMatches: TriggerMatch[];
