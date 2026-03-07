@@ -78,6 +78,8 @@ export interface AppearanceSettings {
 
 export interface StartupSettings {
   launchOnBoot: boolean;
+  autoCheckUpdates: boolean;
+  autoInstallUpdatesOnQuit: boolean;
 }
 
 export interface HistorySettings {

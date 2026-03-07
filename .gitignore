@@ -32,3 +32,4 @@ __pycache__/
 *.pyc
 .codex/environments/environment.toml
 AGENTS.md
+.tauri-signing/

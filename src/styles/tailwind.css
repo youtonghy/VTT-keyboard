@@ -114,6 +114,46 @@
     @apply flex items-center gap-1;
   }
 
+  .titlebar-update {
+    @apply mr-2 flex items-center gap-1;
+  }
+
+  .titlebar-update-chip,
+  .titlebar-update-action,
+  .titlebar-update-dismiss {
+    @apply flex h-7 items-center justify-center rounded-md px-2 text-xs font-medium;
+    border: 1px solid transparent;
+    background-color: color-mix(in oklab, var(--color-surface-elevated) 92%, transparent);
+    color: var(--color-text-secondary);
+  }
+
+  .titlebar-update-chip {
+    @apply max-w-[220px] truncate;
+    border-color: var(--color-border);
+  }
+
+  .titlebar-update-chip.error {
+    border-color: color-mix(in oklab, #cc334f 45%, var(--color-border));
+    color: #cc334f;
+    background-color: color-mix(in oklab, #cc334f 10%, transparent);
+  }
+
+  .titlebar-update-action {
+    @apply border-0 cursor-pointer;
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 12%, var(--color-surface-elevated));
+  }
+
+  .titlebar-update-action:hover,
+  .titlebar-update-dismiss:hover {
+    color: var(--color-text-primary);
+    background-color: color-mix(in oklab, var(--color-accent) 18%, transparent);
+  }
+
+  .titlebar-update-dismiss {
+    @apply w-7 border-0 cursor-pointer p-0;
+  }
+
   .titlebar-button {
     @apply flex h-7 w-7 items-center justify-center rounded-md border-0 p-0;
     color: var(--color-text-secondary);

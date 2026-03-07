@@ -19,31 +19,37 @@ jobs:
             target: x86_64-pc-windows-msvc
             arch: x64
             package: exe
+            platform_key: windows-x86_64
           - os: windows
             runs-on: windows-2022
             target: aarch64-pc-windows-msvc
             arch: arm64
             package: exe
+            platform_key: windows-aarch64
           - os: macos
             runs-on: macos-13
             target: x86_64-apple-darwin
             arch: intel
             package: dmg
+            platform_key: darwin-x86_64
           - os: macos
             runs-on: macos-14
             target: aarch64-apple-darwin
             arch: arm64
             package: dmg
+            platform_key: darwin-aarch64
           - os: linux
             runs-on: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             arch: x64
             package: appimage
+            platform_key: linux-x86_64
           - os: linux
             runs-on: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: arm64
             package: appimage
+            platform_key: linux-aarch64
 
     steps:
       - uses: actions/checkout@v4
@@ -79,61 +85,76 @@ jobs:
         shell: bash
         run: |
           VERSION=$(node -e "console.log(require('./package.json').version)")
-          PRODUCT_NAME=$(node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')); console.log(data.productName)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "product_name=$PRODUCT_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           args: --target ${{ matrix.target }}
 
-      - name: Prepare artifact
+      - name: Prepare artifacts
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          VERSION="${{ steps.meta.outputs.version }}"
-          PRODUCT_NAME="${{ steps.meta.outputs.product_name }}"
-          ARCH="${{ matrix.arch }}"
-          OUTPUT=""
           TARGET="${{ matrix.target }}"
+          PLATFORM_KEY="${{ matrix.platform_key }}"
+          MANUAL_ASSET=""
+          UPDATER_ASSET=""
           case "${{ matrix.package }}" in
             exe)
               for file in src-tauri/target/${TARGET}/release/bundle/nsis/*.exe; do
-                OUTPUT="$file"
+                UPDATER_ASSET="$file"
                 break
               done
-              EXT="exe"
               ;;
             dmg)
               for file in src-tauri/target/${TARGET}/release/bundle/dmg/*.dmg; do
-                OUTPUT="$file"
+                MANUAL_ASSET="$file"
                 break
               done
-              EXT="dmg"
+              for file in src-tauri/target/${TARGET}/release/bundle/macos/*.app.tar.gz; do
+                UPDATER_ASSET="$file"
+                break
+              done
               ;;
             appimage)
               for file in src-tauri/target/${TARGET}/release/bundle/appimage/*.AppImage; do
-                OUTPUT="$file"
+                UPDATER_ASSET="$file"
                 break
               done
-              EXT="AppImage"
               ;;
             *)
               echo "Unknown package type"
               exit 1
               ;;
           esac
-          if [ -z "$OUTPUT" ]; then
-            echo "Bundle not found for ${{ matrix.package }}"
+
+          if [ -n "$MANUAL_ASSET" ]; then
+            cp "$MANUAL_ASSET" "dist/$(basename "$MANUAL_ASSET")"
+          fi
+
+          if [ -z "$UPDATER_ASSET" ]; then
+            echo "Updater asset not found for ${TARGET}"
             exit 1
           fi
-          cp "$OUTPUT" "dist/${PRODUCT_NAME}-${VERSION}-${ARCH}.${EXT}"
 
-      - name: Upload artifact
+          SIG_ASSET="${UPDATER_ASSET}.sig"
+          if [ ! -f "$SIG_ASSET" ]; then
+            echo "Signature not found for ${UPDATER_ASSET}"
+            exit 1
+          fi
+
+          cp "$UPDATER_ASSET" "dist/$(basename "$UPDATER_ASSET")"
+          cp "$SIG_ASSET" "dist/$(basename "$SIG_ASSET")"
+
+          node -e "const fs=require('fs'); fs.writeFileSync('dist/updater-${PLATFORM_KEY}.json', JSON.stringify({ platform: '${PLATFORM_KEY}', updaterAsset: '${UPDATER_ASSET##*/}', signatureAsset: '${SIG_ASSET##*/}' }, null, 2));"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.os }}-${{ matrix.arch }}
@@ -191,6 +212,50 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Generate latest.json
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.body }}
+          REPOSITORY: youtonghy/VTT-keyboard
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const assetsDir = path.join(process.cwd(), 'release-assets');
+          const version = process.env.VERSION;
+          const releaseNotes = process.env.RELEASE_NOTES || '';
+          const repository = process.env.REPOSITORY;
+          const metadataFiles = fs.readdirSync(assetsDir).filter((name) => /^updater-.*\.json$/.test(name));
+          const platforms = {};
+
+          for (const metadataFile of metadataFiles) {
+            const metadataPath = path.join(assetsDir, metadataFile);
+            const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+            const signature = fs.readFileSync(path.join(assetsDir, metadata.signatureAsset), 'utf8').trim();
+            platforms[metadata.platform] = {
+              signature,
+              url: `https://github.com/${repository}/releases/download/${version}/${metadata.updaterAsset}`,
+            };
+            fs.unlinkSync(metadataPath);
+          }
+
+          fs.writeFileSync(
+            path.join(assetsDir, 'latest.json'),
+            JSON.stringify(
+              {
+                version,
+                notes: releaseNotes,
+                pub_date: new Date().toISOString(),
+                platforms,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

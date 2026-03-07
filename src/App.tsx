@@ -22,6 +22,7 @@ import { useAutostart } from "./hooks/useAutostart";
 import { usePersistentBoolean } from "./hooks/usePersistentBoolean";
 import { useSenseVoice } from "./hooks/useSenseVoice";
 import { useSettings } from "./hooks/useSettings";
+import { useUpdater } from "./hooks/useUpdater";
 import { HistoryDetailDialog } from "./components/HistoryDetailDialog";
 import type { TranscriptionHistoryItem } from "./types/history";
 import type { Settings } from "./types/settings";
@@ -232,6 +233,7 @@ function App() {
     startService: startSenseVoiceService,
     stopService: stopSenseVoiceService,
   } = useSenseVoice(isSenseVoiceActive);
+  const updater = useUpdater();
   const [isCapturing, setIsCapturing] = useState(false);
   const [appInfo, setAppInfo] = useState<{
     name: string;
@@ -709,7 +711,12 @@ function App() {
 
         <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
 
-        <TitleBar />
+        <TitleBar
+          updateStatus={updater.status}
+          onInstallUpdate={updater.installUpdate}
+          onRetryUpdateCheck={updater.retryUpdateCheck}
+          onDismissUpdateError={updater.dismissUpdateError}
+        />
         <main className="container loading">
           <p>{t("app.loading")}</p>
         </main>
@@ -722,7 +729,12 @@ function App() {
 
       <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
 
-      <TitleBar />
+      <TitleBar
+        updateStatus={updater.status}
+        onInstallUpdate={updater.installUpdate}
+        onRetryUpdateCheck={updater.retryUpdateCheck}
+        onDismissUpdateError={updater.dismissUpdateError}
+      />
       <main className="container">
         <div className="settings-layout">
           <Sidebar
@@ -776,6 +788,44 @@ function App() {
                     />
                     <span>{t("general.launchOnBoot")}</span>
   <Tooltip content={t("general.launchOnBootHint")}>
+    <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={14} /></span>
+  </Tooltip>
+</label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.startup.autoCheckUpdates}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          startup: {
+                            ...prev.startup,
+                            autoCheckUpdates: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    <span>{t("general.autoCheckUpdates")}</span>
+  <Tooltip content={t("general.autoCheckUpdatesHint")}>
+    <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={14} /></span>
+  </Tooltip>
+</label>
+                  <label className="field checkbox">
+                    <input
+                      type="checkbox"
+                      checked={draft.startup.autoInstallUpdatesOnQuit}
+                      onChange={(event) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          startup: {
+                            ...prev.startup,
+                            autoInstallUpdatesOnQuit: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    <span>{t("general.autoInstallUpdatesOnQuit")}</span>
+  <Tooltip content={t("general.autoInstallUpdatesOnQuitHint")}>
     <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={14} /></span>
   </Tooltip>
 </label>
@@ -1388,8 +1438,7 @@ function App() {
                         sensevoiceLoading ||
                         effectiveProgressStage === "prepare" ||
                         effectiveProgressStage === "install" ||
-                        // 仅在服务仍在运行时，verify/warmup 阶段才禁用启动按钮
-                        // 防止停止服务后残留阶段导致按钮持续禁用
+                        // Keep start disabled while background warmup is still running.
                         (running && !isReady && isWarmupStage);
                       const stopBusy = sensevoiceLoading;
                       const selectedLocalModel = normalizeLocalModel(

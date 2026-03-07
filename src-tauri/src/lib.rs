@@ -9,6 +9,7 @@ mod settings;
 mod status_native;
 mod transcription_dispatcher;
 mod triggers;
+mod updater;
 mod volcengine;
 
 use recorder::RecorderService;
@@ -18,10 +19,11 @@ use settings::{
 };
 use std::fs;
 use std::sync::Mutex;
-use tauri::{Manager, State, WindowEvent, Wry};
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
+use tauri::{AppHandle, Manager, State, WindowEvent, Wry};
 use transcription_dispatcher::TranscriptionDispatcher;
+use updater::UpdateManager;
 
 macro_rules! dev_eprintln {
     ($($arg:tt)*) => {
@@ -52,14 +54,12 @@ pub(crate) struct AppState {
     settings_store: SettingsStore,
     sensevoice_manager: Mutex<SenseVoiceManager>,
     tray_state: Mutex<TrayState>,
+    updater_manager: Mutex<UpdateManager>,
 }
 
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Result<Settings, String> {
-    state
-        .settings_store
-        .load()
-        .map_err(|err| err.to_string())
+    state.settings_store.load().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -74,10 +74,14 @@ fn update_settings(
         .map_err(|err| err.to_string())?
         .sensevoice
         .local_model;
+
     state
         .settings_store
         .save(&settings)
         .map_err(|err| err.to_string())?;
+
+    updater::handle_settings_changed(app.clone(), state.settings_store.clone());
+
     maybe_restart_local_runtime_if_switched(
         &app,
         &state,
@@ -105,10 +109,12 @@ fn update_sensevoice_settings(
         .load_sensevoice()
         .map_err(|err| err.to_string())?
         .local_model;
+
     state
         .settings_store
         .save_sensevoice(&sensevoice)
         .map_err(|err| err.to_string())?;
+
     maybe_restart_local_runtime_if_switched(
         &app,
         &state,
@@ -138,13 +144,16 @@ fn maybe_restart_local_runtime_if_switched(
     if previous == next {
         return Ok(());
     }
+
     let mut manager = state
         .sensevoice_manager
         .lock()
-        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
+
     if !manager.has_running_runtime() {
         return Ok(());
     }
+
     manager
         .stop_service_force(app, &state.settings_store)
         .map_err(|err| err.to_string())?;
@@ -156,10 +165,7 @@ fn maybe_restart_local_runtime_if_switched(
 
 #[tauri::command]
 fn export_settings(state: State<AppState>, path: String) -> Result<(), String> {
-    let settings = state
-        .settings_store
-        .load()
-        .map_err(|err| err.to_string())?;
+    let settings = state.settings_store.load().map_err(|err| err.to_string())?;
     let data = serde_json::to_string_pretty(&settings).map_err(|err| err.to_string())?;
     fs::write(path, data).map_err(|err| err.to_string())?;
     Ok(())
@@ -212,10 +218,8 @@ fn get_sensevoice_status(state: State<AppState>) -> Result<SenseVoiceStatus, Str
     let mut manager = state
         .sensevoice_manager
         .lock()
-        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
-    manager
-        .status(&state.settings_store)
-        .map_err(|err| err.to_string())
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
+    manager.status(&state.settings_store).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -223,7 +227,7 @@ fn prepare_sensevoice(app: tauri::AppHandle, state: State<AppState>) -> Result<S
     let mut manager = state
         .sensevoice_manager
         .lock()
-        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
     manager
         .prepare_async(&app, &state.settings_store)
         .map_err(|err| err.to_string())
@@ -237,7 +241,7 @@ fn start_sensevoice_service(
     let mut manager = state
         .sensevoice_manager
         .lock()
-        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
     manager
         .start_service_async(&app, &state.settings_store)
         .map_err(|err| err.to_string())
@@ -251,7 +255,7 @@ fn stop_sensevoice_service(
     let mut manager = state
         .sensevoice_manager
         .lock()
-        .map_err(|_| "SenseVoice 状态锁获取失败".to_string())?;
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
     manager
         .stop_service(&app, &state.settings_store)
         .map_err(|err| err.to_string())
@@ -266,7 +270,7 @@ fn set_tray_menu(
     let mut tray_state = state
         .tray_state
         .lock()
-        .map_err(|_| "Tray state lock failed".to_string())?;
+        .map_err(|_| "failed to lock tray state".to_string())?;
 
     if tray_state.tray.is_none() {
         let show_item = MenuItemBuilder::with_id("show", labels.show_settings)
@@ -281,7 +285,7 @@ fn set_tray_menu(
             .map_err(|err| err.to_string())?;
         let icon = app
             .default_window_icon()
-            .ok_or_else(|| "Missing default window icon".to_string())?
+            .ok_or_else(|| "missing default window icon".to_string())?
             .clone();
 
         let tray = TrayIconBuilder::new()
@@ -299,6 +303,9 @@ fn set_tray_menu(
                     let state = app.state::<AppState>();
                     if let Ok(mut manager) = state.sensevoice_manager.lock() {
                         manager.pause_runtime_for_exit(app);
+                    }
+                    if updater::maybe_install_on_quit(app, &state.settings_store).unwrap_or(false) {
+                        return;
                     }
                     app.exit(0);
                 }
@@ -328,6 +335,30 @@ fn set_tray_menu(
 }
 
 #[tauri::command]
+fn get_update_status(app: AppHandle) -> Result<updater::UpdateStatusPayload, String> {
+    updater::get_status(&app)
+}
+
+#[tauri::command]
+fn install_downloaded_update(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    if let Ok(mut manager) = state.sensevoice_manager.lock() {
+        manager.pause_runtime_for_exit(&app);
+    }
+    updater::install_downloaded_update(&app)
+}
+
+#[tauri::command]
+fn dismiss_update_error(app: AppHandle) -> Result<(), String> {
+    updater::dismiss_error(&app)
+}
+
+#[tauri::command]
+fn retry_update_check(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    updater::schedule_update_check(app, state.settings_store.clone(), true);
+    Ok(())
+}
+
+#[tauri::command]
 fn get_app_info() -> serde_json::Value {
     serde_json::json!({
         "buildDate": env!("BUILD_DATE")
@@ -336,9 +367,8 @@ fn get_app_info() -> serde_json::Value {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize native status overlay
     if !status_native::init() {
-        dev_eprintln!("警告：原生状态窗口初始化失败");
+        dev_eprintln!("warning: failed to initialize native status overlay");
     }
 
     tauri::Builder::default()
@@ -348,11 +378,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())
+                .map_err(|err| err.to_string())?;
+
+            #[cfg(desktop)]
             if let Err(err) = app.handle().plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 Some(vec!["--autostart"]),
             )) {
-                dev_eprintln!("初始化开机自启插件失败: {err}");
+                dev_eprintln!("failed to initialize autostart plugin: {err}");
             }
 
             let app_handle = app.handle();
@@ -360,6 +395,8 @@ pub fn run() {
             let startup_store = store.clone();
             let startup_app = app_handle.clone();
             let is_autostart_launch = std::env::args().any(|arg| arg == "--autostart");
+            let current_version = app.package_info().version.to_string();
+
             app.manage(AppState {
                 recorder: RecorderService::new(),
                 transcription_dispatcher: TranscriptionDispatcher::new(
@@ -369,6 +406,7 @@ pub fn run() {
                 settings_store: store,
                 sensevoice_manager: Mutex::new(SenseVoiceManager::new()),
                 tray_state: Mutex::new(TrayState::default()),
+                updater_manager: Mutex::new(UpdateManager::new(current_version)),
             });
 
             if let Some(window) = app.get_webview_window("main") {
@@ -379,17 +417,19 @@ pub fn run() {
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        dev_eprintln!("窗口关闭请求已拦截，改为隐藏到托盘并保持后台运行");
+                        dev_eprintln!("close requested, hiding window to tray instead");
                         let _ = window_clone.hide();
                     }
                 });
             }
 
+            updater::schedule_update_check(app_handle.clone(), startup_store.clone(), false);
+
             std::thread::spawn(move || {
                 let settings = match startup_store.load() {
                     Ok(value) => value,
                     Err(err) => {
-                        dev_eprintln!("应用启动读取设置失败: {err}");
+                        dev_eprintln!("failed to read settings on startup: {err}");
                         return;
                     }
                 };
@@ -401,14 +441,15 @@ pub fn run() {
                 }
                 let state = startup_app.state::<AppState>();
                 let Ok(mut manager) = state.sensevoice_manager.lock() else {
-                    dev_eprintln!("应用启动时获取 SenseVoice 锁失败");
+                    dev_eprintln!("failed to lock SenseVoice manager on startup");
                     return;
                 };
                 if let Err(err) = manager.start_service_async(&startup_app, &state.settings_store)
                 {
-                    dev_eprintln!("应用启动自动拉起 SenseVoice 失败: {err}");
+                    dev_eprintln!("failed to auto start SenseVoice on startup: {err}");
                 }
             });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -427,12 +468,15 @@ pub fn run() {
             start_sensevoice_service,
             stop_sensevoice_service,
             set_tray_menu,
+            get_update_status,
+            install_downloaded_update,
+            dismiss_update_error,
+            retry_update_check,
             get_app_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 
-    // Cleanup native status overlay
     status_native::cleanup();
 }
 

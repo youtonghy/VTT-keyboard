@@ -29,7 +29,11 @@
     "launchOnBootHint": "Auto start in background after login and keep the window hidden to tray.",
     "removeNewlines": "Remove line breaks",
     "removeNewlinesHint": "When enabled, all line breaks are removed from transcription and trigger results so output always stays on one line.",
-    "launchOnBootSyncError": "Failed to sync launch on boot: {{error}}"
+    "launchOnBootSyncError": "Failed to sync launch on boot: {{error}}",
+    "autoCheckUpdates": "Automatically check for updates",
+    "autoCheckUpdatesHint": "Check GitHub Release updates on startup and download them in the background when available.",
+    "autoInstallUpdatesOnQuit": "Install downloaded update on Quit",
+    "autoInstallUpdatesOnQuitHint": "When a new version has already been downloaded, install it automatically when you choose Quit from the tray menu."
   },
   "data": {
     "title": "Import & Export",
@@ -271,5 +275,27 @@
     "buildDate": "Build Date",
     "author": "Author",
     "website": "Website"
+  },
+  "titleBar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "updater": {
+    "checking": "Checking updates",
+    "downloading": "Downloading update",
+    "downloaded": "Update downloaded",
+    "installing": "Installing update",
+    "installNow": "Install update now",
+    "installNowShort": "Update {{version}}",
+    "availableShort": "New {{version}}",
+    "error": "Update failed",
+    "retry": "Retry",
+    "dismiss": "Dismiss",
+    "loadError": "Failed to load update status: {{error}}",
+    "installError": "Failed to install update: {{error}}",
+    "retryError": "Failed to retry update check: {{error}}",
+    "dismissError": "Failed to dismiss update error: {{error}}"
   }
 }
