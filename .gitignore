@@ -31,3 +31,4 @@ AGENTS.md
 __pycache__/
 *.pyc
 .codex/environments/environment.toml
+AGENTS.md
