@@ -1,5 +1,6 @@
 use crate::{settings::SettingsStore, AppState};
 use serde::Serialize;
+use std::fmt::{Debug, Display};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -109,6 +110,37 @@ fn emit_status(app: &AppHandle, status: &UpdateStatusPayload) {
     let _ = app.emit(UPDATE_STATUS_EVENT, status);
 }
 
+fn log_dev_update_error<E>(app: &AppHandle, context: &str, error: &E)
+where
+    E: Display + Debug,
+{
+    #[cfg(debug_assertions)]
+    {
+        eprintln!("[updater] {context} failed: {error}");
+        eprintln!("[updater] debug error: {error:?}");
+
+        match with_manager(app, |manager| manager.status.clone()) {
+            Ok(status) => match serde_json::to_string_pretty(&status) {
+                Ok(status_json) => eprintln!("[updater] status snapshot: {status_json}"),
+                Err(serialize_error) => {
+                    eprintln!("[updater] failed to serialize status snapshot: {serialize_error}")
+                }
+            },
+            Err(status_error) => {
+                eprintln!("[updater] failed to read status snapshot: {status_error}");
+            }
+        }
+    }
+}
+
+fn stringify_update_error<E>(app: &AppHandle, context: &str, error: E) -> String
+where
+    E: Display + Debug,
+{
+    log_dev_update_error(app, context, &error);
+    error.to_string()
+}
+
 fn with_manager<R>(app: &AppHandle, updater: impl FnOnce(&mut UpdateManager) -> R) -> Result<R, String> {
     let state = app.state::<AppState>();
     let mut manager = state
@@ -152,6 +184,7 @@ pub fn dismiss_error(app: &AppHandle) -> Result<(), String> {
 pub fn schedule_update_check(app: AppHandle, store: SettingsStore, force: bool) {
     tauri::async_runtime::spawn(async move {
         if let Err(error) = check_for_updates(app.clone(), store, force).await {
+            log_dev_update_error(&app, "check_for_updates", &error);
             if let Ok(status) = with_manager(&app, |manager| {
                 manager.set_error(error.clone());
                 manager.status.clone()
@@ -197,10 +230,10 @@ async fn check_for_updates(app: AppHandle, store: SettingsStore, force: bool) ->
     let deferred_version = store.load_deferred_update_version().unwrap_or(None);
     let update = app
         .updater()
-        .map_err(|err| err.to_string())?
+        .map_err(|err| stringify_update_error(&app, "create_updater", err))?
         .check()
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| stringify_update_error(&app, "check_remote_update", err))?;
 
     match update {
         Some(update) => {
@@ -252,6 +285,7 @@ async fn check_for_updates(app: AppHandle, store: SettingsStore, force: bool) ->
 fn download_pending_update(app: AppHandle, install_after_download: bool) {
     tauri::async_runtime::spawn(async move {
         if let Err(error) = download_pending_update_inner(app.clone(), install_after_download).await {
+            log_dev_update_error(&app, "download_pending_update", &error);
             if let Ok(status) = with_manager(&app, |manager| {
                 manager.set_error(error.clone());
                 manager.status.clone()
@@ -298,7 +332,7 @@ async fn download_pending_update_inner(app: AppHandle, install_after_download: b
             || {},
         )
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| stringify_update_error(&app, "download_update_package", err))?;
 
     let latest_version = update.version.clone();
     let status = with_manager(&app, |manager| {
@@ -351,6 +385,7 @@ pub fn install_downloaded_update(app: &AppHandle) -> Result<(), String> {
             app.restart();
         }
         Err(error) => {
+            log_dev_update_error(app, "install_downloaded_update", &error);
             let message = error.to_string();
             let status = with_manager(app, |manager| {
                 manager.pending_update = Some(update);
