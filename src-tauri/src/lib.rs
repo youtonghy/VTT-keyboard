@@ -14,6 +14,7 @@ mod volcengine;
 
 use recorder::RecorderService;
 use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
+use sensevoice::model::{spec_for_local_model, LocalRuntimeKind};
 use settings::{
     SenseVoiceSettings, Settings, SettingsStore, TranscriptionHistoryItem, TranscriptionProvider,
 };
@@ -21,7 +22,7 @@ use std::fs;
 use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
-use tauri::{AppHandle, Manager, State, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent, Wry};
 use transcription_dispatcher::TranscriptionDispatcher;
 use updater::UpdateManager;
 
@@ -112,7 +113,7 @@ fn update_sensevoice_settings(
 
     state
         .settings_store
-        .save_sensevoice(&sensevoice)
+        .save_sensevoice_editable(&sensevoice)
         .map_err(|err| err.to_string())?;
 
     maybe_restart_local_runtime_if_switched(
@@ -123,25 +124,15 @@ fn update_sensevoice_settings(
     )
 }
 
-fn normalize_local_model(value: &str) -> &str {
-    if value.eq_ignore_ascii_case("voxtral") {
-        "voxtral"
-    } else if value.eq_ignore_ascii_case("qwen3-asr") {
-        "qwen3-asr"
-    } else {
-        "sensevoice"
-    }
-}
-
 fn maybe_restart_local_runtime_if_switched(
     app: &tauri::AppHandle,
     state: &State<AppState>,
     previous_local_model: &str,
     next_local_model: &str,
 ) -> Result<(), String> {
-    let previous = normalize_local_model(previous_local_model);
-    let next = normalize_local_model(next_local_model);
-    if previous == next {
+    let previous = spec_for_local_model(previous_local_model);
+    let next = spec_for_local_model(next_local_model);
+    if previous.model_key == next.model_key {
         return Ok(());
     }
 
@@ -436,7 +427,15 @@ pub fn run() {
                 if settings.provider != TranscriptionProvider::Sensevoice {
                     return;
                 }
-                if !settings.sensevoice.installed || !settings.sensevoice.enabled {
+                let runtime_kind = spec_for_local_model(&settings.sensevoice.local_model).runtime_kind;
+                if !is_autostart_launch
+                    && runtime_kind == LocalRuntimeKind::Native
+                    && !settings.sensevoice.installed
+                {
+                    let _ = startup_app.emit("sensevoice-startup-download-required", ());
+                    return;
+                }
+                if !settings.sensevoice.installed {
                     return;
                 }
                 let state = startup_app.state::<AppState>();

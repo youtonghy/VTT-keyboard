@@ -10,6 +10,12 @@ export interface TriggerMatch {
 
 export type TranscriptionHistoryStatus = "success" | "failed";
 
+export interface TranscriptionAlignment {
+  tokens: string[];
+  timestampsMs: number[];
+  durationsMs?: number[];
+}
+
 export interface TranscriptionHistoryItem {
   id: string;
   timestampMs: number;
@@ -22,5 +28,6 @@ export interface TranscriptionHistoryItem {
   triggered: boolean;
   triggeredByKeyword: boolean;
   triggerMatches: TriggerMatch[];
+  alignment?: TranscriptionAlignment;
   errorMessage?: string;
 }

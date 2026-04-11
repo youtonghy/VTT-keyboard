@@ -40,8 +40,18 @@ const isAliyunProvider = (provider: Settings["provider"]) =>
 
 const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
 const DEFAULT_SENSEVOICE_MODEL_ID = "FunAudioLLM/SenseVoiceSmall";
+const DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID =
+  "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09";
 const DEFAULT_VOXTRAL_MODEL_ID = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 const DEFAULT_QWEN3_ASR_MODEL_ID = "Qwen/Qwen3-ASR-1.7B";
+const SHERPA_LANGUAGE_OPTIONS = [
+  { value: "auto", labelKey: "sensevoice.languageAuto" },
+  { value: "zh", labelKey: "sensevoice.languageZh" },
+  { value: "en", labelKey: "sensevoice.languageEn" },
+  { value: "ja", labelKey: "sensevoice.languageJa" },
+  { value: "ko", labelKey: "sensevoice.languageKo" },
+  { value: "yue", labelKey: "sensevoice.languageYue" },
+] as const;
 const QWEN3_ASR_MODEL_VARIANTS = [
   { value: "Qwen/Qwen3-ASR-1.7B", labelKey: "sensevoice.qwenVariant17b" },
   { value: "Qwen/Qwen3-ASR-0.6B", labelKey: "sensevoice.qwenVariant06b" },
@@ -112,6 +122,9 @@ const createId = () =>
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const normalizeLocalModel = (value: string | undefined) => {
+  if (value === "sherpa-onnx-sensevoice") {
+    return "sherpa-onnx-sensevoice";
+  }
   if (value === "voxtral") {
     return "voxtral";
   }
@@ -133,12 +146,18 @@ const isCudaOnlyLocalModel = (localModel: string | undefined) => {
   return normalized === "voxtral" || normalized === "qwen3-asr";
 };
 
+const isSherpaLocalModel = (localModel: string | undefined) =>
+  normalizeLocalModel(localModel) === "sherpa-onnx-sensevoice";
+
 const normalizeSenseVoiceDevice = (
   localModel: string | undefined,
   device: string | undefined
 ) => {
   if (isCudaOnlyLocalModel(localModel)) {
     return "cuda";
+  }
+  if (isSherpaLocalModel(localModel)) {
+    return "cpu";
   }
   if (device === "cpu" || device === "cuda") {
     return device;
@@ -148,6 +167,9 @@ const normalizeSenseVoiceDevice = (
 
 const getDefaultModelId = (localModel: string) => {
   const normalized = normalizeLocalModel(localModel);
+  if (normalized === "sherpa-onnx-sensevoice") {
+    return DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID;
+  }
   if (normalized === "voxtral") {
     return DEFAULT_VOXTRAL_MODEL_ID;
   }
@@ -168,6 +190,30 @@ const normalizeSenseVoiceModelId = (localModel: string, modelId: string | undefi
   }
   const matched = QWEN3_ASR_MODEL_VARIANTS.find((option) => option.value === trimmed);
   return matched ? matched.value : DEFAULT_QWEN3_ASR_MODEL_ID;
+};
+
+const normalizeSenseVoiceLanguage = (language: string | undefined) => {
+  if (language === "zh" || language === "en" || language === "ja" || language === "ko" || language === "yue") {
+    return language;
+  }
+  return "auto";
+};
+
+const formatBytes = (value: number | undefined) => {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
+    return "";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const units = ["KB", "MB", "GB", "TB"];
+  let next = value / 1024;
+  let index = 0;
+  while (next >= 1024 && index < units.length - 1) {
+    next /= 1024;
+    index += 1;
+  }
+  return `${next.toFixed(next >= 100 ? 0 : next >= 10 ? 1 : 2)} ${units[index]}`;
 };
 
 const getQwenVariantByModelId = (modelId: string | undefined) => {
@@ -244,6 +290,7 @@ function App() {
   const [historyItems, setHistoryItems] = useState<TranscriptionHistoryItem[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] =
     useState<TranscriptionHistoryItem | null>(null);
+  const [pendingSherpaAutoStart, setPendingSherpaAutoStart] = useState(false);
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -271,6 +318,7 @@ function App() {
             normalizedLocalModel,
             settings.sensevoice.modelId
           ),
+          language: normalizeSenseVoiceLanguage(settings.sensevoice.language),
           device: normalizeSenseVoiceDevice(
             normalizedLocalModel,
             settings.sensevoice.device
@@ -550,18 +598,19 @@ function App() {
   };
 
   const handleSave = async () => {
-    if (!draft) {
+    const nextSettings = buildPersistedSettings();
+    if (!nextSettings) {
       return;
     }
-    const error = validateTriggers(draft);
+    const error = validateTriggers(nextSettings);
     if (error) {
       toast.error(error);
       return;
     }
     try {
-      await saveSettings(draft);
+      await saveSettings(nextSettings);
       try {
-        await syncAutostart(draft.startup.launchOnBoot);
+        await syncAutostart(nextSettings.startup.launchOnBoot);
       } catch (error) {
         toast.error(t("general.launchOnBootSyncError", { error: toErrorMessage(error) }));
         return;
@@ -643,12 +692,43 @@ function App() {
     void refreshSenseVoiceStatus().catch(() => {});
   }, [isSenseVoiceActive, refreshSenseVoiceStatus]);
 
-  const handleSenseVoicePrepare = async () => {
+  const buildPersistedSenseVoiceSettings = useCallback(() => {
     if (!draft) {
+      return null;
+    }
+    return {
+      ...draft.sensevoice,
+      enabled: sensevoiceStatus.enabled,
+      installed: sensevoiceStatus.installed,
+      downloadState: sensevoiceStatus.downloadState,
+      lastError: sensevoiceStatus.lastError,
+    };
+  }, [draft, sensevoiceStatus]);
+
+  const buildPersistedSettings = useCallback(() => {
+    if (!draft) {
+      return null;
+    }
+    const nextSenseVoiceSettings = {
+      ...draft.sensevoice,
+      enabled: sensevoiceStatus.enabled,
+      installed: sensevoiceStatus.installed,
+      downloadState: sensevoiceStatus.downloadState,
+      lastError: sensevoiceStatus.lastError,
+    };
+    return {
+      ...draft,
+      sensevoice: nextSenseVoiceSettings,
+    };
+  }, [draft, sensevoiceStatus]);
+
+  const handleSenseVoicePrepare = async () => {
+    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
+    if (!nextSenseVoiceSettings) {
       return;
     }
     try {
-      await updateSenseVoiceSettings(draft.sensevoice);
+      await updateSenseVoiceSettings(nextSenseVoiceSettings);
     } catch (error) {
       toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
       return;
@@ -663,11 +743,12 @@ function App() {
   };
 
   const handleSenseVoiceStart = async () => {
-    if (!draft) {
+    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
+    if (!nextSenseVoiceSettings) {
       return;
     }
     try {
-      await updateSenseVoiceSettings(draft.sensevoice);
+      await updateSenseVoiceSettings(nextSenseVoiceSettings);
     } catch (error) {
       toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
       return;
@@ -682,11 +763,12 @@ function App() {
   };
 
   const handleSenseVoiceStop = async () => {
-    if (!draft) {
+    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
+    if (!nextSenseVoiceSettings || !draft) {
       return;
     }
     try {
-      await updateSenseVoiceSettings(draft.sensevoice);
+      await updateSenseVoiceSettings(nextSenseVoiceSettings);
     } catch (error) {
       toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
       return;
@@ -694,8 +776,11 @@ function App() {
     try {
       await stopSenseVoiceService();
       await refreshSenseVoiceStatus();
+      const runtimeKind = sensevoiceStatus.runtimeKind;
       const stopMode = normalizeStopMode(draft.sensevoice.stopMode);
-      if (stopMode === "pause") {
+      if (runtimeKind === "native") {
+        toast.success(t("sensevoice.unloadSuccess"));
+      } else if (stopMode === "pause") {
         toast.success(t("sensevoice.pauseSuccess"));
       } else {
         toast.success(t("sensevoice.stopSuccess"));
@@ -704,6 +789,38 @@ function App() {
       toast.error(t("sensevoice.stopError", { error: toErrorMessage(error) }));
     }
   };
+
+  useEffect(() => {
+    const unlisten = listen("sensevoice-startup-download-required", async () => {
+      const confirmed = window.confirm(t("sensevoice.startupDownloadPrompt"));
+      if (!confirmed) {
+        return;
+      }
+      setPendingSherpaAutoStart(true);
+      await handleSenseVoicePrepare();
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, [t, handleSenseVoicePrepare]);
+
+  useEffect(() => {
+    if (!pendingSherpaAutoStart || !draft) {
+      return;
+    }
+    if (normalizeLocalModel(draft.sensevoice.localModel) !== "sherpa-onnx-sensevoice") {
+      setPendingSherpaAutoStart(false);
+      return;
+    }
+    if (!sensevoiceStatus.installed || sensevoiceStatus.running) {
+      return;
+    }
+    if (sensevoiceStatus.downloadState !== "ready") {
+      return;
+    }
+    setPendingSherpaAutoStart(false);
+    void handleSenseVoiceStart();
+  }, [draft, handleSenseVoiceStart, pendingSherpaAutoStart, sensevoiceStatus]);
 
   if (loading || !draft) {
     return (
@@ -1398,22 +1515,32 @@ function App() {
                       const installed = sensevoiceStatus.installed;
                       const running = sensevoiceStatus.running;
                       const runtimeState = sensevoiceStatus.runtimeState || "stopped";
+                      const runtimeKind = sensevoiceStatus.runtimeKind || "docker";
+                      const supportsPause = sensevoiceStatus.supportsPause ?? true;
                       const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
                       const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
                       const progressStage = sensevoiceProgress?.stage ?? "";
                       const isReady = state === "ready";
+                      const isLoaded = state === "loaded";
+                      const isNativeRuntime = runtimeKind === "native";
                       const isWarmupStage =
                         progressStage === "verify" || progressStage === "warmup";
                       const effectiveProgressStage =
-                        isReady && isWarmupStage ? "done" : progressStage;
+                        (isReady || isLoaded) && isWarmupStage ? "done" : progressStage;
                       const isWarming =
-                        !isReady && (isWarmupStage || (running && state === "running"));
+                        !isNativeRuntime &&
+                        !isReady &&
+                        (isWarmupStage || (running && state === "running"));
                       const showProgressBar =
                         !!sensevoiceProgress &&
                         (effectiveProgressStage === "prepare" ||
-                          effectiveProgressStage === "install");
+                          effectiveProgressStage === "install" ||
+                          effectiveProgressStage === "download" ||
+                          effectiveProgressStage === "loading");
                       const stageLabelKey =
-                        effectiveProgressStage === "verify"
+                        isNativeRuntime && effectiveProgressStage === "loading"
+                          ? "loading"
+                          : effectiveProgressStage === "verify"
                           ? "started"
                           : effectiveProgressStage === "warmup"
                             ? "warmup"
@@ -1425,6 +1552,8 @@ function App() {
                               ? "ready"
                               : effectiveProgressStage === "error"
                                 ? "error"
+                                : isNativeRuntime && state === "loaded"
+                                  ? "loaded"
                                 : runtimeState === "paused"
                                   ? "paused"
                                   : isWarming
@@ -1433,17 +1562,23 @@ function App() {
                       const prepareBusy =
                         sensevoiceLoading ||
                         effectiveProgressStage === "prepare" ||
-                        effectiveProgressStage === "install";
+                        effectiveProgressStage === "install" ||
+                        effectiveProgressStage === "download" ||
+                        effectiveProgressStage === "loading";
                       const startBusy =
                         sensevoiceLoading ||
                         effectiveProgressStage === "prepare" ||
                         effectiveProgressStage === "install" ||
+                        effectiveProgressStage === "download" ||
+                        effectiveProgressStage === "loading" ||
                         // Keep start disabled while background warmup is still running.
                         (running && !isReady && isWarmupStage);
                       const stopBusy = sensevoiceLoading;
                       const selectedLocalModel = normalizeLocalModel(
                         draft.sensevoice.localModel
                       );
+                      const isSherpaSelected =
+                        selectedLocalModel === "sherpa-onnx-sensevoice";
                       const isVoxtralSelected = selectedLocalModel === "voxtral";
                       const isQwenSelected = selectedLocalModel === "qwen3-asr";
                       const isCudaOnlySelected = isCudaOnlyLocalModel(selectedLocalModel);
@@ -1499,17 +1634,22 @@ function App() {
         ...prev,
         sensevoice: {
           ...prev.sensevoice,
-          localModel: nextLocalModel,
-          modelId: nextDefaultModelId,
-          device: nextDevice,
-        },
-      };
+                          localModel: nextLocalModel,
+                          modelId: nextDefaultModelId,
+                          language: normalizeSenseVoiceLanguage(prev.sensevoice.language),
+                          device: nextDevice,
+                        },
+                      };
     })
   }
   options={[
     {
       value: "sensevoice",
       label: t("sensevoice.localModelSenseVoice"),
+    },
+    {
+      value: "sherpa-onnx-sensevoice",
+      label: t("sensevoice.localModelSherpaOnnxSenseVoice"),
     },
     {
       value: "voxtral",
@@ -1522,6 +1662,28 @@ function App() {
   ]}
 />
                     </label>
+
+                    {isSherpaSelected ? (
+                      <label className="field">
+                        <span>{t("sensevoice.language")}</span>
+                        <CustomSelect
+  value={normalizeSenseVoiceLanguage(draft.sensevoice.language)}
+  onChange={(value) =>
+    updateDraft((prev) => ({
+      ...prev,
+      sensevoice: {
+        ...prev.sensevoice,
+        language: normalizeSenseVoiceLanguage(value),
+      },
+    }))
+  }
+  options={SHERPA_LANGUAGE_OPTIONS.map((option) => ({
+    value: option.value,
+    label: t(option.labelKey),
+  }))}
+/>
+                      </label>
+                    ) : null}
 
                     {isQwenSelected ? (
                       <label className="field">
@@ -1545,21 +1707,23 @@ function App() {
                       </label>
                     ) : null}
 
-                    <label className="field">
-                      <span>{t("sensevoice.serviceUrl")}</span>
-                      <input
-                        value={draft.sensevoice.serviceUrl}
-                        onChange={(event) =>
-                          updateDraft((prev) => ({
-                            ...prev,
-                            sensevoice: {
-                              ...prev.sensevoice,
-                              serviceUrl: event.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    </label>
+                    {!isSherpaSelected ? (
+                      <label className="field">
+                        <span>{t("sensevoice.serviceUrl")}</span>
+                        <input
+                          value={draft.sensevoice.serviceUrl}
+                          onChange={(event) =>
+                            updateDraft((prev) => ({
+                              ...prev,
+                              sensevoice: {
+                                ...prev.sensevoice,
+                                serviceUrl: event.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                    ) : null}
 
                     <label className="field">
                       <span>{t("sensevoice.device")}</span>
@@ -1574,7 +1738,7 @@ function App() {
 	      },
 	    }))
 	  }
-	  disabled={isCudaOnlySelected}
+	  disabled={isCudaOnlySelected || isSherpaSelected}
 	  options={[
 	    { value: "auto", label: t("sensevoice.deviceAuto") },
 	    { value: "cpu", label: t("sensevoice.deviceCpu") },
@@ -1583,9 +1747,11 @@ function App() {
 />
                     </label>
 
-                    <label className="field">
-                      <span>{t("sensevoice.stopMode")}</span>
-                      <CustomSelect
+                    {!isSherpaSelected && supportsPause ? (
+                      <>
+                        <label className="field">
+                          <span>{t("sensevoice.stopMode")}</span>
+                          <CustomSelect
   value={stopMode}
   onChange={(value) =>
     updateDraft((prev) => ({
@@ -1601,13 +1767,20 @@ function App() {
     { value: "pause", label: t("sensevoice.stopModePause") },
   ]}
 />
-                    </label>
-                    <div className="sensevoice-hint">{t("sensevoice.stopModeHint")}</div>
+                        </label>
+                        <div className="sensevoice-hint">{t("sensevoice.stopModeHint")}</div>
+                      </>
+                    ) : null}
 	                    {isVoxtralSelected ? (
 	                      <div className="sensevoice-hint">
 	                        {t("sensevoice.voxtralCudaOnlyHint")}
 	                      </div>
 	                    ) : null}
+                    {isSherpaSelected ? (
+                      <div className="sensevoice-hint">
+                        {t("sensevoice.sherpaCpuOnlyHint")}
+                      </div>
+                    ) : null}
                     {isQwenSelected ? (
                       <div className="sensevoice-hint">
                         {t("sensevoice.qwenCudaOnlyHint")}
@@ -1622,6 +1795,18 @@ function App() {
                             ? `${sensevoiceProgress.percent}%`
                             : ""}
                         </span>
+                      </div>
+                    ) : null}
+
+                    {showProgressBar &&
+                    (sensevoiceProgress?.downloadedBytes !== undefined ||
+                      sensevoiceProgress?.totalBytes !== undefined) ? (
+                      <div className="sensevoice-hint">
+                        {sensevoiceProgress?.totalBytes !== undefined
+                          ? `${formatBytes(sensevoiceProgress?.downloadedBytes)} / ${formatBytes(
+                              sensevoiceProgress?.totalBytes
+                            )}`
+                          : formatBytes(sensevoiceProgress?.downloadedBytes)}
                       </div>
                     ) : null}
 
@@ -1680,7 +1865,7 @@ function App() {
                           onClick={handleSenseVoiceStart}
                           disabled={startBusy}
                         >
-                          {t("sensevoice.start")}
+                          {isNativeRuntime ? t("sensevoice.load") : t("sensevoice.start")}
                         </button>
                       ) : null}
                       {running ? (
@@ -1689,7 +1874,7 @@ function App() {
                           onClick={handleSenseVoiceStop}
                           disabled={stopBusy}
                         >
-                          {t("sensevoice.stop")}
+                          {isNativeRuntime ? t("sensevoice.unload") : t("sensevoice.stop")}
                         </button>
                       ) : null}
                     </div>

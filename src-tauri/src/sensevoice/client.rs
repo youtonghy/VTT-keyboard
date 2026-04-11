@@ -1,5 +1,8 @@
-use super::SenseVoiceError;
-use crate::settings::Settings;
+use super::{
+    model::{normalize_local_model, resolve_vllm_model_id, spec_for_local_model, LocalRuntimeKind},
+    native_runtime, SenseVoiceError,
+};
+use crate::settings::{Settings, TranscriptionAlignment};
 use reqwest::blocking::{multipart, Client};
 use serde::Deserialize;
 use std::fs;
@@ -7,22 +10,20 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
-const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
-const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
-const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
-const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
-    "Qwen/Qwen3-ASR-1.7B",
-    "Qwen/Qwen3-ASR-0.6B",
-    "Qwen/Qwen3-ForcedAligner-0.6B",
-];
-
 #[derive(Deserialize)]
 struct SenseVoiceResponse {
     text: String,
 }
 
-pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String, SenseVoiceError> {
+pub struct SenseVoiceTranscription {
+    pub text: String,
+    pub alignment: Option<TranscriptionAlignment>,
+}
+
+pub fn transcribe_audio(
+    settings: &Settings,
+    audio_path: &Path,
+) -> Result<SenseVoiceTranscription, SenseVoiceError> {
     if !settings.sensevoice.enabled {
         return Err(SenseVoiceError::Config(
             "SenseVoice 尚未启用，请先下载并启用".to_string(),
@@ -44,6 +45,20 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
         ));
     }
 
+    let local_model = normalize_local_model(&settings.sensevoice.local_model);
+    let local_model_spec = spec_for_local_model(local_model);
+    if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+        let result = native_runtime::transcribe_wav(
+            local_model,
+            &settings.sensevoice.language,
+            audio_path,
+        )?;
+        return Ok(SenseVoiceTranscription {
+            text: result.text,
+            alignment: result.alignment,
+        });
+    }
+
     let service_url = settings.sensevoice.service_url.trim().trim_end_matches('/');
     if service_url.is_empty() {
         return Err(SenseVoiceError::Config(
@@ -58,21 +73,6 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
         .unwrap_or("recording.wav");
 
     let client = Client::new();
-    let local_model = if settings
-        .sensevoice
-        .local_model
-        .eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL)
-    {
-        LOCAL_MODEL_VOXTRAL
-    } else if settings
-        .sensevoice
-        .local_model
-        .eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR)
-    {
-        LOCAL_MODEL_QWEN3_ASR
-    } else {
-        "sensevoice"
-    };
     for attempt in 0..2 {
         let mut form = multipart::Form::new()
             .part(
@@ -100,7 +100,10 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
             let data: SenseVoiceResponse = response
                 .json()
                 .map_err(|err| SenseVoiceError::Parse(err.to_string()))?;
-            return Ok(data.text);
+            return Ok(SenseVoiceTranscription {
+                text: data.text,
+                alignment: None,
+            });
         }
 
         let status = response.status();
@@ -115,23 +118,6 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
     Err(SenseVoiceError::Request(
         "SenseVoice 服务暂不可用，请稍后重试".to_string(),
     ))
-}
-
-fn resolve_vllm_model_id(local_model: &str, model_id: &str) -> String {
-    match local_model {
-        LOCAL_MODEL_VOXTRAL => DEFAULT_VOXTRAL_MODEL_ID.to_string(),
-        LOCAL_MODEL_QWEN3_ASR => normalize_qwen3_asr_model_id(model_id).to_string(),
-        _ => DEFAULT_QWEN3_ASR_MODEL_ID.to_string(),
-    }
-}
-
-fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
-    let trimmed = model_id.trim();
-    QWEN3_ASR_ALLOWED_MODEL_IDS
-        .iter()
-        .copied()
-        .find(|candidate| *candidate == trimmed)
-        .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
 }
 
 fn is_warming_up_error(body: &str) -> bool {

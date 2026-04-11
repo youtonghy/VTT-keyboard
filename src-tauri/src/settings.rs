@@ -16,6 +16,7 @@ const HISTORY_STORE_KEY: &str = "transcriptionHistory";
 const UPDATER_STATE_STORE_KEY: &str = "updaterState";
 pub const MAX_TRANSCRIPTION_HISTORY_ITEMS: usize = 200;
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
+const LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE: &str = "sherpa-onnx-sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const ALIYUN_REGION_BEIJING: &str = "beijing";
@@ -25,6 +26,8 @@ const QWEN3_ASR_REQUIRED_DEVICE: &str = "cuda";
 const STOP_MODE_STOP: &str = "stop";
 const STOP_MODE_PAUSE: &str = "pause";
 const DEFAULT_SENSEVOICE_MODEL_ID: &str = "FunAudioLLM/SenseVoiceSmall";
+const DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID: &str =
+    "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09";
 const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
 const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
 const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
@@ -306,7 +309,18 @@ pub struct TranscriptionHistoryItem {
     pub triggered: bool,
     pub triggered_by_keyword: bool,
     pub trigger_matches: Vec<TriggerMatch>,
+    #[serde(default)]
+    pub alignment: Option<TranscriptionAlignment>,
     pub error_message: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionAlignment {
+    pub tokens: Vec<String>,
+    pub timestamps_ms: Vec<u64>,
+    #[serde(default)]
+    pub durations_ms: Vec<u64>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -355,6 +369,8 @@ pub struct SenseVoiceSettings {
     pub stop_mode: String,
     pub service_url: String,
     pub model_id: String,
+    #[serde(default = "default_sensevoice_language")]
+    pub language: String,
     pub device: String,
     pub download_state: String,
     pub last_error: String,
@@ -368,6 +384,10 @@ fn default_stop_mode() -> String {
     STOP_MODE_STOP.to_string()
 }
 
+fn default_sensevoice_language() -> String {
+    "auto".to_string()
+}
+
 impl Default for SenseVoiceSettings {
     fn default() -> Self {
         Self {
@@ -376,7 +396,8 @@ impl Default for SenseVoiceSettings {
             local_model: default_local_model(),
             stop_mode: default_stop_mode(),
             service_url: "http://127.0.0.1:28765".to_string(),
-            model_id: "FunAudioLLM/SenseVoiceSmall".to_string(),
+            model_id: DEFAULT_SENSEVOICE_MODEL_ID.to_string(),
+            language: default_sensevoice_language(),
             device: "auto".to_string(),
             download_state: "idle".to_string(),
             last_error: String::new(),
@@ -498,6 +519,26 @@ impl SettingsStore {
         validate_sensevoice_settings(&normalized)?;
         let mut settings = self.load()?;
         settings.sensevoice = normalized;
+        self.persist_settings(&settings)
+    }
+
+    pub fn save_sensevoice_editable(
+        &self,
+        sensevoice: &SenseVoiceSettings,
+    ) -> Result<(), SettingsError> {
+        let mut settings = self.load()?;
+        let mut merged = settings.sensevoice.clone();
+        merged.local_model = sensevoice.local_model.clone();
+        merged.stop_mode = sensevoice.stop_mode.clone();
+        merged.service_url = sensevoice.service_url.clone();
+        merged.model_id = sensevoice.model_id.clone();
+        merged.language = sensevoice.language.clone();
+        merged.device = sensevoice.device.clone();
+        normalize_sensevoice_settings(&mut merged);
+        validate_sensevoice_settings(&merged)?;
+        // Runtime-managed fields are preserved from the persisted settings and must not
+        // be overwritten by the editable settings payload coming from the UI.
+        settings.sensevoice = merged;
         self.persist_settings(&settings)
     }
 
@@ -707,6 +748,7 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
         sensevoice.local_model = LOCAL_MODEL_VOXTRAL.to_string();
         sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
         sensevoice.model_id = DEFAULT_VOXTRAL_MODEL_ID.to_string();
+        sensevoice.language = default_sensevoice_language();
         return;
     }
     if sensevoice
@@ -716,10 +758,22 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
         sensevoice.local_model = LOCAL_MODEL_QWEN3_ASR.to_string();
         sensevoice.device = QWEN3_ASR_REQUIRED_DEVICE.to_string();
         sensevoice.model_id = normalize_qwen3_asr_model_id(&sensevoice.model_id).to_string();
+        sensevoice.language = default_sensevoice_language();
+        return;
+    }
+    if sensevoice
+        .local_model
+        .eq_ignore_ascii_case(LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE)
+    {
+        sensevoice.local_model = LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE.to_string();
+        sensevoice.device = "cpu".to_string();
+        sensevoice.model_id = DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID.to_string();
+        sensevoice.language = normalize_sensevoice_language(&sensevoice.language).to_string();
         return;
     }
     sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
     sensevoice.model_id = DEFAULT_SENSEVOICE_MODEL_ID.to_string();
+    sensevoice.language = default_sensevoice_language();
 }
 
 fn normalize_aliyun_settings(aliyun: &mut AliyunSettings, provider: &TranscriptionProvider) {
@@ -766,6 +820,15 @@ fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
         .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
 }
 
+fn normalize_sensevoice_language(language: &str) -> &str {
+    let trimmed = language.trim();
+    if matches!(trimmed, "zh" | "en" | "ja" | "ko" | "yue") {
+        trimmed
+    } else {
+        "auto"
+    }
+}
+
 fn validate_aliyun_settings(settings: &Settings) -> Result<(), SettingsError> {
     let region = settings.aliyun.region.as_str();
     if !matches!(region, ALIYUN_REGION_BEIJING | ALIYUN_REGION_SINGAPORE) {
@@ -804,33 +867,41 @@ fn validate_aliyun_settings(settings: &Settings) -> Result<(), SettingsError> {
 fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
     if !matches!(
         sensevoice.local_model.as_str(),
-        LOCAL_MODEL_SENSEVOICE | LOCAL_MODEL_VOXTRAL | LOCAL_MODEL_QWEN3_ASR
+        LOCAL_MODEL_SENSEVOICE
+            | LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE
+            | LOCAL_MODEL_VOXTRAL
+            | LOCAL_MODEL_QWEN3_ASR
     ) {
         return Err(SettingsError::Serde(
-            "闂佸搫鐗滈崜娆忥耿閺夋嚦鐔煎灳瀹曞洠鍋撻柨瀣浄闁告侗鍠楅弳婊堟煙?sensevoice/voxtral/qwen3-asr".to_string(),
+            "闂佸搫鐗滈崜娆忥耿閺夋嚦鐔煎灳瀹曞洠鍋撻柨瀣浄闁告侗鍠楅弳婊堟煙?sensevoice/sherpa-onnx-sensevoice/voxtral/qwen3-asr".to_string(),
         ));
     }
-    if sensevoice.service_url.trim().is_empty() {
-        return Err(SettingsError::Serde(
-            "SenseVoice service URL cannot be empty".to_string(),
-        ));
-    }
-    let parsed = Url::parse(sensevoice.service_url.trim())
-        .map_err(|err| SettingsError::Serde(format!("SenseVoice 闂佸搫鐗嗙粔瀛樻叏閻旂厧鎹堕柡澶嬪缁插鏌￠崘顏勑ｉ柡? {err}")))?;
-    if parsed.host_str().is_none() {
-        return Err(SettingsError::Serde(
-            "SenseVoice service URL must include a host".to_string(),
-        ));
-    }
-    if parsed.port_or_known_default().is_none() {
-        return Err(SettingsError::Serde(
-            "SenseVoice service URL must include a port".to_string(),
-        ));
-    }
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(SettingsError::Serde(
-            "SenseVoice 闂佸搫鐗嗙粔瀛樻叏閻旂厧鎹堕柡澶嬪缁插鐓崶褎鍤囬柕鍡楃箲閹峰懐鎹勯妸锔芥 http 闂?https".to_string(),
-        ));
+    if sensevoice.local_model != LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE {
+        if sensevoice.service_url.trim().is_empty() {
+            return Err(SettingsError::Serde(
+                "SenseVoice service URL cannot be empty".to_string(),
+            ));
+        }
+        let parsed = Url::parse(sensevoice.service_url.trim()).map_err(|err| {
+            SettingsError::Serde(format!(
+                "SenseVoice 闂佸搫鐗嗙粔瀛樻叏閻旂厧鎹堕柡澶嬪缁插鏌￠崘顏勑ｉ柡? {err}"
+            ))
+        })?;
+        if parsed.host_str().is_none() {
+            return Err(SettingsError::Serde(
+                "SenseVoice service URL must include a host".to_string(),
+            ));
+        }
+        if parsed.port_or_known_default().is_none() {
+            return Err(SettingsError::Serde(
+                "SenseVoice service URL must include a port".to_string(),
+            ));
+        }
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(SettingsError::Serde(
+                "SenseVoice 闂佸搫鐗嗙粔瀛樻叏閻旂厧鎹堕柡澶嬪缁插鐓崶褎鍤囬柕鍡楃箲閹峰懐鎹勯妸锔芥 http 闂?https".to_string(),
+            ));
+        }
     }
     if sensevoice.model_id.trim().is_empty() {
         return Err(SettingsError::Serde(
@@ -858,6 +929,21 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
             "Qwen3-ASR model ID only supports preset values".to_string(),
         ));
     }
+    if sensevoice.local_model == LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE
+        && sensevoice.model_id != DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID
+    {
+        return Err(SettingsError::Serde(
+            "Sherpa-ONNX SenseVoice model ID must use the default value".to_string(),
+        ));
+    }
+    if !matches!(
+        sensevoice.language.as_str(),
+        "auto" | "zh" | "en" | "ja" | "ko" | "yue"
+    ) {
+        return Err(SettingsError::Serde(
+            "SenseVoice language only supports auto/zh/en/ja/ko/yue".to_string(),
+        ));
+    }
     if !matches!(sensevoice.device.as_str(), "auto" | "cpu" | "cuda") {
         return Err(SettingsError::Serde(
             "SenseVoice 闂佽浜介崝搴ㄥ箖婵犲嫭濯奸柟顖嗗本校婵炲濮撮幊蹇涘极椤曗偓楠?auto/cpu/cuda".to_string(),
@@ -879,6 +965,11 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
     {
         return Err(SettingsError::Serde(
             "Qwen3-ASR only supports CUDA devices".to_string(),
+        ));
+    }
+    if sensevoice.local_model == LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE && sensevoice.device != "cpu" {
+        return Err(SettingsError::Serde(
+            "Sherpa-ONNX SenseVoice currently runs on CPU only".to_string(),
         ));
     }
     Ok(())

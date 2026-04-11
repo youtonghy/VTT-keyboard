@@ -8,6 +8,8 @@ export interface SenseVoiceStatus {
   enabled: boolean;
   running: boolean;
   runtimeState: "stopped" | "running" | "paused" | "starting";
+  runtimeKind: "native" | "docker";
+  supportsPause: boolean;
   localModel: string;
   serviceUrl: string;
   modelId: string;
@@ -20,6 +22,8 @@ export interface SenseVoiceProgress {
   stage: string;
   message: string;
   percent?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
   detail?: string;
 }
 
@@ -34,6 +38,8 @@ const defaultStatus: SenseVoiceStatus = {
   enabled: false,
   running: false,
   runtimeState: "stopped",
+  runtimeKind: "docker",
+  supportsPause: true,
   localModel: "sensevoice",
   serviceUrl: "",
   modelId: "",

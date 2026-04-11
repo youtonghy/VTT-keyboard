@@ -10,12 +10,14 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 use url::Url;
+use super::sherpa;
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const DOCKER_BUILD_TIMEOUT_SECS: u64 = 40 * 60;
 const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 60 * 60;
 const IMAGE_STAMP_FILE: &str = "image.stamp";
 const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
+const LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE: &str = "sherpa-onnx-sensevoice";
 const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
 const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
@@ -27,6 +29,7 @@ pub struct WorkerJob {
     pub local_model: String,
     pub service_url: String,
     pub model_id: String,
+    pub language: String,
     pub device: String,
     pub runtime_dir: String,
     pub models_dir: String,
@@ -47,6 +50,10 @@ pub enum WorkerEvent {
         message: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         percent: Option<u8>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        downloaded_bytes: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total_bytes: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
     },
@@ -93,20 +100,21 @@ pub fn run_worker(job_file: &str) -> i32 {
 
 fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
     let local_model = normalize_local_model(&job.local_model);
-    emit_progress("prepare", "Preparing runtime", Some(5), None);
+    emit_progress("prepare", "Preparing runtime", Some(5), None, None, None);
     emit_state("preparing", "", None, None);
 
-    ensure_docker_available()?;
-
     if is_vllm_local_model(local_model) {
+        ensure_docker_available()?;
         let model_display = vllm_model_display_name(local_model);
-        emit_progress("install", "Pulling vLLM Docker image", Some(35), None);
+        emit_progress("install", "Pulling vLLM Docker image", Some(35), None, None, None);
         ensure_vllm_image(|line| {
             emit_progress(
                 "install",
                 "Pulling vLLM Docker image",
                 Some(35),
                 Some(line.to_string()),
+                None,
+                None,
             );
         })?;
         emit_state("ready", "", Some(true), Some(true));
@@ -115,6 +123,8 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
             &format!("{model_display} runtime prepared"),
             Some(100),
             None,
+            None,
+            None,
         );
         emit_event(&WorkerEvent::Done {
             message: format!("{model_display} prepare completed"),
@@ -122,33 +132,67 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
         return Ok(());
     }
 
-    emit_progress("install", "Building Docker image", Some(35), None);
+    if local_model == LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE {
+        let models_dir = Path::new(&job.models_dir);
+        emit_state("downloading", "", None, None);
+        sherpa::prepare_model(models_dir, |line, percent, downloaded_bytes, total_bytes| {
+            emit_progress(
+                "download",
+                "Downloading Sherpa-ONNX SenseVoice model",
+                percent,
+                Some(line.to_string()),
+                downloaded_bytes,
+                total_bytes,
+            );
+        })
+        .map_err(|err| err.to_string())?;
+        emit_state("ready", "", Some(true), Some(true));
+        emit_progress(
+            "done",
+            "Sherpa-ONNX SenseVoice model is ready",
+            Some(100),
+            None,
+            None,
+            None,
+        );
+        emit_event(&WorkerEvent::Done {
+            message: "Sherpa-ONNX SenseVoice prepare completed".to_string(),
+        });
+        return Ok(());
+    }
+
+    ensure_docker_available()?;
+    emit_progress("install", "Building Docker image", Some(35), None, None, None);
     ensure_runtime_image(job, |line| {
         emit_progress(
             "install",
             "Building Docker image",
             Some(35),
             Some(line.to_string()),
+            None,
+            None,
         );
     })?;
 
     emit_state("downloading", "", None, None);
-    emit_progress("download", "Downloading SenseVoice model", Some(60), None);
+    emit_progress("download", "Downloading SenseVoice model", Some(60), None, None, None);
     download_model(job, |line| {
         emit_progress(
             "download",
             "Downloading SenseVoice model",
             Some(60),
             Some(line.to_string()),
+            None,
+            None,
         );
     })?;
 
     emit_state("validating", "", Some(true), None);
-    emit_progress("verify", "Starting SenseVoice service", Some(85), None);
+    emit_progress("verify", "Starting SenseVoice service", Some(85), None, None, None);
     start_service(job)?;
 
     emit_state("ready", "", Some(true), Some(true));
-    emit_progress("done", "SenseVoice service started", Some(100), None);
+    emit_progress("done", "SenseVoice service started", Some(100), None, None, None);
     emit_event(&WorkerEvent::Done {
         message: "SenseVoice prepare completed".to_string(),
     });
@@ -251,7 +295,9 @@ fn runtime_stamp(runtime_dir: &Path) -> Result<String, String> {
 }
 
 fn normalize_local_model(value: &str) -> &str {
-    if value.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
+    if value.eq_ignore_ascii_case(LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE) {
+        LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE
+    } else if value.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
         LOCAL_MODEL_VOXTRAL
     } else if value.eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR) {
         LOCAL_MODEL_QWEN3_ASR
@@ -652,11 +698,20 @@ fn hide_window(_command: &mut Command) {
     }
 }
 
-fn emit_progress(stage: &str, message: &str, percent: Option<u8>, detail: Option<String>) {
+fn emit_progress(
+    stage: &str,
+    message: &str,
+    percent: Option<u8>,
+    detail: Option<String>,
+    downloaded_bytes: Option<u64>,
+    total_bytes: Option<u64>,
+) {
     emit_event(&WorkerEvent::Progress {
         stage: stage.to_string(),
         message: message.to_string(),
         percent,
+        downloaded_bytes,
+        total_bytes,
         detail,
     });
 }
