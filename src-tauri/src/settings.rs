@@ -873,7 +873,7 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
             | LOCAL_MODEL_QWEN3_ASR
     ) {
         return Err(SettingsError::Serde(
-            "闂佸搫鐗滈崜娆忥耿閺夋嚦鐔煎灳瀹曞洠鍋撻柨瀣浄闁告侗鍠楅弳婊堟煙?sensevoice/sherpa-onnx-sensevoice/voxtral/qwen3-asr".to_string(),
+            "SenseVoice local model must be one of: sensevoice/sherpa-onnx-sensevoice/voxtral/qwen3-asr".to_string(),
         ));
     }
     if sensevoice.local_model != LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE {
