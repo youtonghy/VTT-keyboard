@@ -243,9 +243,23 @@ fn extract_archive(archive_path: &Path, models_root: &Path) -> Result<(), SenseV
     let archive_file = File::open(archive_path).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
     let tar = BzDecoder::new(archive_file);
     let mut archive = Archive::new(tar);
-    archive
-        .unpack(models_root)
-        .map_err(|err| SenseVoiceError::Io(err.to_string()))
+    let entries = archive
+        .entries()
+        .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+
+    for entry in entries {
+        let mut entry = entry.map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+        let unpacked = entry
+            .unpack_in(models_root)
+            .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+        if !unpacked {
+            return Err(SenseVoiceError::Io(
+                "refused to extract archive entry outside target directory".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn read_wav_as_f32(audio_path: &Path) -> Result<Vec<f32>, SenseVoiceError> {
