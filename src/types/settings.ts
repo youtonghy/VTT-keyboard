@@ -101,6 +101,7 @@ export interface SenseVoiceSettings {
   stopMode: "stop" | "pause";
   serviceUrl: string;
   modelId: string;
+  language: string;
   device: string;
   downloadState: string;
   lastError: string;

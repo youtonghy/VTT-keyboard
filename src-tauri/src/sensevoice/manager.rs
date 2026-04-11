@@ -1,4 +1,11 @@
-use super::SenseVoiceError;
+use super::{
+    model::{
+        is_vllm_local_model, normalize_local_model, resolve_vllm_model_id, runtime_container_name,
+        runtime_image_tag, service_start_timeout, spec_for_local_model, LocalRuntimeKind,
+        LOCAL_MODEL_SENSEVOICE, LOCAL_MODEL_VOXTRAL,
+    },
+    native_runtime, SenseVoiceError,
+};
 use crate::sensevoice::worker::{WorkerEvent, WorkerJob};
 use crate::settings::SettingsStore;
 use crate::AppState;
@@ -28,27 +35,12 @@ const SERVER_SCRIPT: &str = include_str!("scripts/server.py");
 const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
 const DOCKERFILE_TXT: &str = include_str!("scripts/Dockerfile");
 
-const SENSEVOICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
-const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
 const VLLM_CONTAINER_NAME: &str = "vtt-sensevoice-service";
-const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
-const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
-const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 const VLLM_INTERNAL_PORT: u16 = 8000;
 const VLLM_REQUIRED_DEVICE: &str = "cuda";
 const VLLM_GPU_MEMORY_UTILIZATION: f32 = 0.8;
 const VOXTRAL_ATTENTION_BACKEND: &str = "TRITON_ATTN";
-const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
-const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
-const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
-    "Qwen/Qwen3-ASR-1.7B",
-    "Qwen/Qwen3-ASR-0.6B",
-    "Qwen/Qwen3-ForcedAligner-0.6B",
-];
-
-const SERVICE_START_TIMEOUT_SECS: u64 = 90;
-const VLLM_SERVICE_START_TIMEOUT_SECS: u64 = 5 * 60;
 const HEALTH_REQUEST_TIMEOUT_SECS: u64 = 2;
 const HEALTH_MONITOR_WARN_SECS: u64 = 120;
 const HEALTH_MONITOR_INTERVAL_MILLIS: u64 = 1000;
@@ -71,6 +63,8 @@ pub struct SenseVoiceStatus {
     pub enabled: bool,
     pub running: bool,
     pub runtime_state: String,
+    pub runtime_kind: String,
+    pub supports_pause: bool,
     pub local_model: String,
     pub service_url: String,
     pub model_id: String,
@@ -86,6 +80,10 @@ struct SenseVoiceProgress {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     percent: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    downloaded_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
 }
@@ -115,49 +113,11 @@ impl RuntimeState {
     }
 }
 
-fn normalize_local_model(value: &str) -> &str {
-    if value.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
-        LOCAL_MODEL_VOXTRAL
-    } else if value.eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR) {
-        LOCAL_MODEL_QWEN3_ASR
-    } else {
-        LOCAL_MODEL_SENSEVOICE
-    }
-}
-
 fn normalize_stop_mode(mode: &str) -> &str {
     if mode.eq_ignore_ascii_case(STOP_MODE_PAUSE) {
         STOP_MODE_PAUSE
     } else {
         STOP_MODE_STOP
-    }
-}
-
-fn is_vllm_local_model(local_model: &str) -> bool {
-    matches!(local_model, LOCAL_MODEL_VOXTRAL | LOCAL_MODEL_QWEN3_ASR)
-}
-
-fn runtime_image_tag(local_model: &str) -> &'static str {
-    if is_vllm_local_model(local_model) {
-        VLLM_IMAGE_TAG
-    } else {
-        SENSEVOICE_IMAGE_TAG
-    }
-}
-
-fn runtime_container_name(local_model: &str) -> &'static str {
-    if is_vllm_local_model(local_model) {
-        VLLM_CONTAINER_NAME
-    } else {
-        SERVICE_CONTAINER_NAME
-    }
-}
-
-fn service_start_timeout(local_model: &str) -> Duration {
-    if is_vllm_local_model(local_model) {
-        Duration::from_secs(VLLM_SERVICE_START_TIMEOUT_SECS)
-    } else {
-        Duration::from_secs(SERVICE_START_TIMEOUT_SECS)
     }
 }
 
@@ -167,6 +127,7 @@ pub struct SenseVoiceManager {
     prepare_child: Option<Child>,
     start_in_progress: bool,
     start_cancel_flag: Arc<AtomicBool>,
+    native_prepare_in_progress: Arc<AtomicBool>,
     /// 缓存的容器运行状态，由后台健康监测线程异步更新，避免在 Mutex 持有期间调用 docker inspect
     container_running_cache: Arc<AtomicBool>,
     /// 缓存的容器暂停状态，由后台流程更新，避免在 Mutex 持有期间调用 docker inspect
@@ -181,6 +142,7 @@ impl SenseVoiceManager {
             prepare_child: None,
             start_in_progress: false,
             start_cancel_flag: Arc::new(AtomicBool::new(false)),
+            native_prepare_in_progress: Arc::new(AtomicBool::new(false)),
             container_running_cache: Arc::new(AtomicBool::new(false)),
             container_paused_cache: Arc::new(AtomicBool::new(false)),
         }
@@ -188,10 +150,19 @@ impl SenseVoiceManager {
 
     pub fn status(&mut self, store: &SettingsStore) -> Result<SenseVoiceStatus, SenseVoiceError> {
         self.reconcile_prepare_task();
-        let runtime_state = self.refresh_runtime_state_cache();
         let sensevoice = store
             .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        let local_model_spec = spec_for_local_model(&sensevoice.local_model);
+        let runtime_state = if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+            if native_runtime::is_loaded(local_model_spec.model_key) {
+                RuntimeState::Running
+            } else {
+                RuntimeState::Stopped
+            }
+        } else {
+            self.refresh_runtime_state_cache()
+        };
         let running = runtime_state == RuntimeState::Running || self.start_in_progress;
         let runtime_state = if self.start_in_progress && runtime_state != RuntimeState::Running {
             RUNTIME_STATE_STARTING.to_string()
@@ -209,6 +180,8 @@ impl SenseVoiceManager {
             device: sensevoice.device,
             download_state: sensevoice.download_state,
             last_error: sensevoice.last_error,
+            runtime_kind: local_model_spec.runtime_kind.as_str().to_string(),
+            supports_pause: local_model_spec.supports_pause,
         })
     }
 
@@ -228,7 +201,30 @@ impl SenseVoiceManager {
             .load_sensevoice()
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
         let local_model = normalize_local_model(&sensevoice.local_model);
+        let local_model_spec = spec_for_local_model(local_model);
         let paths = ensure_paths(app)?;
+        native_runtime::set_models_root(paths.models_dir.clone());
+        if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+            self.native_prepare_in_progress.store(true, Ordering::Relaxed);
+            self.update_state(store, "downloading", "", None, None)?;
+            let app_handle = app.clone();
+            let store_clone = store.clone();
+            let prepare_flag = Arc::clone(&self.native_prepare_in_progress);
+            let local_model = local_model.to_string();
+            let language = sensevoice.language;
+            let models_dir = paths.models_dir.clone();
+            thread::spawn(move || {
+                run_native_prepare_task(
+                    app_handle,
+                    store_clone,
+                    prepare_flag,
+                    local_model,
+                    language,
+                    models_dir,
+                );
+            });
+            return self.status(store);
+        }
         if local_model == LOCAL_MODEL_SENSEVOICE {
             write_runtime_files(&paths)?;
         }
@@ -236,6 +232,7 @@ impl SenseVoiceManager {
             local_model: local_model.to_string(),
             service_url: sensevoice.service_url,
             model_id: sensevoice.model_id,
+            language: sensevoice.language,
             device: sensevoice.device,
             runtime_dir: paths.runtime_dir.to_string_lossy().to_string(),
             models_dir: paths.models_dir.to_string_lossy().to_string(),
@@ -258,7 +255,20 @@ impl SenseVoiceManager {
                 "下载任务正在后台执行，请稍后再试".to_string(),
             ));
         }
-        let runtime_state = self.refresh_runtime_state_cache();
+        let sensevoice = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        let local_model = normalize_local_model(&sensevoice.local_model);
+        let local_model_spec = spec_for_local_model(local_model);
+        let runtime_state = if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+            if native_runtime::is_loaded(local_model) {
+                RuntimeState::Running
+            } else {
+                RuntimeState::Stopped
+            }
+        } else {
+            self.refresh_runtime_state_cache()
+        };
         if runtime_state == RuntimeState::Running {
             self.start_in_progress = false;
             self.start_cancel_flag.store(false, Ordering::Relaxed);
@@ -267,10 +277,6 @@ impl SenseVoiceManager {
         if self.start_in_progress {
             return self.status(store);
         }
-
-        let sensevoice = store
-            .load_sensevoice()
-            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
         if !sensevoice.installed {
             return Err(SenseVoiceError::Config(
                 "SenseVoice 尚未安装，请先完成下载".to_string(),
@@ -285,8 +291,10 @@ impl SenseVoiceManager {
         let app_handle = app.clone();
         let store_clone = store.clone();
         let cancel_flag = Arc::clone(&self.start_cancel_flag);
-        let local_model = normalize_local_model(&sensevoice.local_model).to_string();
-        let try_resume_paused = runtime_state == RuntimeState::Paused;
+        let local_model = local_model.to_string();
+        let try_resume_paused =
+            local_model_spec.runtime_kind == LocalRuntimeKind::Docker
+                && runtime_state == RuntimeState::Paused;
         thread::spawn(move || {
             run_startup_task(
                 app_handle,
@@ -325,6 +333,14 @@ impl SenseVoiceManager {
         self.start_cancel_flag.store(true, Ordering::Relaxed);
         self.start_in_progress = false;
         self.stop_log_stream();
+        if native_runtime::is_loaded("sherpa-onnx-sensevoice") {
+            native_runtime::unload("sherpa-onnx-sensevoice");
+            self.container_running_cache.store(false, Ordering::Relaxed);
+            self.container_paused_cache.store(false, Ordering::Relaxed);
+            self.container_name = None;
+            self.emit_progress(app, "stopped", "Native model unloaded", None);
+            return;
+        }
         if pause_all_runtime_containers() {
             self.container_running_cache.store(false, Ordering::Relaxed);
             self.container_paused_cache.store(true, Ordering::Relaxed);
@@ -347,6 +363,20 @@ impl SenseVoiceManager {
         self.start_cancel_flag.store(true, Ordering::Relaxed);
         self.start_in_progress = false;
         self.stop_log_stream();
+        let local_model = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?
+            .local_model;
+        let local_model_spec = spec_for_local_model(&local_model);
+        if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+            native_runtime::unload(local_model_spec.model_key);
+            self.container_running_cache.store(false, Ordering::Relaxed);
+            self.container_paused_cache.store(false, Ordering::Relaxed);
+            self.container_name = None;
+            let _ = self.update_state(store, "ready", "", None, None);
+            self.emit_progress(app, "stopped", "Native model unloaded", None);
+            return self.status(store);
+        }
         if normalize_stop_mode(stop_mode) == STOP_MODE_PAUSE {
             if pause_all_runtime_containers() {
                 self.container_running_cache.store(false, Ordering::Relaxed);
@@ -406,13 +436,16 @@ impl SenseVoiceManager {
         if self.start_in_progress {
             return true;
         }
+        if native_runtime::is_loaded("sherpa-onnx-sensevoice") {
+            return true;
+        }
         let runtime_state = self.refresh_runtime_state_cache();
         runtime_state != RuntimeState::Stopped
     }
 
     fn is_prepare_running(&mut self) -> bool {
         self.reconcile_prepare_task();
-        self.prepare_child.is_some()
+        self.prepare_child.is_some() || self.native_prepare_in_progress.load(Ordering::Relaxed)
     }
 
     fn start_log_stream(
@@ -527,6 +560,8 @@ impl SenseVoiceManager {
                         "Preparing runtime",
                         None,
                         Some(content),
+                        None,
+                        None,
                     );
                 }
             }
@@ -554,6 +589,8 @@ impl SenseVoiceManager {
                     "Preparing runtime",
                     None,
                     Some(content.clone()),
+                    None,
+                    None,
                 );
                 let _ = app_handle.emit(
                     "sensevoice-runtime-log",
@@ -616,7 +653,7 @@ impl SenseVoiceManager {
     }
 
     fn emit_progress(&self, app: &AppHandle, stage: &str, message: &str, percent: Option<u8>) {
-        self.emit_progress_detail(app, stage, message, percent, None);
+        self.emit_progress_detail(app, stage, message, percent, None, None, None);
     }
 
     fn emit_progress_detail(
@@ -626,11 +663,15 @@ impl SenseVoiceManager {
         message: &str,
         percent: Option<u8>,
         detail: Option<&str>,
+        downloaded_bytes: Option<u64>,
+        total_bytes: Option<u64>,
     ) {
         let payload = SenseVoiceProgress {
             stage: stage.to_string(),
             message: message.to_string(),
             percent,
+            downloaded_bytes,
+            total_bytes,
             detail: detail.map(str::to_string),
         };
         let _ = app.emit("sensevoice-progress", payload);
@@ -641,8 +682,69 @@ impl Drop for SenseVoiceManager {
     fn drop(&mut self) {
         self.stop_prepare_task();
         self.stop_log_stream();
-        let _ = pause_all_runtime_containers();
+        if native_runtime::is_loaded("sherpa-onnx-sensevoice") {
+            native_runtime::unload("sherpa-onnx-sensevoice");
+        } else {
+            let _ = pause_all_runtime_containers();
+        }
     }
+}
+
+fn run_native_prepare_task(
+    app: AppHandle,
+    store: SettingsStore,
+    prepare_flag: Arc<AtomicBool>,
+    local_model: String,
+    _language: String,
+    models_dir: PathBuf,
+) {
+    let result = (|| -> Result<(), SenseVoiceError> {
+        emit_progress_payload(
+            &app,
+            "download",
+            "Downloading native model",
+            Some(0),
+            None,
+            Some(0),
+            None,
+        );
+        native_runtime::prepare_model(
+            &local_model,
+            &models_dir,
+            |line, percent, downloaded_bytes, total_bytes| {
+                emit_progress_payload(
+                    &app,
+                    "download",
+                    "Downloading native model",
+                    percent,
+                    Some(line.to_string()),
+                    downloaded_bytes,
+                    total_bytes,
+                );
+            },
+        )?;
+        update_state_in_store(&store, "ready", "", Some(true), Some(true))?;
+        emit_progress_payload(
+            &app,
+            "done",
+            "Native model is ready",
+            Some(100),
+            Some(format!(
+                "{} ready for loading",
+                spec_for_local_model(&local_model).display_name
+            )),
+            None,
+            None,
+        );
+        Ok(())
+    })();
+
+    if let Err(err) = result {
+        let message = err.to_string();
+        let _ = update_state_in_store(&store, "error", &message, None, None);
+        emit_progress_payload(&app, "error", &message, None, None, None, None);
+    }
+    prepare_flag.store(false, Ordering::Relaxed);
 }
 
 fn run_startup_task(
@@ -668,6 +770,7 @@ fn run_startup_task(
     > {
             check_start_cancelled(&cancel_flag)?;
             let local_model = normalize_local_model(&local_model);
+            let local_model_spec = spec_for_local_model(local_model);
             let mut sensevoice = store
                 .load_sensevoice()
                 .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
@@ -684,10 +787,46 @@ fn run_startup_task(
             }
 
             let paths = ensure_paths(&app)?;
+            native_runtime::set_models_root(paths.models_dir.clone());
             if local_model == LOCAL_MODEL_SENSEVOICE {
                 write_runtime_files(&paths)?;
             }
             check_start_cancelled(&cancel_flag)?;
+            if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+                emit_progress_payload(
+                    &app,
+                    "loading",
+                    "Loading native model",
+                    Some(85),
+                    None,
+                    None,
+                    None,
+                );
+                update_state_in_store(&store, "loading", "", None, None)?;
+                native_runtime::load(local_model, &paths.models_dir, &sensevoice.language)?;
+                update_state_in_store(&store, "loaded", "", None, None)?;
+                emit_progress_payload(
+                    &app,
+                    "done",
+                    "Native model loaded",
+                    Some(100),
+                    Some(format!("{} loaded", local_model_spec.display_name)),
+                    None,
+                    None,
+                );
+                let state = app.state::<AppState>();
+                let manager = state.sensevoice_manager.lock().map_err(|_| {
+                    SenseVoiceError::Process("SenseVoice 状态锁获取失败".to_string())
+                })?;
+                return Ok((
+                    sensevoice.service_url,
+                    local_model.to_string(),
+                    paths.runtime_dir.join("server.log"),
+                    Arc::new(Mutex::new(VecDeque::new())),
+                    Arc::clone(&manager.container_running_cache),
+                    Arc::clone(&manager.container_paused_cache),
+                ));
+            }
             ensure_docker_available()?;
             check_start_cancelled(&cancel_flag)?;
             let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
@@ -714,6 +853,8 @@ fn run_startup_task(
                     "resuming",
                     "Resuming paused local runtime",
                     Some(78),
+                    None,
+                    None,
                     None,
                 );
                 match unpause_runtime_container_if_needed(runtime_container_name(local_model)) {
@@ -753,6 +894,8 @@ fn run_startup_task(
                             "SenseVoice service resumed, model warming up",
                             Some(85),
                             Some("Paused runtime resumed successfully".to_string()),
+                            None,
+                            None,
                         );
                         return Ok((
                             sensevoice.service_url,
@@ -771,6 +914,8 @@ fn run_startup_task(
                             "Resume failed, fallback to cold startup",
                             Some(80),
                             Some(err.to_string()),
+                            None,
+                            None,
                         );
                     }
                 }
@@ -840,6 +985,8 @@ fn run_startup_task(
                 "SenseVoice service started, model warming up",
                 Some(85),
                 Some("Service is reachable; model warmup is still running".to_string()),
+                None,
+                None,
             );
 
             Ok((
@@ -862,6 +1009,11 @@ fn run_startup_task(
             paused_cache,
         )) => {
             finish_start_task(&app, &cancel_flag);
+            if spec_for_local_model(&local_model).runtime_kind == LocalRuntimeKind::Native {
+                running_cache.store(true, Ordering::Relaxed);
+                paused_cache.store(false, Ordering::Relaxed);
+                return;
+            }
             spawn_health_monitor(
                 app,
                 store,
@@ -876,6 +1028,7 @@ fn run_startup_task(
         }
         Err(err) => {
             let cancelled = is_start_cancelled_error(&err) || cancel_flag.load(Ordering::Relaxed);
+            let local_model_spec = spec_for_local_model(&local_model);
             handle_startup_failure(
                 &app,
                 &store,
@@ -883,6 +1036,7 @@ fn run_startup_task(
                 cancelled,
                 runtime_tail.as_ref(),
                 log_path.as_deref(),
+                local_model_spec.runtime_kind,
             );
             finish_start_task(&app, &cancel_flag);
         }
@@ -917,7 +1071,15 @@ fn spawn_health_monitor(
                 running_cache.store(false, Ordering::Relaxed);
                 paused_cache.store(false, Ordering::Relaxed);
                 // 通知前端进度已终止，清除残留的 verify/warmup 阶段状态
-                emit_progress_payload(&app, "stopped", "SenseVoice service stopped", None, None);
+                emit_progress_payload(
+                    &app,
+                    "stopped",
+                    "SenseVoice service stopped",
+                    None,
+                    None,
+                    None,
+                    None,
+                );
                 return;
             }
 
@@ -965,6 +1127,8 @@ fn spawn_health_monitor(
                             "SenseVoice service ready",
                             Some(100),
                             None,
+                            None,
+                            None,
                         );
                         return;
                     }
@@ -974,6 +1138,8 @@ fn spawn_health_monitor(
                             "warmup",
                             "SenseVoice model warming up",
                             Some(92),
+                            None,
+                            None,
                             None,
                         );
                         last_warmup_emit = Instant::now();
@@ -988,6 +1154,8 @@ fn spawn_health_monitor(
                     "SenseVoice model warmup is taking longer than expected",
                     Some(92),
                     Some("Service is available, model is still warming up".to_string()),
+                    None,
+                    None,
                 );
                 warned = true;
             }
@@ -1070,6 +1238,8 @@ fn report_monitor_failure(
         "SenseVoice health monitor failed",
         None,
         Some(full_message),
+        None,
+        None,
     );
     cleanup_runtime_state(app);
     stop_all_runtime_containers();
@@ -1082,9 +1252,15 @@ fn handle_startup_failure(
     cancelled: bool,
     runtime_tail: Option<&Arc<Mutex<VecDeque<String>>>>,
     log_path: Option<&Path>,
+    runtime_kind: LocalRuntimeKind,
 ) {
     if cancelled {
-        let _ = update_state_in_store(store, "idle", "", None, None);
+        let cancelled_state = if runtime_kind == LocalRuntimeKind::Native {
+            "ready"
+        } else {
+            "idle"
+        };
+        let _ = update_state_in_store(store, cancelled_state, "", None, None);
     } else {
         let mut message = err.to_string();
         // 若错误消息中已含"最近日志:"（如来自 wait_service_reachable 的超时/退出错误），
@@ -1105,11 +1281,15 @@ fn handle_startup_failure(
             "SenseVoice startup failed",
             None,
             Some(message),
+            None,
+            None,
         );
     }
 
     cleanup_runtime_state(app);
-    stop_all_runtime_containers();
+    if runtime_kind == LocalRuntimeKind::Docker {
+        stop_all_runtime_containers();
+    }
 }
 
 fn cleanup_runtime_state(app: &AppHandle) {
@@ -1194,9 +1374,19 @@ fn handle_worker_event(app: &AppHandle, store: &SettingsStore, event: WorkerEven
             stage,
             message,
             percent,
+            downloaded_bytes,
+            total_bytes,
             detail,
         } => {
-            emit_progress_payload(app, &stage, &message, percent, detail);
+            emit_progress_payload(
+                app,
+                &stage,
+                &message,
+                percent,
+                detail,
+                downloaded_bytes,
+                total_bytes,
+            );
         }
         WorkerEvent::RuntimeLog { stream, line, .. } => {
             let _ = app.emit(
@@ -1223,11 +1413,13 @@ fn handle_worker_event(app: &AppHandle, store: &SettingsStore, event: WorkerEven
                 "SenseVoice service started",
                 Some(100),
                 Some(message),
+                None,
+                None,
             );
         }
         WorkerEvent::Error { message } => {
             let _ = update_state_in_store(store, "error", &message, None, None);
-            emit_progress_payload(app, "error", &message, None, None);
+            emit_progress_payload(app, "error", &message, None, None, None, None);
         }
     }
 }
@@ -1238,11 +1430,15 @@ fn emit_progress_payload(
     message: &str,
     percent: Option<u8>,
     detail: Option<String>,
+    downloaded_bytes: Option<u64>,
+    total_bytes: Option<u64>,
 ) {
     let payload = SenseVoiceProgress {
         stage: stage.to_string(),
         message: message.to_string(),
         percent,
+        downloaded_bytes,
+        total_bytes,
         detail,
     };
     let _ = app.emit("sensevoice-progress", payload);
@@ -1353,7 +1549,8 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
     let stamp_path = runtime_dir.join(IMAGE_STAMP_FILE);
     let expected_stamp = runtime_stamp();
     let previous_stamp = fs::read_to_string(&stamp_path).unwrap_or_default();
-    let has_image = docker_image_exists(SENSEVOICE_IMAGE_TAG);
+    let image_tag = runtime_image_tag(LOCAL_MODEL_SENSEVOICE);
+    let has_image = docker_image_exists(image_tag);
 
     if has_image && previous_stamp.trim() == expected_stamp {
         return Ok(());
@@ -1363,7 +1560,9 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
         stage: "install".to_string(),
         message: "Building Docker image".to_string(),
         percent: Some(35),
-        detail: Some(format!("Building image {SENSEVOICE_IMAGE_TAG}")),
+        downloaded_bytes: None,
+        total_bytes: None,
+        detail: Some(format!("Building image {image_tag}")),
     };
     let _ = app.emit("sensevoice-progress", payload);
 
@@ -1371,7 +1570,7 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
     build
         .arg("build")
         .arg("-t")
-        .arg(SENSEVOICE_IMAGE_TAG)
+        .arg(image_tag)
         .arg(runtime_dir);
     run_command_streaming(
         &mut build,
@@ -1384,6 +1583,8 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
                     stage: "install".to_string(),
                     message: "Building Docker image".to_string(),
                     percent: Some(35),
+                    downloaded_bytes: None,
+                    total_bytes: None,
                     detail: Some(detail),
                 };
                 let _ = app.emit("sensevoice-progress", payload);
@@ -1396,19 +1597,22 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
 }
 
 fn ensure_vllm_image(app: &AppHandle) -> Result<(), SenseVoiceError> {
-    if docker_image_exists(VLLM_IMAGE_TAG) {
+    let image_tag = runtime_image_tag(LOCAL_MODEL_VOXTRAL);
+    if docker_image_exists(image_tag) {
         return Ok(());
     }
     let payload = SenseVoiceProgress {
         stage: "install".to_string(),
         message: "Pulling vLLM Docker image".to_string(),
         percent: Some(35),
-        detail: Some(format!("Pulling image {VLLM_IMAGE_TAG}")),
+        downloaded_bytes: None,
+        total_bytes: None,
+        detail: Some(format!("Pulling image {image_tag}")),
     };
     let _ = app.emit("sensevoice-progress", payload);
 
     let mut pull = docker_command();
-    pull.arg("pull").arg(VLLM_IMAGE_TAG);
+    pull.arg("pull").arg(image_tag);
     run_command_streaming(
         &mut pull,
         "拉取 vLLM Docker 镜像",
@@ -1420,6 +1624,8 @@ fn ensure_vllm_image(app: &AppHandle) -> Result<(), SenseVoiceError> {
                     stage: "install".to_string(),
                     message: "Pulling vLLM Docker image".to_string(),
                     percent: Some(35),
+                    downloaded_bytes: None,
+                    total_bytes: None,
                     detail: Some(detail),
                 };
                 let _ = app.emit("sensevoice-progress", payload);
@@ -1476,7 +1682,7 @@ fn run_service_container(
         .arg("SENSEVOICE_HOST=0.0.0.0")
         .arg("-e")
         .arg(format!("SENSEVOICE_PORT={port}"))
-        .arg(SENSEVOICE_IMAGE_TAG);
+        .arg(runtime_image_tag(LOCAL_MODEL_SENSEVOICE));
 
     hide_window(&mut command);
     let output = command
@@ -1491,23 +1697,6 @@ fn run_service_container(
     Err(SenseVoiceError::Process(format!(
         "启动 SenseVoice 容器失败: {details}"
     )))
-}
-
-fn resolve_vllm_model_id(local_model: &str, model_id: &str) -> String {
-    match local_model {
-        LOCAL_MODEL_VOXTRAL => DEFAULT_VOXTRAL_MODEL_ID.to_string(),
-        LOCAL_MODEL_QWEN3_ASR => normalize_qwen3_asr_model_id(model_id).to_string(),
-        _ => DEFAULT_QWEN3_ASR_MODEL_ID.to_string(),
-    }
-}
-
-fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
-    let trimmed = model_id.trim();
-    QWEN3_ASR_ALLOWED_MODEL_IDS
-        .iter()
-        .copied()
-        .find(|candidate| *candidate == trimmed)
-        .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
 }
 
 fn run_vllm_service_container(
@@ -1545,7 +1734,7 @@ fn run_vllm_service_container(
         .arg("--ipc=host")
         .arg("--entrypoint")
         .arg("/bin/bash")
-        .arg(VLLM_IMAGE_TAG)
+        .arg(runtime_image_tag(local_model))
         .arg("-lc")
         .arg(vllm_command);
     hide_window(&mut gpu_command);

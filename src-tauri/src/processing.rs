@@ -3,7 +3,9 @@ use crate::aliyun_realtime;
 use crate::paste::{self, PasteError};
 use crate::recorder::RecordedAudio;
 use crate::sensevoice;
-use crate::settings::{Settings, SettingsStore, TranscriptionProvider, TriggerMatch};
+use crate::settings::{
+    Settings, SettingsStore, TranscriptionAlignment, TranscriptionProvider, TriggerMatch,
+};
 use crate::status_native::{self, StatusType};
 use crate::triggers;
 use crate::volcengine;
@@ -38,6 +40,7 @@ pub struct ProcessingOutcome {
     pub triggered: bool,
     pub triggered_by_keyword: bool,
     pub trigger_matches: Vec<TriggerMatch>,
+    pub alignment: Option<TranscriptionAlignment>,
     pub error_message: Option<String>,
 }
 
@@ -52,6 +55,7 @@ impl ProcessingOutcome {
         triggered: bool,
         triggered_by_keyword: bool,
         trigger_matches: Vec<TriggerMatch>,
+        alignment: Option<TranscriptionAlignment>,
     ) -> Self {
         Self {
             history_enabled,
@@ -63,6 +67,7 @@ impl ProcessingOutcome {
             triggered,
             triggered_by_keyword,
             trigger_matches,
+            alignment,
             error_message: None,
         }
     }
@@ -77,6 +82,7 @@ impl ProcessingOutcome {
         triggered: bool,
         triggered_by_keyword: bool,
         trigger_matches: Vec<TriggerMatch>,
+        alignment: Option<TranscriptionAlignment>,
         error_message: String,
     ) -> Self {
         Self {
@@ -89,6 +95,7 @@ impl ProcessingOutcome {
             triggered,
             triggered_by_keyword,
             trigger_matches,
+            alignment,
             error_message: Some(error_message),
         }
     }
@@ -112,6 +119,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                 false,
                 false,
                 Vec::new(),
+                None,
                 format!("设置读取失败: {err}"),
             )
         }
@@ -134,6 +142,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             false,
             false,
             Vec::new(),
+            None,
         );
     }
     let transcription_started = Instant::now();
@@ -158,25 +167,44 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     dev_log(&format!("生成 {} 段录音", paths.len()));
 
     let mut transcripts = Vec::new();
+    let mut alignment_tokens = Vec::new();
+    let mut alignment_timestamps_ms = Vec::new();
+    let mut alignment_durations_ms = Vec::new();
     for (index, path) in paths.iter().enumerate() {
         dev_log(&format!("开始请求转写段落 {}", index + 1));
-        let text = match settings.provider {
+        let transcription = match settings.provider {
             TranscriptionProvider::Openai => crate::openai::transcribe_audio(&settings, path)
+                .map(|text| sensevoice::client::SenseVoiceTranscription {
+                    text,
+                    alignment: None,
+                })
                 .map_err(|err| format!("OpenAI 转写失败: {err}")),
             TranscriptionProvider::Volcengine => volcengine::transcribe_audio(&settings, path)
+                .map(|text| sensevoice::client::SenseVoiceTranscription {
+                    text,
+                    alignment: None,
+                })
                 .map_err(|err| format!("火山引擎转写失败: {err}")),
             TranscriptionProvider::Sensevoice => {
                 sensevoice::client::transcribe_audio(&settings, path)
                     .map_err(|err| format!("SenseVoice 转写失败: {err}"))
             }
             TranscriptionProvider::AliyunAsr => aliyun_realtime::transcribe_asr(&settings, path)
+                .map(|text| sensevoice::client::SenseVoiceTranscription {
+                    text,
+                    alignment: None,
+                })
                 .map_err(|err| format!("阿里云 ASR 转写失败: {err}")),
             TranscriptionProvider::AliyunParaformer => {
                 aliyun_realtime::transcribe_paraformer(&settings, path)
+                    .map(|text| sensevoice::client::SenseVoiceTranscription {
+                        text,
+                        alignment: None,
+                    })
                     .map_err(|err| format!("Paraformer 转写失败: {err}"))
             }
         };
-        let text = match text {
+        let transcription = match transcription {
             Ok(value) => value,
             Err(message) => {
                 cleanup_files(&paths);
@@ -191,10 +219,23 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                     false,
                     false,
                     Vec::new(),
+                    None,
                     message,
                 );
             }
         };
+        let text = transcription.text;
+        if let Some(alignment) = transcription.alignment {
+            let segment_offset_ms = index as u64 * segment_seconds * 1000;
+            alignment_tokens.extend(alignment.tokens);
+            alignment_timestamps_ms.extend(
+                alignment
+                    .timestamps_ms
+                    .into_iter()
+                    .map(|timestamp_ms| timestamp_ms + segment_offset_ms),
+            );
+            alignment_durations_ms.extend(alignment.durations_ms);
+        }
         dev_log(&format!("转写结果 {}: {}", index + 1, text));
         transcripts.push(text);
     }
@@ -202,6 +243,15 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     cleanup_files(&paths);
 
     let combined = normalize_text_for_output(&transcripts.join(" "), remove_newlines);
+    let alignment = if alignment_tokens.is_empty() {
+        None
+    } else {
+        Some(TranscriptionAlignment {
+            tokens: alignment_tokens,
+            timestamps_ms: alignment_timestamps_ms,
+            durations_ms: alignment_durations_ms,
+        })
+    };
     let transcription_elapsed_ms = elapsed_since_ms(transcription_started);
     dev_log(&format!("合并转写结果: {}", combined));
     let logger = |message: &str| dev_log(message);
@@ -218,6 +268,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                 false,
                 false,
                 Vec::new(),
+                alignment.clone(),
                 format!("触发词处理失败: {err}"),
             );
         }
@@ -242,6 +293,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                 result.triggered,
                 result.triggered_by_keyword,
                 result.trigger_matches,
+                alignment.clone(),
                 err,
             );
         }
@@ -258,6 +310,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             result.triggered,
             result.triggered_by_keyword,
             result.trigger_matches,
+            alignment.clone(),
             err,
         );
     }
@@ -272,6 +325,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
         result.triggered,
         result.triggered_by_keyword,
         result.trigger_matches,
+        alignment,
     )
 }
 
@@ -362,7 +416,9 @@ fn non_empty_value_or_dash(value: &str) -> &str {
 }
 
 fn sensevoice_model_group_name(local_model: &str) -> &'static str {
-    if local_model.eq_ignore_ascii_case("voxtral") {
+    if local_model.eq_ignore_ascii_case("sherpa-onnx-sensevoice") {
+        "Sherpa-ONNX SenseVoice"
+    } else if local_model.eq_ignore_ascii_case("voxtral") {
         "Voxtral"
     } else if local_model.eq_ignore_ascii_case("qwen3-asr") {
         "Qwen3-ASR"
@@ -403,6 +459,7 @@ fn processing_audio_error(
         false,
         false,
         Vec::new(),
+        None,
         format!("录音分段失败: {err}"),
     )
 }
@@ -417,6 +474,7 @@ fn processing_paste_error(
     triggered: bool,
     triggered_by_keyword: bool,
     trigger_matches: Vec<TriggerMatch>,
+    alignment: Option<TranscriptionAlignment>,
     err: PasteError,
 ) -> ProcessingOutcome {
     ProcessingOutcome::failed(
@@ -429,6 +487,7 @@ fn processing_paste_error(
         triggered,
         triggered_by_keyword,
         trigger_matches,
+        alignment,
         format!("写入剪贴板失败: {err}"),
     )
 }
