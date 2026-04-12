@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (for example 0.1.10)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -124,8 +129,25 @@ jobs:
         id: meta
         shell: bash
         run: |
-          VERSION=$(node -e "console.log(require('./package.json').version)")
+          VERSION="${{ github.event.inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Tauri release config
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          fs.writeFileSync(
+            '.ci-tauri-version.json',
+            JSON.stringify({ version: process.env.VERSION }, null, 2),
+          );
+          NODE
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
 
       - name: Validate updater signing key
         shell: bash
@@ -158,7 +180,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config .ci-tauri-version.json
 
       - name: Prepare artifacts
         shell: bash
@@ -244,7 +266,11 @@ jobs:
         id: meta
         shell: bash
         run: |
-          VERSION=$(node -e "console.log(require('./package.json').version)")
+          VERSION="${{ github.event.inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
@@ -320,6 +346,23 @@ jobs:
             ),
           );
           NODE
+
+      - name: Ensure release tag exists
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git rev-parse "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${VERSION} already exists"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${VERSION}"
+          git push origin "refs/tags/${VERSION}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

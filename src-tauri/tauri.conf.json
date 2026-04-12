@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "vtt-keyboard",
-  "version": "0.1.9",
   "identifier": "com.youtonghy.vtt-keyboard",
   "build": {
     "beforeDevCommand": "pnpm dev",
