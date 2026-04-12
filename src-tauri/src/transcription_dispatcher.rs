@@ -54,6 +54,7 @@ impl TranscriptionDispatcher {
                             triggered: outcome.triggered,
                             triggered_by_keyword: outcome.triggered_by_keyword,
                             trigger_matches: outcome.trigger_matches,
+                            alignment: outcome.alignment,
                             error_message: outcome.error_message,
                         };
 

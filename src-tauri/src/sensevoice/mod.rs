@@ -1,5 +1,8 @@
 pub mod client;
 pub mod manager;
+pub mod model;
+pub mod native_runtime;
+pub mod sherpa;
 pub mod worker;
 
 pub use manager::{SenseVoiceManager, SenseVoiceStatus};
