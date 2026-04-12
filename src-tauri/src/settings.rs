@@ -549,14 +549,25 @@ impl SettingsStore {
         }
     }
 
+    fn normalize(settings: &Settings) -> Settings {
+        let mut normalized = settings.clone();
+        normalize_sensevoice_settings(&mut normalized.sensevoice);
+        normalize_aliyun_settings(&mut normalized.aliyun, &normalized.provider);
+        normalize_text_processing_settings(&mut normalized);
+        normalized
+    }
+
     pub fn load(&self) -> Result<Settings, SettingsError> {
         let store = self
             .app
             .store(SETTINGS_FILE)
             .map_err(|err| SettingsError::Store(err.to_string()))?;
         let Some(payload) = store.get(SETTINGS_STORE_KEY) else {
-            let settings = Settings::default();
-            self.save(&settings)?;
+            // No settings stored yet — persist defaults directly to avoid
+            // calling save() which would deadlock when load() is invoked
+            // from save_sensevoice (write_lock already held).
+            let settings = Self::normalize(&Settings::default());
+            let _ = self.persist_settings(&settings);
             return Ok(settings);
         };
         let encoded = payload.as_str().ok_or_else(|| {
@@ -565,32 +576,31 @@ impl SettingsStore {
         let key = self.load_or_create_key()?;
         let decrypted = decrypt_payload(encoded, &key)?;
         match serde_json::from_str::<Settings>(&decrypted) {
-            Ok(mut settings) => {
-                normalize_sensevoice_settings(&mut settings.sensevoice);
-                normalize_aliyun_settings(&mut settings.aliyun, &settings.provider);
-                normalize_text_processing_settings(&mut settings);
-                Ok(settings)
-            }
+            Ok(settings) => Ok(Self::normalize(&settings)),
             Err(err) => {
                 eprintln!("[settings] 反序列化失败，将重置为默认设置: {err}");
-                let mut settings = Settings::default();
-                normalize_sensevoice_settings(&mut settings.sensevoice);
-                normalize_aliyun_settings(&mut settings.aliyun, &settings.provider);
-                normalize_text_processing_settings(&mut settings);
+                let settings = Self::normalize(&Settings::default());
                 let _ = self.persist_settings(&settings);
                 Ok(settings)
             }
         }
     }
-
+
+    #[allow(dead_code)]
     pub fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
-        let mut normalized = settings.clone();
-        normalize_sensevoice_settings(&mut normalized.sensevoice);
-        normalize_aliyun_settings(&mut normalized.aliyun, &normalized.provider);
-        normalize_text_processing_settings(&mut normalized);
+        let normalized = Self::normalize(settings);
         validate_settings(&normalized)?;
         self.persist_settings(&normalized)
+    }
+
+    /// Save settings and return the normalized version that was persisted.
+    pub fn save_and_return(&self, settings: &Settings) -> Result<Settings, SettingsError> {
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let normalized = Self::normalize(settings);
+        validate_settings(&normalized)?;
+        self.persist_settings(&normalized)?;
+        Ok(normalized)
     }
 
     pub fn load_sensevoice(&self) -> Result<SenseVoiceSettings, SettingsError> {

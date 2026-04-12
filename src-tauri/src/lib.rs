@@ -68,7 +68,7 @@ fn update_settings(
     app: tauri::AppHandle,
     state: State<AppState>,
     settings: Settings,
-) -> Result<(), String> {
+) -> Result<Settings, String> {
     let previous_local_model = state
         .settings_store
         .load()
@@ -76,9 +76,9 @@ fn update_settings(
         .sensevoice
         .local_model;
 
-    state
+    let persisted = state
         .settings_store
-        .save(&settings)
+        .save_and_return(&settings)
         .map_err(|err| err.to_string())?;
 
     updater::handle_settings_changed(app.clone(), state.settings_store.clone());
@@ -88,7 +88,9 @@ fn update_settings(
         &state,
         &previous_local_model,
         &settings.sensevoice.local_model,
-    )
+    )?;
+
+    Ok(persisted)
 }
 
 #[tauri::command]
@@ -166,11 +168,11 @@ fn export_settings(state: State<AppState>, path: String) -> Result<(), String> {
 fn import_settings(state: State<AppState>, path: String) -> Result<Settings, String> {
     let data = fs::read_to_string(path).map_err(|err| err.to_string())?;
     let settings: Settings = serde_json::from_str(&data).map_err(|err| err.to_string())?;
-    state
+    let persisted = state
         .settings_store
-        .save(&settings)
+        .save_and_return(&settings)
         .map_err(|err| err.to_string())?;
-    Ok(settings)
+    Ok(persisted)
 }
 
 #[tauri::command]

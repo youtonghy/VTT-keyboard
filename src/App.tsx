@@ -260,7 +260,7 @@ const buildHistoryPreview = (text: string, maxChars: number, ellipsis: string) =
 
 function App() {
   const { t, i18n } = useTranslation();
-  const { settings, loading, saveSettings } = useSettings();
+  const { settings, setSettings, loading, saveSettings } = useSettings();
   const { syncAutostart } = useAutostart();
   const autostartSyncedOnStartup = useRef(false);
   const [draft, setDraft] = useState<Settings | null>(null);
@@ -645,7 +645,7 @@ function App() {
       }
       toast.success(t("actions.saveSuccess"));
     } catch (err) {
-      toast.error(t("actions.saveError"));
+      toast.error(t("actions.saveError") + ": " + toErrorMessage(err));
     }
   };
 
@@ -660,7 +660,7 @@ function App() {
     }
     try {
       const data = await invoke<Settings>("import_settings", { path: selected });
-      setDraft(data);
+      setSettings(data);
       toast.success(t("data.importSuccess"));
     } catch (err) {
       toast.error(t("data.importError"));
