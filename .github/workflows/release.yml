@@ -89,19 +89,19 @@ jobs:
           SHERPA_VERSION="$(node -e "const fs=require('fs'); const manifest=fs.readFileSync('src-tauri/Cargo.toml','utf8'); const match=manifest.match(/sherpa-onnx\s*=\s*\{[^}]*version\s*=\s*\"([^\"]+)\"/m); if (!match) { throw new Error('sherpa-onnx dependency version not found in src-tauri/Cargo.toml'); } console.log(match[1]);")"
           case "${{ matrix.target }}" in
             x86_64-pc-windows-msvc)
-              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MT-Release-lib.tar.bz2"
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-win-x64-static-MT-Release-lib.tar.bz2"
               ;;
             x86_64-apple-darwin)
-              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-x64-shared-lib.tar.bz2"
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-x64-static-lib.tar.bz2"
               ;;
             aarch64-apple-darwin)
-              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-arm64-shared-lib.tar.bz2"
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-arm64-static-lib.tar.bz2"
               ;;
             x86_64-unknown-linux-gnu)
-              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-linux-x64-shared-lib.tar.bz2"
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-linux-x64-static-lib.tar.bz2"
               ;;
             aarch64-unknown-linux-gnu)
-              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-linux-aarch64-shared-cpu-lib.tar.bz2"
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-linux-aarch64-static-lib.tar.bz2"
               ;;
             *)
               echo "Unsupported Sherpa target: ${{ matrix.target }}"
