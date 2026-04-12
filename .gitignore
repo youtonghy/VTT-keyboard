@@ -30,7 +30,12 @@ AGENTS.md
 # Python cache
 __pycache__/
 *.pyc
-.codex/environments/environment.toml
+.codex/
 AGENTS.md
 .tauri-signing/
 .tauri/
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
