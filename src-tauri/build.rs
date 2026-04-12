@@ -8,11 +8,14 @@ fn main() {
     // Compile native status overlay for Windows
     #[cfg(target_os = "windows")]
     {
-        cc::Build::new()
+        let mut build = cc::Build::new();
+        build
             .cpp(true)
+            // Keep the overlay CRT aligned with Sherpa static prebuilt libs on Windows.
+            .static_crt(true)
             .include("native")
-            .file("native/status_overlay_win.cpp")
-            .compile("status_overlay");
+            .file("native/status_overlay_win.cpp");
+        build.compile("status_overlay");
 
         println!("cargo:rustc-link-lib=user32");
         println!("cargo:rustc-link-lib=gdi32");
