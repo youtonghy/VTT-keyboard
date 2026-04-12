@@ -225,6 +225,13 @@ const getQwenVariantByModelId = (modelId: string | undefined) => {
   return matched ? matched.value : DEFAULT_QWEN3_ASR_MODEL_ID;
 };
 
+interface AppInfoPayload {
+  buildDate: string;
+  platform: string;
+  arch: string;
+  supportsSherpaOnnxSenseVoice: boolean;
+}
+
 const formatHistoryTime = (timestampMs: number) => {
   if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
     return "--:-- --/--";
@@ -281,16 +288,19 @@ function App() {
   } = useSenseVoice(isSenseVoiceActive);
   const updater = useUpdater();
   const [isCapturing, setIsCapturing] = useState(false);
-  const [appInfo, setAppInfo] = useState<{
-    name: string;
-    version: string;
-    buildDate: string;
-  } | null>(null);
+  const [appInfo, setAppInfo] = useState<
+    ({ name: string; version: string } & AppInfoPayload) | null
+  >(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<TranscriptionHistoryItem[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] =
     useState<TranscriptionHistoryItem | null>(null);
   const [pendingSherpaAutoStart, setPendingSherpaAutoStart] = useState(false);
+  const supportsSherpaOnnxSenseVoice =
+    appInfo?.supportsSherpaOnnxSenseVoice ?? true;
+  const sherpaFallbackActive =
+    !supportsSherpaOnnxSenseVoice &&
+    normalizeLocalModel(settings?.sensevoice.localModel) === "sherpa-onnx-sensevoice";
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -305,6 +315,11 @@ function App() {
   useEffect(() => {
     if (settings) {
       const normalizedLocalModel = normalizeLocalModel(settings.sensevoice.localModel);
+      const effectiveLocalModel =
+        !supportsSherpaOnnxSenseVoice &&
+        normalizedLocalModel === "sherpa-onnx-sensevoice"
+          ? "sensevoice"
+          : normalizedLocalModel;
       const normalizedAliyunRegion = normalizeAliyunRegion(settings.aliyun.region);
       const effectiveAliyunRegion =
         settings.provider === "aliyun-paraformer" ? "beijing" : normalizedAliyunRegion;
@@ -312,15 +327,15 @@ function App() {
         ...settings,
         sensevoice: {
           ...settings.sensevoice,
-          localModel: normalizedLocalModel,
+          localModel: effectiveLocalModel,
           stopMode: normalizeStopMode(settings.sensevoice.stopMode),
           modelId: normalizeSenseVoiceModelId(
-            normalizedLocalModel,
+            effectiveLocalModel,
             settings.sensevoice.modelId
           ),
           language: normalizeSenseVoiceLanguage(settings.sensevoice.language),
           device: normalizeSenseVoiceDevice(
-            normalizedLocalModel,
+            effectiveLocalModel,
             settings.sensevoice.device
           ),
         },
@@ -343,7 +358,7 @@ function App() {
         },
       });
     }
-  }, [settings]);
+  }, [settings, supportsSherpaOnnxSenseVoice]);
 
   useEffect(() => {
     if (!settings || autostartSyncedOnStartup.current) {
@@ -360,9 +375,9 @@ function App() {
       const [name, version, info] = await Promise.all([
         getName(),
         getVersion(),
-        invoke<{ buildDate: string }>("get_app_info"),
+        invoke<AppInfoPayload>("get_app_info"),
       ]);
-      setAppInfo({ name, version, buildDate: info.buildDate });
+      setAppInfo({ name, version, ...info });
     };
     void fetchAppInfo();
   }, []);
@@ -805,7 +820,10 @@ function App() {
   }, [t, handleSenseVoicePrepare]);
 
   useEffect(() => {
-    if (!pendingSherpaAutoStart || !draft) {
+    if (!pendingSherpaAutoStart || !draft || !supportsSherpaOnnxSenseVoice) {
+      if (!supportsSherpaOnnxSenseVoice) {
+        setPendingSherpaAutoStart(false);
+      }
       return;
     }
     if (normalizeLocalModel(draft.sensevoice.localModel) !== "sherpa-onnx-sensevoice") {
@@ -820,7 +838,13 @@ function App() {
     }
     setPendingSherpaAutoStart(false);
     void handleSenseVoiceStart();
-  }, [draft, handleSenseVoiceStart, pendingSherpaAutoStart, sensevoiceStatus]);
+  }, [
+    draft,
+    handleSenseVoiceStart,
+    pendingSherpaAutoStart,
+    sensevoiceStatus,
+    supportsSherpaOnnxSenseVoice,
+  ]);
 
   if (loading || !draft) {
     return (
@@ -1590,6 +1614,26 @@ function App() {
                       const selectedQwenVariant = getQwenVariantByModelId(
                         draft.sensevoice.modelId
                       );
+                      const localModelOptions = [
+                        {
+                          value: "sensevoice",
+                          label: t("sensevoice.localModelSenseVoice"),
+                        },
+                        {
+                          value: "voxtral",
+                          label: t("sensevoice.localModelVoxtral"),
+                        },
+                        {
+                          value: "qwen3-asr",
+                          label: t("sensevoice.localModelQwen3Asr"),
+                        },
+                      ];
+                      if (supportsSherpaOnnxSenseVoice) {
+                        localModelOptions.splice(1, 0, {
+                          value: "sherpa-onnx-sensevoice",
+                          label: t("sensevoice.localModelSherpaOnnxSenseVoice"),
+                        });
+                      }
 
                       return (
                         <>
@@ -1642,26 +1686,15 @@ function App() {
                       };
     })
   }
-  options={[
-    {
-      value: "sensevoice",
-      label: t("sensevoice.localModelSenseVoice"),
-    },
-    {
-      value: "sherpa-onnx-sensevoice",
-      label: t("sensevoice.localModelSherpaOnnxSenseVoice"),
-    },
-    {
-      value: "voxtral",
-      label: t("sensevoice.localModelVoxtral"),
-    },
-    {
-      value: "qwen3-asr",
-      label: t("sensevoice.localModelQwen3Asr"),
-    }
-  ]}
+  options={localModelOptions}
 />
                     </label>
+
+                    {sherpaFallbackActive ? (
+                      <div className="sensevoice-hint">
+                        {t("sensevoice.sherpaUnsupportedFallbackHint")}
+                      </div>
+                    ) : null}
 
                     {isSherpaSelected ? (
                       <label className="field">

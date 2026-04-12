@@ -1,5 +1,5 @@
 use crate::settings::{OpenAiSettings, Settings};
-use reqwest::blocking::{Client, multipart};
+use reqwest::blocking::{multipart, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -78,12 +78,20 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
     Ok(data.text)
 }
 
-pub fn generate_text(settings: &Settings, input: &str, instructions: &str) -> Result<String, OpenAiError> {
+pub fn generate_text(
+    settings: &Settings,
+    input: &str,
+    instructions: &str,
+) -> Result<String, OpenAiError> {
     ensure_auth(&settings.openai)?;
     let request = ResponseRequest {
         model: &settings.openai.text.model,
         input,
-        instructions: if instructions.is_empty() { None } else { Some(instructions) },
+        instructions: if instructions.is_empty() {
+            None
+        } else {
+            Some(instructions)
+        },
         max_output_tokens: Some(settings.openai.text.max_output_tokens),
         temperature: Some(settings.openai.text.temperature),
         top_p: Some(settings.openai.text.top_p),
@@ -124,7 +132,10 @@ fn build_transcription_form(
 ) -> Result<multipart::Form, OpenAiError> {
     let mut form = multipart::Form::new()
         .text("model", settings.speech_to_text.model.clone())
-        .part("file", multipart::Part::bytes(bytes).file_name(filename.to_string()));
+        .part(
+            "file",
+            multipart::Part::bytes(bytes).file_name(filename.to_string()),
+        );
 
     if !settings.speech_to_text.language.trim().is_empty() {
         form = form.text("language", settings.speech_to_text.language.clone());
@@ -133,15 +144,24 @@ fn build_transcription_form(
         form = form.text("prompt", settings.speech_to_text.prompt.clone());
     }
     if !settings.speech_to_text.response_format.trim().is_empty() {
-        form = form.text("response_format", settings.speech_to_text.response_format.clone());
+        form = form.text(
+            "response_format",
+            settings.speech_to_text.response_format.clone(),
+        );
     }
-    form = form.text("temperature", settings.speech_to_text.temperature.to_string());
+    form = form.text(
+        "temperature",
+        settings.speech_to_text.temperature.to_string(),
+    );
 
     if settings.speech_to_text.stream {
         form = form.text("stream", "true");
     }
     if !settings.speech_to_text.chunking_strategy.trim().is_empty() {
-        form = form.text("chunking_strategy", settings.speech_to_text.chunking_strategy.clone());
+        form = form.text(
+            "chunking_strategy",
+            settings.speech_to_text.chunking_strategy.clone(),
+        );
     }
     for value in &settings.speech_to_text.include {
         form = form.text("include[]", value.clone());
@@ -183,14 +203,11 @@ fn parse_streamed_text(body: &str) -> Result<String, OpenAiError> {
         if payload == "[DONE]" {
             break;
         }
-        let value: Value = serde_json::from_str(payload)
-            .map_err(|err| OpenAiError::Parse(err.to_string()))?;
+        let value: Value =
+            serde_json::from_str(payload).map_err(|err| OpenAiError::Parse(err.to_string()))?;
         if let Some(text) = value.get("text").and_then(|val| val.as_str()) {
             output.push_str(text);
-        } else if let Some(text) = value
-            .pointer("/delta/text")
-            .and_then(|val| val.as_str())
-        {
+        } else if let Some(text) = value.pointer("/delta/text").and_then(|val| val.as_str()) {
             output.push_str(text);
         }
     }

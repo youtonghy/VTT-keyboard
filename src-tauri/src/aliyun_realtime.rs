@@ -50,7 +50,10 @@ enum ServerEventAction {
     TaskFinished,
 }
 
-pub fn transcribe_asr(settings: &Settings, audio_path: &Path) -> Result<String, AliyunRealtimeError> {
+pub fn transcribe_asr(
+    settings: &Settings,
+    audio_path: &Path,
+) -> Result<String, AliyunRealtimeError> {
     transcribe_realtime(settings, audio_path, ProviderKind::FunAsr)
 }
 
@@ -88,7 +91,8 @@ fn transcribe_realtime(
         "X-DashScope-DataInspection",
         HeaderValue::from_static("disable"),
     );
-    let (mut socket, _) = connect(request).map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
+    let (mut socket, _) =
+        connect(request).map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
 
     let task_id = uuid_simple();
     let start_message = build_run_task_message(settings, provider, &task_id);
@@ -389,7 +393,11 @@ fn extract_error_message(value: &Value) -> String {
     value
         .pointer("/header/error_message")
         .and_then(|v| v.as_str())
-        .or_else(|| value.pointer("/header/errorMessage").and_then(|v| v.as_str()))
+        .or_else(|| {
+            value
+                .pointer("/header/errorMessage")
+                .and_then(|v| v.as_str())
+        })
         .or_else(|| value.pointer("/payload/message").and_then(|v| v.as_str()))
         .unwrap_or("阿里云任务失败")
         .to_string()
@@ -398,7 +406,8 @@ fn extract_error_message(value: &Value) -> String {
 fn read_wav_as_pcm16k_mono(path: &Path) -> Result<Vec<u8>, AliyunRealtimeError> {
     let bytes = fs::read(path).map_err(|err| AliyunRealtimeError::Io(err.to_string()))?;
     let cursor = std::io::Cursor::new(bytes);
-    let mut reader = WavReader::new(cursor).map_err(|err| AliyunRealtimeError::Io(err.to_string()))?;
+    let mut reader =
+        WavReader::new(cursor).map_err(|err| AliyunRealtimeError::Io(err.to_string()))?;
     let spec = reader.spec();
     if spec.channels == 0 {
         return Err(AliyunRealtimeError::Io("音频通道数无效".to_string()));

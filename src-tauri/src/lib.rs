@@ -13,8 +13,8 @@ mod updater;
 mod volcengine;
 
 use recorder::RecorderService;
+use sensevoice::model::{spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind};
 use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
-use sensevoice::model::{spec_for_local_model, LocalRuntimeKind};
 use settings::{
     SenseVoiceSettings, Settings, SettingsStore, TranscriptionHistoryItem, TranscriptionProvider,
 };
@@ -189,7 +189,9 @@ fn stop_recording(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_transcription_history(state: State<AppState>) -> Result<Vec<TranscriptionHistoryItem>, String> {
+fn get_transcription_history(
+    state: State<AppState>,
+) -> Result<Vec<TranscriptionHistoryItem>, String> {
     state
         .settings_store
         .load_transcription_history()
@@ -210,11 +212,16 @@ fn get_sensevoice_status(state: State<AppState>) -> Result<SenseVoiceStatus, Str
         .sensevoice_manager
         .lock()
         .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
-    manager.status(&state.settings_store).map_err(|err| err.to_string())
+    manager
+        .status(&state.settings_store)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-fn prepare_sensevoice(app: tauri::AppHandle, state: State<AppState>) -> Result<SenseVoiceStatus, String> {
+fn prepare_sensevoice(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
     let mut manager = state
         .sensevoice_manager
         .lock()
@@ -352,7 +359,10 @@ fn retry_update_check(app: AppHandle, state: State<AppState>) -> Result<(), Stri
 #[tauri::command]
 fn get_app_info() -> serde_json::Value {
     serde_json::json!({
-        "buildDate": env!("BUILD_DATE")
+        "buildDate": env!("BUILD_DATE"),
+        "platform": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "supportsSherpaOnnxSenseVoice": supports_sherpa_onnx_target(),
     })
 }
 
@@ -374,11 +384,11 @@ pub fn run() {
                 .map_err(|err| err.to_string())?;
 
             #[cfg(desktop)]
-            if let Err(err) = app.handle().plugin(tauri_plugin_autostart::init(
+            if let Err(_err) = app.handle().plugin(tauri_plugin_autostart::init(
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 Some(vec!["--autostart"]),
             )) {
-                dev_eprintln!("failed to initialize autostart plugin: {err}");
+                dev_eprintln!("failed to initialize autostart plugin: {_err}");
             }
 
             let app_handle = app.handle();
@@ -419,15 +429,16 @@ pub fn run() {
             std::thread::spawn(move || {
                 let settings = match startup_store.load() {
                     Ok(value) => value,
-                    Err(err) => {
-                        dev_eprintln!("failed to read settings on startup: {err}");
+                    Err(_err) => {
+                        dev_eprintln!("failed to read settings on startup: {_err}");
                         return;
                     }
                 };
                 if settings.provider != TranscriptionProvider::Sensevoice {
                     return;
                 }
-                let runtime_kind = spec_for_local_model(&settings.sensevoice.local_model).runtime_kind;
+                let runtime_kind =
+                    spec_for_local_model(&settings.sensevoice.local_model).runtime_kind;
                 if !is_autostart_launch
                     && runtime_kind == LocalRuntimeKind::Native
                     && !settings.sensevoice.installed
@@ -443,9 +454,9 @@ pub fn run() {
                     dev_eprintln!("failed to lock SenseVoice manager on startup");
                     return;
                 };
-                if let Err(err) = manager.start_service_async(&startup_app, &state.settings_store)
+                if let Err(_err) = manager.start_service_async(&startup_app, &state.settings_store)
                 {
-                    dev_eprintln!("failed to auto start SenseVoice on startup: {err}");
+                    dev_eprintln!("failed to auto start SenseVoice on startup: {_err}");
                 }
             });
 

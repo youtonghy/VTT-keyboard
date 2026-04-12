@@ -1,3 +1,4 @@
+use super::sherpa;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs;
@@ -10,7 +11,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 use url::Url;
-use super::sherpa;
 
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const DOCKER_BUILD_TIMEOUT_SECS: u64 = 40 * 60;
@@ -80,8 +80,10 @@ pub enum WorkerEvent {
 
 pub fn run_worker(job_file: &str) -> i32 {
     let run_result = (|| -> Result<(), String> {
-        let data = fs::read_to_string(job_file).map_err(|err| format!("读取任务文件失败: {err}"))?;
-        let job: WorkerJob = serde_json::from_str(&data).map_err(|err| format!("任务参数解析失败: {err}"))?;
+        let data =
+            fs::read_to_string(job_file).map_err(|err| format!("读取任务文件失败: {err}"))?;
+        let job: WorkerJob =
+            serde_json::from_str(&data).map_err(|err| format!("任务参数解析失败: {err}"))?;
         run_prepare_job(&job)
     })();
 
@@ -106,7 +108,14 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
     if is_vllm_local_model(local_model) {
         ensure_docker_available()?;
         let model_display = vllm_model_display_name(local_model);
-        emit_progress("install", "Pulling vLLM Docker image", Some(35), None, None, None);
+        emit_progress(
+            "install",
+            "Pulling vLLM Docker image",
+            Some(35),
+            None,
+            None,
+            None,
+        );
         ensure_vllm_image(|line| {
             emit_progress(
                 "install",
@@ -135,16 +144,19 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
     if local_model == LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE {
         let models_dir = Path::new(&job.models_dir);
         emit_state("downloading", "", None, None);
-        sherpa::prepare_model(models_dir, |line, percent, downloaded_bytes, total_bytes| {
-            emit_progress(
-                "download",
-                "Downloading Sherpa-ONNX SenseVoice model",
-                percent,
-                Some(line.to_string()),
-                downloaded_bytes,
-                total_bytes,
-            );
-        })
+        sherpa::prepare_model(
+            models_dir,
+            |line, percent, downloaded_bytes, total_bytes| {
+                emit_progress(
+                    "download",
+                    "Downloading Sherpa-ONNX SenseVoice model",
+                    percent,
+                    Some(line.to_string()),
+                    downloaded_bytes,
+                    total_bytes,
+                );
+            },
+        )
         .map_err(|err| err.to_string())?;
         emit_state("ready", "", Some(true), Some(true));
         emit_progress(
@@ -162,7 +174,14 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
     }
 
     ensure_docker_available()?;
-    emit_progress("install", "Building Docker image", Some(35), None, None, None);
+    emit_progress(
+        "install",
+        "Building Docker image",
+        Some(35),
+        None,
+        None,
+        None,
+    );
     ensure_runtime_image(job, |line| {
         emit_progress(
             "install",
@@ -175,7 +194,14 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
     })?;
 
     emit_state("downloading", "", None, None);
-    emit_progress("download", "Downloading SenseVoice model", Some(60), None, None, None);
+    emit_progress(
+        "download",
+        "Downloading SenseVoice model",
+        Some(60),
+        None,
+        None,
+        None,
+    );
     download_model(job, |line| {
         emit_progress(
             "download",
@@ -188,11 +214,25 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
     })?;
 
     emit_state("validating", "", Some(true), None);
-    emit_progress("verify", "Starting SenseVoice service", Some(85), None, None, None);
+    emit_progress(
+        "verify",
+        "Starting SenseVoice service",
+        Some(85),
+        None,
+        None,
+        None,
+    );
     start_service(job)?;
 
     emit_state("ready", "", Some(true), Some(true));
-    emit_progress("done", "SenseVoice service started", Some(100), None, None, None);
+    emit_progress(
+        "done",
+        "SenseVoice service started",
+        Some(100),
+        None,
+        None,
+        None,
+    );
     emit_event(&WorkerEvent::Done {
         message: "SenseVoice prepare completed".to_string(),
     });
@@ -201,7 +241,10 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
 
 fn ensure_docker_available() -> Result<(), String> {
     let mut version = docker_command();
-    version.arg("version").arg("--format").arg("{{.Client.Version}}");
+    version
+        .arg("version")
+        .arg("--format")
+        .arg("{{.Client.Version}}");
     hide_window(&mut version);
     let output = version
         .output()
@@ -221,7 +264,9 @@ fn ensure_docker_available() -> Result<(), String> {
         .map_err(|err| format!("无法连接 Docker daemon: {err}"))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("Docker daemon 未运行，请先启动 Docker Desktop: {detail}"));
+        return Err(format!(
+            "Docker daemon 未运行，请先启动 Docker Desktop: {detail}"
+        ));
     }
     Ok(())
 }
@@ -287,8 +332,8 @@ fn runtime_stamp(runtime_dir: &Path) -> Result<String, String> {
     let files = ["prepare.py", "server.py", "requirements.txt", "Dockerfile"];
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     for file in files {
-        let data =
-            fs::read(runtime_dir.join(file)).map_err(|err| format!("读取运行时文件失败({file}): {err}"))?;
+        let data = fs::read(runtime_dir.join(file))
+            .map_err(|err| format!("读取运行时文件失败({file}): {err}"))?;
         data.hash(&mut hasher);
     }
     Ok(format!("{:x}", hasher.finish()))
@@ -393,7 +438,11 @@ fn start_service(job: &WorkerJob) -> Result<(), String> {
         &hub,
     )?;
 
-    wait_health(&job.container_name, &job.service_url, Duration::from_secs(SERVICE_START_TIMEOUT_SECS))
+    wait_health(
+        &job.container_name,
+        &job.service_url,
+        Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
+    )
 }
 
 fn run_service_container(
@@ -555,7 +604,9 @@ where
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     hide_window(command);
 
-    let mut child = command.spawn().map_err(|err| format!("{step}失败: {err}"))?;
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("{step}失败: {err}"))?;
 
     let stdout = child
         .stdout

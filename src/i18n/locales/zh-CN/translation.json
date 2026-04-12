@@ -116,6 +116,7 @@
                        "deviceAuto":  "自动（优先 GPU）",
                        "deviceCpu":  "CPU",
                        "deviceCuda":  "CUDA",
+                       "sherpaUnsupportedFallbackHint":  "当前平台不支持 Sherpa-ONNX，已自动降级为 Docker 本地模型方案。",
                        "sherpaCpuOnlyHint":  "Sherpa-ONNX SenseVoice 当前以本地 CPU 运行，并会保留对齐时间戳，供后续字幕功能使用。",
                        "voxtralCudaOnlyHint":  "Voxtral 仅支持 CUDA（NVIDIA GPU），且已禁用 FlashAttention。",
                        "qwenCudaOnlyHint":  "Qwen3-ASR 当前通过 vLLM Docker 运行，仅支持 CUDA（NVIDIA GPU）。",

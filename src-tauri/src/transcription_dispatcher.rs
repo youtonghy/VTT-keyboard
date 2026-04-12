@@ -58,15 +58,15 @@ impl TranscriptionDispatcher {
                             error_message: outcome.error_message,
                         };
 
-                        if let Err(err) = store.append_transcription_history(item.clone()) {
+                        if let Err(_err) = store.append_transcription_history(item.clone()) {
                             #[cfg(debug_assertions)]
-                            eprintln!("写入历史记录失败: {err}");
+                            eprintln!("写入历史记录失败: {_err}");
                             continue;
                         }
 
-                        if let Err(err) = app.emit("transcription-history-appended", &item) {
+                        if let Err(_err) = app.emit("transcription-history-appended", &item) {
                             #[cfg(debug_assertions)]
-                            eprintln!("发送历史记录事件失败: {err}");
+                            eprintln!("发送历史记录事件失败: {_err}");
                         }
                     }
                     DispatchMessage::Shutdown => break,

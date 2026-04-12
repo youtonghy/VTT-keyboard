@@ -47,13 +47,15 @@ fn write_wav(
         bits_per_sample: 16,
         sample_format: SampleFormat::Int,
     };
-    let mut writer = WavWriter::create(path, spec)
-        .map_err(|err| AudioProcessingError::Io(err.to_string()))?;
+    let mut writer =
+        WavWriter::create(path, spec).map_err(|err| AudioProcessingError::Io(err.to_string()))?;
     for sample in samples {
         writer
             .write_sample(*sample)
             .map_err(|err| AudioProcessingError::Io(err.to_string()))?;
     }
-    writer.finalize().map_err(|err| AudioProcessingError::Io(err.to_string()))?;
+    writer
+        .finalize()
+        .map_err(|err| AudioProcessingError::Io(err.to_string()))?;
     Ok(())
 }

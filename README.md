@@ -18,11 +18,12 @@ SenseVoice local mode now runs with Docker only. Python runtime on host is no lo
    - First run will build image `vtt-sensevoice:local` and download model.
 4. Click `Start Service` to run the containerized service.
 
-## Local Models (SenseVoice / Voxtral / Qwen3-ASR)
+## Local Models (SenseVoice / Sherpa-ONNX / Voxtral / Qwen3-ASR)
 
-Local mode supports switching between three local models:
+Local mode supports switching between four local models:
 
 - `SenseVoice` (default)
+- `Sherpa-ONNX SenseVoice` (native runtime, disabled on Windows ARM64 builds)
 - `mistralai/Voxtral-Mini-4B-Realtime-2602` (via vLLM Docker image)
 - `Qwen3-ASR` (via vLLM Docker image, default variant `Qwen/Qwen3-ASR-1.7B`)
 
@@ -46,6 +47,15 @@ Qwen3-ASR runtime notes:
   - `Qwen/Qwen3-ASR-0.6B`
   - `Qwen/Qwen3-ForcedAligner-0.6B`
 - CUDA GPU is required via Docker GPU runtime (`--runtime nvidia --gpus all`).
+
+## Release / Updater Signing
+
+GitHub Actions release builds require updater signing secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY`: updater private key content or a path available in CI
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: password matching that private key
+
+The workflow now runs a small `tauri signer sign` smoke test before `tauri build`, so secret mismatches fail fast instead of failing only after packaging completes.
 
 ## Runtime Notes
 

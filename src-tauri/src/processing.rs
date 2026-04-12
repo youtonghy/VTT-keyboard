@@ -1,5 +1,5 @@
-use crate::audio_processing::{self, AudioProcessingError};
 use crate::aliyun_realtime;
+use crate::audio_processing::{self, AudioProcessingError};
 use crate::paste::{self, PasteError};
 use crate::recorder::RecordedAudio;
 use crate::sensevoice;
@@ -22,10 +22,10 @@ const VOLCENGINE_STREAMING_CLUSTER: &str = "volcengine_streaming_common";
 const ALIYUN_ASR_MODEL: &str = "fun-asr-realtime";
 const ALIYUN_PARAFORMER_MODEL: &str = "paraformer-realtime-v2";
 
-fn dev_log(message: &str) {
+fn dev_log(_message: &str) {
     #[cfg(debug_assertions)]
     {
-        eprintln!("[DEV] {}", message);
+        eprintln!("[DEV] {}", _message);
     }
 }
 
@@ -275,7 +275,11 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     };
     dev_log(&format!(
         "触发词处理: {}",
-        if result.triggered { "已触发" } else { "未触发" }
+        if result.triggered {
+            "已触发"
+        } else {
+            "未触发"
+        }
     ));
     dev_log(&format!("触发词输出: {}", result.output));
     let final_output = normalize_text_for_output(&result.output, remove_newlines);
@@ -381,7 +385,10 @@ fn remove_line_breaks(text: &str) -> String {
 fn resolve_model_group(settings: &Settings) -> String {
     match settings.provider {
         TranscriptionProvider::Openai => {
-            format!("OpenAI / {}", non_empty_value_or_dash(&settings.openai.speech_to_text.model))
+            format!(
+                "OpenAI / {}",
+                non_empty_value_or_dash(&settings.openai.speech_to_text.model)
+            )
         }
         TranscriptionProvider::Volcengine => {
             if settings.volcengine.use_streaming {
@@ -534,10 +541,7 @@ mod tests {
             },
             ..settings.openai.clone()
         };
-        assert_eq!(
-            resolve_model_group(&settings),
-            "OpenAI / gpt-4o-transcribe"
-        );
+        assert_eq!(resolve_model_group(&settings), "OpenAI / gpt-4o-transcribe");
 
         settings.provider = TranscriptionProvider::Volcengine;
         settings.volcengine = VolcengineSettings {
@@ -560,7 +564,10 @@ mod tests {
 
         settings.provider = TranscriptionProvider::AliyunAsr;
         settings.aliyun = AliyunSettings::default();
-        assert_eq!(resolve_model_group(&settings), "Aliyun ASR / fun-asr-realtime");
+        assert_eq!(
+            resolve_model_group(&settings),
+            "Aliyun ASR / fun-asr-realtime"
+        );
 
         settings.provider = TranscriptionProvider::AliyunParaformer;
         assert_eq!(

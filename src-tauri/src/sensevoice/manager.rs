@@ -205,7 +205,8 @@ impl SenseVoiceManager {
         let paths = ensure_paths(app)?;
         native_runtime::set_models_root(paths.models_dir.clone());
         if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
-            self.native_prepare_in_progress.store(true, Ordering::Relaxed);
+            self.native_prepare_in_progress
+                .store(true, Ordering::Relaxed);
             self.update_state(store, "downloading", "", None, None)?;
             let app_handle = app.clone();
             let store_clone = store.clone();
@@ -292,9 +293,8 @@ impl SenseVoiceManager {
         let store_clone = store.clone();
         let cancel_flag = Arc::clone(&self.start_cancel_flag);
         let local_model = local_model.to_string();
-        let try_resume_paused =
-            local_model_spec.runtime_kind == LocalRuntimeKind::Docker
-                && runtime_state == RuntimeState::Paused;
+        let try_resume_paused = local_model_spec.runtime_kind == LocalRuntimeKind::Docker
+            && runtime_state == RuntimeState::Paused;
         thread::spawn(move || {
             run_startup_task(
                 app_handle,
@@ -1296,8 +1296,12 @@ fn cleanup_runtime_state(app: &AppHandle) {
     if let Ok(mut manager) = app.state::<AppState>().sensevoice_manager.lock() {
         manager.stop_log_stream();
         manager.container_name = None;
-        manager.container_running_cache.store(false, Ordering::Relaxed);
-        manager.container_paused_cache.store(false, Ordering::Relaxed);
+        manager
+            .container_running_cache
+            .store(false, Ordering::Relaxed);
+        manager
+            .container_paused_cache
+            .store(false, Ordering::Relaxed);
     }
 }
 
@@ -1567,11 +1571,7 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
     let _ = app.emit("sensevoice-progress", payload);
 
     let mut build = docker_command();
-    build
-        .arg("build")
-        .arg("-t")
-        .arg(image_tag)
-        .arg(runtime_dir);
+    build.arg("build").arg("-t").arg(image_tag).arg(runtime_dir);
     run_command_streaming(
         &mut build,
         "构建 SenseVoice Docker 镜像",
@@ -1831,7 +1831,11 @@ fn docker_container_running(name: &str) -> Result<bool, SenseVoiceError> {
 
 fn docker_container_state(name: &str) -> Result<RuntimeState, SenseVoiceError> {
     let mut command = docker_command();
-    command.arg("inspect").arg("-f").arg("{{.State.Status}}").arg(name);
+    command
+        .arg("inspect")
+        .arg("-f")
+        .arg("{{.State.Status}}")
+        .arg(name);
     hide_window(&mut command);
     let output = command
         .output()
@@ -1846,7 +1850,9 @@ fn docker_container_state(name: &str) -> Result<RuntimeState, SenseVoiceError> {
             detail.trim()
         )));
     }
-    let status = String::from_utf8_lossy(&output.stdout).trim().to_ascii_lowercase();
+    let status = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .to_ascii_lowercase();
     if status == "running" {
         return Ok(RuntimeState::Running);
     }
@@ -2343,9 +2349,7 @@ fn extract_port_from_url(service_url: &str) -> Option<u16> {
 fn docker_exec_health_check(container: &str, port: u16) -> bool {
     let mut health_urls = vec![format!("http://127.0.0.1:{port}/health")];
     if port != VLLM_INTERNAL_PORT {
-        health_urls.push(format!(
-            "http://127.0.0.1:{VLLM_INTERNAL_PORT}/health"
-        ));
+        health_urls.push(format!("http://127.0.0.1:{VLLM_INTERNAL_PORT}/health"));
     }
 
     for health_url in health_urls {

@@ -127,6 +127,10 @@ pub fn normalize_local_model(value: &str) -> &'static str {
     spec_for_local_model(value).model_key
 }
 
+pub fn supports_sherpa_onnx_target() -> bool {
+    !cfg!(all(target_os = "windows", target_arch = "aarch64"))
+}
+
 pub fn is_vllm_local_model(value: &str) -> bool {
     spec_for_local_model(value).is_vllm
 }

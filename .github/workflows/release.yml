@@ -87,6 +87,29 @@ jobs:
           VERSION=$(node -e "console.log(require('./package.json').version)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Validate updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY is missing"
+            exit 1
+          fi
+
+          TMP_FILE="$(mktemp)"
+          printf 'signer-smoke-test' > "$TMP_FILE"
+
+          if [ -f "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            pnpm tauri signer sign --private-key-path "$TAURI_SIGNING_PRIVATE_KEY" --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" "$TMP_FILE" >/dev/null
+          else
+            pnpm tauri signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" "$TMP_FILE" >/dev/null
+          fi
+
+          rm -f "$TMP_FILE" "$TMP_FILE.sig"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

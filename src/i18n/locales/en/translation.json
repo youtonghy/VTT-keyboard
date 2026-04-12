@@ -116,6 +116,7 @@
     "deviceAuto": "Auto (Prefer GPU)",
     "deviceCpu": "CPU",
     "deviceCuda": "CUDA",
+    "sherpaUnsupportedFallbackHint": "Sherpa-ONNX is not available on this platform, so the app has automatically fallen back to the Docker local-model workflow.",
     "sherpaCpuOnlyHint": "Sherpa-ONNX SenseVoice currently runs locally on CPU and keeps alignment timestamps for later subtitle features.",
     "voxtralCudaOnlyHint": "Voxtral requires CUDA (NVIDIA GPU) and runs with FlashAttention disabled.",
     "qwenCudaOnlyHint": "Qwen3-ASR currently runs via vLLM Docker and requires CUDA (NVIDIA GPU).",

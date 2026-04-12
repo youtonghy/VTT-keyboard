@@ -1,3 +1,4 @@
+use crate::sensevoice::model::supports_sherpa_onnx_target;
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use base64::{engine::general_purpose, Engine as _};
@@ -40,7 +41,9 @@ const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
 pub enum SettingsError {
     #[error("闂佸搫鍟版慨鐢垫兜閸洘鍤旂€瑰嫭婢樼徊鍧楀箹鐎涙ɑ鈷掗柡浣靛€濋幆鍕敊閼测晝协: {0}")]
     PathResolve(String),
-    #[error("闂佸搫鍟版慨鐢垫兜閸撲焦瀚氶悹鍥ㄥ絻閺呮悂鎮规担绋库挃闁汇倕妫濆顒勫炊閿旂瓔鍋? {0}")]
+    #[error(
+        "闂佸搫鍟版慨鐢垫兜閸撲焦瀚氶悹鍥ㄥ絻閺呮悂鎮规担绋库挃闁汇倕妫濆顒勫炊閿旂瓔鍋? {0}"
+    )]
     Io(String),
     #[error("闂佸搫鍟版慨鐢垫兜閼搁潧绶為柛鏇ㄥ幗閸婄偤鏌涢弮鍌毿㈤柣锔藉灴瀵偊鎮ч崼婵堛偊: {0}")]
     Crypto(String),
@@ -485,13 +488,17 @@ impl SettingsStore {
             self.save(&settings)?;
             return Ok(settings);
         };
-        let encoded = payload
-            .as_str()
-            .ok_or_else(|| SettingsError::Serde("settings payload has invalid format".to_string()))?;
+        let encoded = payload.as_str().ok_or_else(|| {
+            SettingsError::Serde("settings payload has invalid format".to_string())
+        })?;
         let key = self.load_or_create_key()?;
         let decrypted = decrypt_payload(encoded, &key)?;
-        match serde_json::from_str(&decrypted) {
-            Ok(settings) => Ok(settings),
+        match serde_json::from_str::<Settings>(&decrypted) {
+            Ok(mut settings) => {
+                normalize_sensevoice_settings(&mut settings.sensevoice);
+                normalize_aliyun_settings(&mut settings.aliyun, &settings.provider);
+                Ok(settings)
+            }
             Err(_) => {
                 let settings = Settings::default();
                 let _ = self.save(&settings);
@@ -542,7 +549,9 @@ impl SettingsStore {
         self.persist_settings(&settings)
     }
 
-    pub fn load_transcription_history(&self) -> Result<Vec<TranscriptionHistoryItem>, SettingsError> {
+    pub fn load_transcription_history(
+        &self,
+    ) -> Result<Vec<TranscriptionHistoryItem>, SettingsError> {
         let store = self
             .app
             .store(SETTINGS_FILE)
@@ -605,13 +614,12 @@ impl SettingsStore {
             Ok(value) => value,
             Err(_) => return Ok(None),
         };
-        Ok(state.deferred_version.filter(|value| !value.trim().is_empty()))
+        Ok(state
+            .deferred_version
+            .filter(|value| !value.trim().is_empty()))
     }
 
-    pub fn save_deferred_update_version(
-        &self,
-        version: Option<&str>,
-    ) -> Result<(), SettingsError> {
+    pub fn save_deferred_update_version(&self, version: Option<&str>) -> Result<(), SettingsError> {
         let deferred_version = version
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -744,7 +752,10 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
 
 fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
     sensevoice.stop_mode = normalize_stop_mode(&sensevoice.stop_mode).to_string();
-    if sensevoice.local_model.eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL) {
+    if sensevoice
+        .local_model
+        .eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL)
+    {
         sensevoice.local_model = LOCAL_MODEL_VOXTRAL.to_string();
         sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
         sensevoice.model_id = DEFAULT_VOXTRAL_MODEL_ID.to_string();
@@ -765,6 +776,12 @@ fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
         .local_model
         .eq_ignore_ascii_case(LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE)
     {
+        if !supports_sherpa_onnx_target() {
+            sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
+            sensevoice.model_id = DEFAULT_SENSEVOICE_MODEL_ID.to_string();
+            sensevoice.language = default_sensevoice_language();
+            return;
+        }
         sensevoice.local_model = LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE.to_string();
         sensevoice.device = "cpu".to_string();
         sensevoice.model_id = DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID.to_string();
@@ -949,9 +966,13 @@ fn validate_sensevoice_settings(sensevoice: &SenseVoiceSettings) -> Result<(), S
             "SenseVoice 闂佽浜介崝搴ㄥ箖婵犲嫭濯奸柟顖嗗本校婵炲濮撮幊蹇涘极椤曗偓楠?auto/cpu/cuda".to_string(),
         ));
     }
-    if !matches!(sensevoice.stop_mode.as_str(), STOP_MODE_STOP | STOP_MODE_PAUSE) {
+    if !matches!(
+        sensevoice.stop_mode.as_str(),
+        STOP_MODE_STOP | STOP_MODE_PAUSE
+    ) {
         return Err(SettingsError::Serde(
-            "SenseVoice 闂佺顑嗙划宥夘敆濞戞鐔煎灳瀹曞洨顢呮繛瀵稿Т閹冲繘寮鈧獮?stop/pause".to_string(),
+            "SenseVoice 闂佺顑嗙划宥夘敆濞戞鐔煎灳瀹曞洨顢呮繛瀵稿Т閹冲繘寮鈧獮?stop/pause"
+                .to_string(),
         ));
     }
     if sensevoice.local_model == LOCAL_MODEL_VOXTRAL && sensevoice.device != VOXTRAL_REQUIRED_DEVICE

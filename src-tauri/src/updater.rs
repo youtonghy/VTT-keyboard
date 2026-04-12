@@ -131,6 +131,10 @@ where
             }
         }
     }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = (app, context, error);
+    }
 }
 
 fn stringify_update_error<E>(app: &AppHandle, context: &str, error: E) -> String
@@ -141,7 +145,10 @@ where
     error.to_string()
 }
 
-fn with_manager<R>(app: &AppHandle, updater: impl FnOnce(&mut UpdateManager) -> R) -> Result<R, String> {
+fn with_manager<R>(
+    app: &AppHandle,
+    updater: impl FnOnce(&mut UpdateManager) -> R,
+) -> Result<R, String> {
     let state = app.state::<AppState>();
     let mut manager = state
         .updater_manager
@@ -195,7 +202,11 @@ pub fn schedule_update_check(app: AppHandle, store: SettingsStore, force: bool) 
     });
 }
 
-async fn check_for_updates(app: AppHandle, store: SettingsStore, force: bool) -> Result<(), String> {
+async fn check_for_updates(
+    app: AppHandle,
+    store: SettingsStore,
+    force: bool,
+) -> Result<(), String> {
     if !force && !should_auto_check(&store) {
         let status = with_manager(&app, |manager| {
             if manager.pending_update.is_none()
@@ -212,7 +223,8 @@ async fn check_for_updates(app: AppHandle, store: SettingsStore, force: bool) ->
     }
 
     let current_status = with_manager(&app, |manager| {
-        if manager.check_in_progress || manager.download_in_progress || manager.install_in_progress {
+        if manager.check_in_progress || manager.download_in_progress || manager.install_in_progress
+        {
             return Some(manager.status.clone());
         }
         manager.check_in_progress = true;
@@ -284,7 +296,8 @@ async fn check_for_updates(app: AppHandle, store: SettingsStore, force: bool) ->
 
 fn download_pending_update(app: AppHandle, install_after_download: bool) {
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = download_pending_update_inner(app.clone(), install_after_download).await {
+        if let Err(error) = download_pending_update_inner(app.clone(), install_after_download).await
+        {
             log_dev_update_error(&app, "download_pending_update", &error);
             if let Ok(status) = with_manager(&app, |manager| {
                 manager.set_error(error.clone());
@@ -296,7 +309,10 @@ fn download_pending_update(app: AppHandle, install_after_download: bool) {
     });
 }
 
-async fn download_pending_update_inner(app: AppHandle, install_after_download: bool) -> Result<(), String> {
+async fn download_pending_update_inner(
+    app: AppHandle,
+    install_after_download: bool,
+) -> Result<(), String> {
     let update = with_manager(&app, |manager| {
         if manager.download_in_progress || manager.install_in_progress {
             return None;
@@ -341,8 +357,12 @@ async fn download_pending_update_inner(app: AppHandle, install_after_download: b
         manager.download_in_progress = false;
         manager.status.status = "downloaded".to_string();
         manager.status.latest_version = Some(latest_version);
-        manager.status.downloaded_bytes = manager.status.downloaded_bytes.or(Some(downloaded_bytes));
-        manager.status.total_bytes = manager.status.total_bytes.or(manager.status.downloaded_bytes);
+        manager.status.downloaded_bytes =
+            manager.status.downloaded_bytes.or(Some(downloaded_bytes));
+        manager.status.total_bytes = manager
+            .status
+            .total_bytes
+            .or(manager.status.downloaded_bytes);
         manager.status.error = None;
         manager.status.clone()
     })?;

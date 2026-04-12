@@ -144,7 +144,10 @@ fn transcribe_file(settings: &Settings, audio_path: &Path) -> Result<String, Vol
     let client = reqwest::blocking::Client::new();
     let response = client
         .post(FILE_ASR_URL)
-        .header("Authorization", format!("Bearer;{}", settings.volcengine.access_token))
+        .header(
+            "Authorization",
+            format!("Bearer;{}", settings.volcengine.access_token),
+        )
         .header("Content-Type", "application/json")
         .json(&request)
         .send()
@@ -174,15 +177,13 @@ fn transcribe_file(settings: &Settings, audio_path: &Path) -> Result<String, Vol
 }
 
 /// 流式识别 (WebSocket)
-fn transcribe_streaming(
-    settings: &Settings,
-    audio_path: &Path,
-) -> Result<String, VolcengineError> {
+fn transcribe_streaming(settings: &Settings, audio_path: &Path) -> Result<String, VolcengineError> {
     let file_bytes = fs::read(audio_path).map_err(|e| VolcengineError::Io(e.to_string()))?;
     let (audio_format, audio_meta) = detect_audio_info(audio_path);
 
     // 连接 WebSocket
-    let url = Url::parse(STREAMING_ASR_URL).map_err(|e| VolcengineError::WebSocket(e.to_string()))?;
+    let url =
+        Url::parse(STREAMING_ASR_URL).map_err(|e| VolcengineError::WebSocket(e.to_string()))?;
     let (mut socket, _response) =
         connect(url).map_err(|e| VolcengineError::WebSocket(e.to_string()))?;
 
@@ -257,7 +258,11 @@ fn transcribe_streaming(
                 }
 
                 // 检查是否结束
-                if resp.get("is_last").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if resp
+                    .get("is_last")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
                     break;
                 }
             }
@@ -358,10 +363,8 @@ fn compute_chunk_size(metadata: Option<AudioMetadata>) -> usize {
     };
     let bits = meta.bits_per_sample as usize;
     let bytes_per_sample = ((bits + 7) / 8).max(1);
-    let bytes_per_second = meta
-        .sample_rate
-        .saturating_mul(meta.channels as u32) as usize
-        * bytes_per_sample;
+    let bytes_per_second =
+        meta.sample_rate.saturating_mul(meta.channels as u32) as usize * bytes_per_sample;
     let chunk = bytes_per_second / 10;
     if chunk == 0 {
         3200

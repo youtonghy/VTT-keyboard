@@ -11,8 +11,7 @@ pub enum PasteError {
 }
 
 pub fn write_text(text: &str) -> Result<(), PasteError> {
-    let mut clipboard =
-        Clipboard::new().map_err(|err| PasteError::Clipboard(err.to_string()))?;
+    let mut clipboard = Clipboard::new().map_err(|err| PasteError::Clipboard(err.to_string()))?;
     clipboard
         .set_text(text.to_string())
         .map_err(|err| PasteError::Clipboard(err.to_string()))?;

@@ -48,11 +48,8 @@ pub fn transcribe_audio(
     let local_model = normalize_local_model(&settings.sensevoice.local_model);
     let local_model_spec = spec_for_local_model(local_model);
     if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
-        let result = native_runtime::transcribe_wav(
-            local_model,
-            &settings.sensevoice.language,
-            audio_path,
-        )?;
+        let result =
+            native_runtime::transcribe_wav(local_model, &settings.sensevoice.language, audio_path)?;
         return Ok(SenseVoiceTranscription {
             text: result.text,
             alignment: result.alignment,
@@ -74,11 +71,10 @@ pub fn transcribe_audio(
 
     let client = Client::new();
     for attempt in 0..2 {
-        let mut form = multipart::Form::new()
-            .part(
-                "file",
-                multipart::Part::bytes(file_bytes.clone()).file_name(file_name.to_string()),
-            );
+        let mut form = multipart::Form::new().part(
+            "file",
+            multipart::Part::bytes(file_bytes.clone()).file_name(file_name.to_string()),
+        );
         let endpoint = if local_model == "sensevoice" {
             form = form.text("language", "auto".to_string());
             "/api/v1/asr"

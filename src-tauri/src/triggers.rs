@@ -3,8 +3,9 @@ use crate::settings::{Settings, TriggerCard, TriggerMatch, TriggerMatchMode};
 use regex::Regex;
 
 const VALUE_PLACEHOLDER: &str = "{value}";
-const SENTENCE_DELIMITERS: [char; 12] =
-    [',', '，', '。', '.', '!', '！', '?', '？', ';', '；', ':', '：'];
+const SENTENCE_DELIMITERS: [char; 12] = [
+    ',', '，', '。', '.', '!', '！', '?', '？', ';', '；', ':', '：',
+];
 
 pub struct TriggerResult {
     pub output: String,
@@ -16,7 +17,7 @@ pub struct TriggerResult {
 pub fn apply_triggers(
     settings: &Settings,
     input: &str,
-    log: &dyn Fn(&str),
+    _log: &dyn Fn(&str),
 ) -> Result<TriggerResult, OpenAiError> {
     let sentences = split_sentences(input);
     let mut output = input.to_string();
@@ -36,12 +37,16 @@ pub fn apply_triggers(
         if let Some((value, matched_by_keyword)) = matched {
             #[cfg(debug_assertions)]
             {
-                log(&format!(
+                _log(&format!(
                     "触发卡片 {} (id: {}), value: {}, mode: {}",
                     card.title,
                     card.id,
                     value,
-                    if matched_by_keyword { "keyword" } else { "auto" }
+                    if matched_by_keyword {
+                        "keyword"
+                    } else {
+                        "auto"
+                    }
                 ));
             }
             let cleaned = if matched_by_keyword {
@@ -58,7 +63,7 @@ pub fn apply_triggers(
             output = openai::generate_text(settings, &cleaned, &instructions)?;
             #[cfg(debug_assertions)]
             {
-                log(&format!("触发卡片 {} 结果: {}", card.id, output));
+                _log(&format!("触发卡片 {} 结果: {}", card.id, output));
             }
             if matched_by_keyword {
                 triggered_by_keyword = true;
