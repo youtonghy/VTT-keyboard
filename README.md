@@ -57,6 +57,13 @@ GitHub Actions release builds require updater signing secrets:
 
 The workflow now runs a small `tauri signer sign` smoke test before `tauri build`, so secret mismatches fail fast instead of failing only after packaging completes.
 
+Release CI also pre-downloads the `sherpa-onnx` native archive and exposes it through `SHERPA_ONNX_ARCHIVE_DIR`, so `sherpa-onnx-sys` does not need to fetch prebuilt libraries during its own build script.
+
+If a local build hits upstream GitHub release instability, you can reuse the same fallback:
+
+- Set `SHERPA_ONNX_ARCHIVE_DIR` to a directory containing the expected `sherpa-onnx` archive for your target.
+- Or set `SHERPA_ONNX_LIB_DIR` to an already extracted `lib` directory for that target.
+
 ## Runtime Notes
 
 - Container name: `vtt-sensevoice-service`

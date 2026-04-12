@@ -80,6 +80,46 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare Sherpa prebuilt archive
+        if: matrix.target != 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SHERPA_VERSION="$(node -e "const fs=require('fs'); const manifest=fs.readFileSync('src-tauri/Cargo.toml','utf8'); const match=manifest.match(/sherpa-onnx\s*=\s*\{[^}]*version\s*=\s*\"([^\"]+)\"/m); if (!match) { throw new Error('sherpa-onnx dependency version not found in src-tauri/Cargo.toml'); } console.log(match[1]);")"
+          case "${{ matrix.target }}" in
+            x86_64-pc-windows-msvc)
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MT-Release-lib.tar.bz2"
+              ;;
+            x86_64-apple-darwin)
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-x64-shared-lib.tar.bz2"
+              ;;
+            aarch64-apple-darwin)
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-arm64-shared-lib.tar.bz2"
+              ;;
+            x86_64-unknown-linux-gnu)
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-linux-x64-shared-lib.tar.bz2"
+              ;;
+            aarch64-unknown-linux-gnu)
+              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-linux-aarch64-shared-cpu-lib.tar.bz2"
+              ;;
+            *)
+              echo "Unsupported Sherpa target: ${{ matrix.target }}"
+              exit 1
+              ;;
+          esac
+
+          SHERPA_CACHE_DIR="${{ github.workspace }}/.ci-cache/sherpa-onnx"
+          SHERPA_ARCHIVE_PATH="${SHERPA_CACHE_DIR}/${SHERPA_ARCHIVE}"
+          SHERPA_DOWNLOAD_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/${SHERPA_ARCHIVE}"
+
+          mkdir -p "${SHERPA_CACHE_DIR}"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            "${SHERPA_DOWNLOAD_URL}" \
+            --output "${SHERPA_ARCHIVE_PATH}"
+
+          echo "SHERPA_ONNX_ARCHIVE_DIR=${SHERPA_CACHE_DIR}" >> "$GITHUB_ENV"
+
       - name: Read app metadata
         id: meta
         shell: bash
@@ -114,6 +154,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHERPA_ONNX_ARCHIVE_DIR: ${{ env.SHERPA_ONNX_ARCHIVE_DIR }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
