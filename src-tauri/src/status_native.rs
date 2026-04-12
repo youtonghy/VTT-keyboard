@@ -5,7 +5,7 @@
 //! - Linux: GTK3 + Cairo
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
-use std::ffi::CString;
+use std::ffi::{c_char, CString};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub enum StatusType {
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 extern "C" {
     fn status_overlay_init() -> i32;
-    fn status_overlay_show(status: StatusType, text: *const i8);
+    fn status_overlay_show(status: StatusType, text: *const c_char);
     fn status_overlay_hide();
     fn status_overlay_cleanup();
 }
