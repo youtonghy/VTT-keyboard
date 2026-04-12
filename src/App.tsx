@@ -697,6 +697,10 @@ function App() {
     }
   };
 
+  // Always keep ref pointing to the latest handleSave to avoid stale-closure in the debounce
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
   useEffect(() => {
     if (!draft || !settings) {
       return;
@@ -707,7 +711,7 @@ function App() {
     }
 
     const timer = setTimeout(() => {
-      handleSave();
+      handleSaveRef.current();
     }, 1000);
 
     return () => clearTimeout(timer);

@@ -5,6 +5,7 @@ use base64::{engine::general_purpose, Engine as _};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
 use thiserror::Error;
@@ -152,6 +153,22 @@ fn default_openai_api_base() -> String {
     "https://api.openai.com/v1".to_string()
 }
 
+fn default_text_model() -> String {
+    "gpt-4o-mini".to_string()
+}
+
+fn default_text_temperature() -> f32 {
+    0.6
+}
+
+fn default_text_max_output_tokens() -> u32 {
+    800
+}
+
+fn default_text_top_p() -> f32 {
+    1.0
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutSettings {
@@ -215,10 +232,15 @@ pub struct TextSettings {
     pub api_base: String,
     #[serde(default)]
     pub api_key: String,
+    #[serde(default = "default_text_model")]
     pub model: String,
+    #[serde(default = "default_text_temperature")]
     pub temperature: f32,
+    #[serde(default = "default_text_max_output_tokens")]
     pub max_output_tokens: u32,
+    #[serde(default = "default_text_top_p")]
     pub top_p: f32,
+    #[serde(default)]
     pub instructions: String,
 }
 
@@ -509,6 +531,7 @@ pub struct AliyunParaformerSettings {
 #[derive(Clone)]
 pub struct SettingsStore {
     app: AppHandle,
+    write_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -520,7 +543,10 @@ struct UpdaterState {
 
 impl SettingsStore {
     pub fn new(app: AppHandle) -> Self {
-        Self { app }
+        Self {
+            app,
+            write_lock: Arc::new(Mutex::new(())),
+        }
     }
 
     pub fn load(&self) -> Result<Settings, SettingsError> {
@@ -545,15 +571,20 @@ impl SettingsStore {
                 normalize_text_processing_settings(&mut settings);
                 Ok(settings)
             }
-            Err(_) => {
-                let settings = Settings::default();
-                let _ = self.save(&settings);
+            Err(err) => {
+                eprintln!("[settings] 反序列化失败，将重置为默认设置: {err}");
+                let mut settings = Settings::default();
+                normalize_sensevoice_settings(&mut settings.sensevoice);
+                normalize_aliyun_settings(&mut settings.aliyun, &settings.provider);
+                normalize_text_processing_settings(&mut settings);
+                let _ = self.persist_settings(&settings);
                 Ok(settings)
             }
         }
     }
 
     pub fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut normalized = settings.clone();
         normalize_sensevoice_settings(&mut normalized.sensevoice);
         normalize_aliyun_settings(&mut normalized.aliyun, &normalized.provider);
@@ -568,6 +599,7 @@ impl SettingsStore {
     }
 
     pub fn save_sensevoice(&self, sensevoice: &SenseVoiceSettings) -> Result<(), SettingsError> {
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut normalized = sensevoice.clone();
         normalize_sensevoice_settings(&mut normalized);
         validate_sensevoice_settings(&normalized)?;
@@ -580,6 +612,7 @@ impl SettingsStore {
         &self,
         sensevoice: &SenseVoiceSettings,
     ) -> Result<(), SettingsError> {
+        let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut settings = self.load()?;
         let mut merged = settings.sensevoice.clone();
         merged.local_model = sensevoice.local_model.clone();
@@ -1163,5 +1196,34 @@ mod tests {
         assert_eq!(settings.text_processing.provider, TextProcessingProvider::Openai);
         assert_eq!(settings.text_processing.openai.api_base, "https://api.proxy/v1");
         assert_eq!(settings.text_processing.openai.api_key, "shared-key");
+    }
+
+    #[test]
+    fn text_processing_settings_round_trip_preserves_api_key() {
+        let mut settings = Settings::default();
+        settings.text_processing.openai.api_key = "my-text-api-key".to_string();
+        settings.text_processing.openai.api_base = "https://custom.api/v1".to_string();
+        settings.text_processing.openai.model = "gpt-4o".to_string();
+        settings.text_processing.openai.temperature = 0.3;
+
+        let json = serde_json::to_string(&settings).expect("序列化失败");
+        let restored: Settings = serde_json::from_str(&json).expect("反序列化失败");
+
+        assert_eq!(restored.text_processing.openai.api_key, "my-text-api-key");
+        assert_eq!(restored.text_processing.openai.api_base, "https://custom.api/v1");
+        assert_eq!(restored.text_processing.openai.model, "gpt-4o");
+        assert!((restored.text_processing.openai.temperature - 0.3_f32).abs() < 1e-6);
+    }
+
+    #[test]
+    fn normalize_text_processing_does_not_overwrite_existing_api_key() {
+        let mut settings = Settings::default();
+        settings.openai.api_key = "transcription-key".to_string();
+        settings.text_processing.openai.api_key = "text-only-key".to_string();
+
+        normalize_text_processing_settings(&mut settings);
+
+        // Custom text processing key must NOT be overwritten by transcription key
+        assert_eq!(settings.text_processing.openai.api_key, "text-only-key");
     }
 }
