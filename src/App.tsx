@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
@@ -523,6 +524,20 @@ function App() {
     void loadHistory().catch((error) => {
       toast.error(t("history.loadError", { error: toErrorMessage(error) }));
     });
+  }, [activeSection, loadHistory, t]);
+
+  // 窗口重新获得焦点时刷新历史，补偿窗口隐藏期间可能丢失的事件
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused && activeSection === "history") {
+        void loadHistory().catch((error) => {
+          toast.error(t("history.loadError", { error: toErrorMessage(error) }));
+        });
+      }
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
   }, [activeSection, loadHistory, t]);
 
   const navItems = useMemo(
