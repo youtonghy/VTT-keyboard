@@ -5,11 +5,14 @@ export type TranscriptionProvider =
   | "aliyun-asr"
   | "aliyun-paraformer";
 
+export type TextProcessingProvider = "openai";
+
 export interface Settings {
   shortcut: ShortcutSettings;
   recording: RecordingSettings;
   provider: TranscriptionProvider;
   openai: OpenAiSettings;
+  textProcessing: TextProcessingSettings;
   volcengine: VolcengineSettings;
   sensevoice: SenseVoiceSettings;
   aliyun: AliyunSettings;
@@ -32,7 +35,6 @@ export interface OpenAiSettings {
   apiBase: string;
   apiKey: string;
   speechToText: SpeechToTextSettings;
-  text: TextSettings;
 }
 
 export interface SpeechToTextSettings {
@@ -49,7 +51,14 @@ export interface SpeechToTextSettings {
   knownSpeakerReferences: string[];
 }
 
+export interface TextProcessingSettings {
+  provider: TextProcessingProvider;
+  openai: TextSettings;
+}
+
 export interface TextSettings {
+  apiBase: string;
+  apiKey: string;
   model: string;
   temperature: number;
   maxOutputTokens: number;

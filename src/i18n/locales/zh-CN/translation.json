@@ -198,11 +198,13 @@
                    "paraformerRegionHint":  "Paraformer 当前仅支持北京地域。"
                },
     "text":  {
-                 "title":  "文本处理",
-                 "description":  "配置 OpenAI 文本生成参数。",
-                 "model":  "文本模型",
-                 "instructions":  "系统指令",
-                 "temperature":  "温度",
+                  "title":  "文本处理",
+                  "description":  "配置独立的文本处理来源与模型参数。",
+                  "provider":  "提供商",
+                  "openaiTitle":  "OpenAI 文本处理",
+                  "model":  "文本模型",
+                  "instructions":  "系统指令",
+                  "temperature":  "温度",
                  "maxOutputTokens":  "最大输出 Tokens",
                  "topP":  "Top P"
              },

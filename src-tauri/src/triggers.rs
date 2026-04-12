@@ -59,8 +59,10 @@ pub fn apply_triggers(
                 .replace("{value}", &value)
                 .replace("{language}", &value)
                 .replace("{style}", &value);
-            let instructions = merge_instructions(&settings.openai.text.instructions, &prompt);
-            output = openai::generate_text(settings, &cleaned, &instructions)?;
+            let instructions =
+                merge_instructions(&settings.text_processing.openai.instructions, &prompt);
+            output =
+                openai::generate_text(&settings.text_processing.openai, &cleaned, &instructions)?;
             #[cfg(debug_assertions)]
             {
                 _log(&format!("触发卡片 {} 结果: {}", card.id, output));

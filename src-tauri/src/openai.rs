@@ -1,4 +1,4 @@
-use crate::settings::{OpenAiSettings, Settings};
+use crate::settings::{OpenAiSettings, Settings, TextSettings};
 use reqwest::blocking::{multipart, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -79,31 +79,31 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
 }
 
 pub fn generate_text(
-    settings: &Settings,
+    settings: &TextSettings,
     input: &str,
     instructions: &str,
 ) -> Result<String, OpenAiError> {
-    ensure_auth(&settings.openai)?;
+    ensure_text_auth(settings)?;
     let request = ResponseRequest {
-        model: &settings.openai.text.model,
+        model: &settings.model,
         input,
         instructions: if instructions.is_empty() {
             None
         } else {
             Some(instructions)
         },
-        max_output_tokens: Some(settings.openai.text.max_output_tokens),
-        temperature: Some(settings.openai.text.temperature),
-        top_p: Some(settings.openai.text.top_p),
+        max_output_tokens: Some(settings.max_output_tokens),
+        temperature: Some(settings.temperature),
+        top_p: Some(settings.top_p),
     };
     let client = Client::new();
     let url = format!(
         "{}/responses",
-        settings.openai.api_base.trim_end_matches('/')
+        settings.api_base.trim_end_matches('/')
     );
     let response = client
         .post(url)
-        .bearer_auth(settings.openai.api_key.trim())
+        .bearer_auth(settings.api_key.trim())
         .json(&request)
         .send()
         .map_err(|err| OpenAiError::Request(err.to_string()))?;
@@ -121,6 +121,13 @@ pub fn generate_text(
 fn ensure_auth(settings: &OpenAiSettings) -> Result<(), OpenAiError> {
     if settings.api_key.trim().is_empty() {
         return Err(OpenAiError::Config("API Key 不能为空".to_string()));
+    }
+    Ok(())
+}
+
+fn ensure_text_auth(settings: &TextSettings) -> Result<(), OpenAiError> {
+    if settings.api_key.trim().is_empty() {
+        return Err(OpenAiError::Config("文本处理 API Key 不能为空".to_string()));
     }
     Ok(())
 }

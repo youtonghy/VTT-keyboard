@@ -199,7 +199,9 @@
   },
   "text": {
     "title": "Text",
-    "description": "Configure OpenAI text generation parameters.",
+    "description": "Configure the independent text processing provider and model parameters.",
+    "provider": "Provider",
+    "openaiTitle": "OpenAI Text Processing",
     "model": "Model",
     "instructions": "Instructions",
     "temperature": "Temperature",

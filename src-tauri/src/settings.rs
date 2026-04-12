@@ -62,6 +62,8 @@ pub struct Settings {
     pub provider: TranscriptionProvider,
     pub openai: OpenAiSettings,
     #[serde(default)]
+    pub text_processing: TextProcessingSettings,
+    #[serde(default)]
     pub volcengine: VolcengineSettings,
     #[serde(default)]
     pub sensevoice: SenseVoiceSettings,
@@ -89,7 +91,7 @@ impl Default for Settings {
             },
             provider: TranscriptionProvider::default(),
             openai: OpenAiSettings {
-                api_base: "https://api.openai.com/v1".to_string(),
+                api_base: default_openai_api_base(),
                 api_key: "".to_string(),
                 speech_to_text: SpeechToTextSettings {
                     model: "gpt-4o-transcribe".to_string(),
@@ -104,14 +106,9 @@ impl Default for Settings {
                     known_speaker_names: vec![],
                     known_speaker_references: vec![],
                 },
-                text: TextSettings {
-                    model: "gpt-4o-mini".to_string(),
-                    temperature: 0.6,
-                    max_output_tokens: 800,
-                    top_p: 1.0,
-                    instructions: "".to_string(),
-                },
+                legacy_text: None,
             },
+            text_processing: TextProcessingSettings::default(),
             volcengine: VolcengineSettings::default(),
             sensevoice: SenseVoiceSettings::default(),
             aliyun: AliyunSettings::default(),
@@ -151,6 +148,10 @@ fn default_triggers() -> Vec<TriggerCard> {
     ]
 }
 
+fn default_openai_api_base() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutSettings {
@@ -169,7 +170,8 @@ pub struct OpenAiSettings {
     pub api_base: String,
     pub api_key: String,
     pub speech_to_text: SpeechToTextSettings,
-    pub text: TextSettings,
+    #[serde(default, rename = "text", skip_serializing)]
+    pub legacy_text: Option<TextSettings>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -190,12 +192,48 @@ pub struct SpeechToTextSettings {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TextProcessingSettings {
+    #[serde(default)]
+    pub provider: TextProcessingProvider,
+    #[serde(default)]
+    pub openai: TextSettings,
+}
+
+impl Default for TextProcessingSettings {
+    fn default() -> Self {
+        Self {
+            provider: TextProcessingProvider::default(),
+            openai: TextSettings::default(),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TextSettings {
+    #[serde(default = "default_openai_api_base")]
+    pub api_base: String,
+    #[serde(default)]
+    pub api_key: String,
     pub model: String,
     pub temperature: f32,
     pub max_output_tokens: u32,
     pub top_p: f32,
     pub instructions: String,
+}
+
+impl Default for TextSettings {
+    fn default() -> Self {
+        Self {
+            api_base: default_openai_api_base(),
+            api_key: String::new(),
+            model: "gpt-4o-mini".to_string(),
+            temperature: 0.6,
+            max_output_tokens: 800,
+            top_p: 1.0,
+            instructions: String::new(),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -337,6 +375,13 @@ pub enum TranscriptionProvider {
     AliyunAsr,
     #[serde(rename = "aliyun-paraformer")]
     AliyunParaformer,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TextProcessingProvider {
+    #[default]
+    Openai,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -497,6 +542,7 @@ impl SettingsStore {
             Ok(mut settings) => {
                 normalize_sensevoice_settings(&mut settings.sensevoice);
                 normalize_aliyun_settings(&mut settings.aliyun, &settings.provider);
+                normalize_text_processing_settings(&mut settings);
                 Ok(settings)
             }
             Err(_) => {
@@ -511,6 +557,7 @@ impl SettingsStore {
         let mut normalized = settings.clone();
         normalize_sensevoice_settings(&mut normalized.sensevoice);
         normalize_aliyun_settings(&mut normalized.aliyun, &normalized.provider);
+        normalize_text_processing_settings(&mut normalized);
         validate_settings(&normalized)?;
         self.persist_settings(&normalized)
     }
@@ -748,6 +795,34 @@ fn validate_settings(settings: &Settings) -> Result<(), SettingsError> {
     validate_sensevoice_settings(&settings.sensevoice)?;
     validate_aliyun_settings(settings)?;
     Ok(())
+}
+
+fn normalize_text_processing_settings(settings: &mut Settings) {
+    settings.text_processing.provider = TextProcessingProvider::Openai;
+
+    if settings.text_processing.openai.api_base.trim().is_empty() {
+        settings.text_processing.openai.api_base = settings.openai.api_base.clone();
+    }
+    if settings.text_processing.openai.api_base.trim().is_empty() {
+        settings.text_processing.openai.api_base = default_openai_api_base();
+    }
+    if settings.text_processing.openai.api_key.trim().is_empty() {
+        settings.text_processing.openai.api_key = settings.openai.api_key.clone();
+    }
+
+    if let Some(legacy_text) = settings.openai.legacy_text.take() {
+        settings.text_processing.openai.api_base = if settings.openai.api_base.trim().is_empty() {
+            default_openai_api_base()
+        } else {
+            settings.openai.api_base.clone()
+        };
+        settings.text_processing.openai.api_key = settings.openai.api_key.clone();
+        settings.text_processing.openai.model = legacy_text.model;
+        settings.text_processing.openai.temperature = legacy_text.temperature;
+        settings.text_processing.openai.max_output_tokens = legacy_text.max_output_tokens;
+        settings.text_processing.openai.top_p = legacy_text.top_p;
+        settings.text_processing.openai.instructions = legacy_text.instructions;
+    }
 }
 
 fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
@@ -1026,4 +1101,67 @@ fn decrypt_payload(encoded: &str, key: &[u8; 32]) -> Result<String, SettingsErro
         .decrypt(nonce, cipher_text)
         .map_err(|err| SettingsError::Crypto(err.to_string()))?;
     String::from_utf8(plain).map_err(|err| SettingsError::Crypto(err.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        normalize_text_processing_settings, default_openai_api_base, OpenAiSettings, Settings,
+        SpeechToTextSettings, TextProcessingProvider, TextSettings,
+    };
+
+    #[test]
+    fn normalize_text_processing_migrates_legacy_openai_text_settings() {
+        let mut settings = Settings::default();
+        settings.openai = OpenAiSettings {
+            api_base: "https://legacy.example/v1".to_string(),
+            api_key: "legacy-key".to_string(),
+            speech_to_text: SpeechToTextSettings {
+                model: "gpt-4o-transcribe".to_string(),
+                ..settings.openai.speech_to_text.clone()
+            },
+            legacy_text: Some(TextSettings {
+                api_base: default_openai_api_base(),
+                api_key: String::new(),
+                model: "gpt-4.1-mini".to_string(),
+                temperature: 0.2,
+                max_output_tokens: 256,
+                top_p: 0.8,
+                instructions: "Rewrite the text".to_string(),
+            }),
+        };
+
+        normalize_text_processing_settings(&mut settings);
+
+        assert_eq!(settings.text_processing.provider, TextProcessingProvider::Openai);
+        assert_eq!(
+            settings.text_processing.openai.api_base,
+            "https://legacy.example/v1"
+        );
+        assert_eq!(settings.text_processing.openai.api_key, "legacy-key");
+        assert_eq!(settings.text_processing.openai.model, "gpt-4.1-mini");
+        assert_eq!(settings.text_processing.openai.temperature, 0.2);
+        assert_eq!(settings.text_processing.openai.max_output_tokens, 256);
+        assert_eq!(settings.text_processing.openai.top_p, 0.8);
+        assert_eq!(
+            settings.text_processing.openai.instructions,
+            "Rewrite the text"
+        );
+        assert!(settings.openai.legacy_text.is_none());
+    }
+
+    #[test]
+    fn normalize_text_processing_backfills_auth_from_transcription_openai_settings() {
+        let mut settings = Settings::default();
+        settings.openai.api_base = "https://api.proxy/v1".to_string();
+        settings.openai.api_key = "shared-key".to_string();
+        settings.text_processing.openai.api_base.clear();
+        settings.text_processing.openai.api_key.clear();
+
+        normalize_text_processing_settings(&mut settings);
+
+        assert_eq!(settings.text_processing.provider, TextProcessingProvider::Openai);
+        assert_eq!(settings.text_processing.openai.api_base, "https://api.proxy/v1");
+        assert_eq!(settings.text_processing.openai.api_key, "shared-key");
+    }
 }
