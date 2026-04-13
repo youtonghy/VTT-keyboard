@@ -21,7 +21,7 @@ pub const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
 const SENSEVOICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
 const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
-const VLLM_CONTAINER_NAME: &str = "vtt-sensevoice-service";
+const VLLM_CONTAINER_NAME: &str = "vtt-vllm-service";
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const VLLM_SERVICE_START_TIMEOUT_SECS: u64 = 5 * 60;
 

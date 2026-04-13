@@ -40,7 +40,7 @@ const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
 const DOCKERFILE_TXT: &str = include_str!("scripts/Dockerfile");
 
 const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
-const VLLM_CONTAINER_NAME: &str = "vtt-sensevoice-service";
+const VLLM_CONTAINER_NAME: &str = "vtt-vllm-service";
 const VLLM_INTERNAL_PORT: u16 = 8000;
 const VLLM_REQUIRED_DEVICE: &str = "cuda";
 const VLLM_GPU_MEMORY_UTILIZATION: f32 = 0.8;
