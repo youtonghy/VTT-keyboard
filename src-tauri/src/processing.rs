@@ -1,5 +1,5 @@
-use crate::audio_processing::{self, AudioProcessingError};
-use crate::paste::{self, PasteError};
+use crate::audio_processing;
+use crate::paste;
 use crate::recorder::RecordedAudio;
 use crate::settings::{SettingsStore, TranscriptionAlignment, TriggerMatch};
 use crate::status_native::{self, StatusType};
@@ -37,59 +37,8 @@ pub struct ProcessingOutcome {
 }
 
 impl ProcessingOutcome {
-    fn success(
-        history_enabled: bool,
-        transcription_text: String,
-        final_text: String,
-        model_group: String,
-        transcription_elapsed_ms: u64,
-        recording_duration_ms: u64,
-        triggered: bool,
-        triggered_by_keyword: bool,
-        trigger_matches: Vec<TriggerMatch>,
-        alignment: Option<TranscriptionAlignment>,
-    ) -> Self {
-        Self {
-            history_enabled,
-            transcription_text,
-            final_text,
-            model_group,
-            transcription_elapsed_ms,
-            recording_duration_ms,
-            triggered,
-            triggered_by_keyword,
-            trigger_matches,
-            alignment,
-            error_message: None,
-        }
-    }
-
-    fn failed(
-        history_enabled: bool,
-        transcription_text: String,
-        final_text: String,
-        model_group: String,
-        transcription_elapsed_ms: u64,
-        recording_duration_ms: u64,
-        triggered: bool,
-        triggered_by_keyword: bool,
-        trigger_matches: Vec<TriggerMatch>,
-        alignment: Option<TranscriptionAlignment>,
-        error_message: String,
-    ) -> Self {
-        Self {
-            history_enabled,
-            transcription_text,
-            final_text,
-            model_group,
-            transcription_elapsed_ms,
-            recording_duration_ms,
-            triggered,
-            triggered_by_keyword,
-            trigger_matches,
-            alignment,
-            error_message: Some(error_message),
-        }
+    fn builder() -> ProcessingOutcomeBuilder {
+        ProcessingOutcomeBuilder::default()
     }
 
     pub fn is_success(&self) -> bool {
@@ -97,23 +46,71 @@ impl ProcessingOutcome {
     }
 }
 
+#[derive(Default)]
+struct ProcessingOutcomeBuilder {
+    history_enabled: bool,
+    transcription_text: String,
+    final_text: String,
+    model_group: String,
+    transcription_elapsed_ms: u64,
+    recording_duration_ms: u64,
+    triggered: bool,
+    triggered_by_keyword: bool,
+    trigger_matches: Vec<TriggerMatch>,
+    alignment: Option<TranscriptionAlignment>,
+}
+
+impl ProcessingOutcomeBuilder {
+    fn history_enabled(mut self, v: bool) -> Self { self.history_enabled = v; self }
+    fn transcription_text(mut self, v: String) -> Self { self.transcription_text = v; self }
+    fn final_text(mut self, v: String) -> Self { self.final_text = v; self }
+    fn model_group(mut self, v: String) -> Self { self.model_group = v; self }
+    fn transcription_elapsed_ms(mut self, v: u64) -> Self { self.transcription_elapsed_ms = v; self }
+    fn recording_duration_ms(mut self, v: u64) -> Self { self.recording_duration_ms = v; self }
+    fn triggered(mut self, v: bool) -> Self { self.triggered = v; self }
+    fn triggered_by_keyword(mut self, v: bool) -> Self { self.triggered_by_keyword = v; self }
+    fn trigger_matches(mut self, v: Vec<TriggerMatch>) -> Self { self.trigger_matches = v; self }
+    fn alignment(mut self, v: Option<TranscriptionAlignment>) -> Self { self.alignment = v; self }
+
+    fn build(self) -> ProcessingOutcome {
+        ProcessingOutcome {
+            history_enabled: self.history_enabled,
+            transcription_text: self.transcription_text,
+            final_text: self.final_text,
+            model_group: self.model_group,
+            transcription_elapsed_ms: self.transcription_elapsed_ms,
+            recording_duration_ms: self.recording_duration_ms,
+            triggered: self.triggered,
+            triggered_by_keyword: self.triggered_by_keyword,
+            trigger_matches: self.trigger_matches,
+            alignment: self.alignment,
+            error_message: None,
+        }
+    }
+
+    fn build_error(self, msg: impl Into<String>) -> ProcessingOutcome {
+        ProcessingOutcome {
+            history_enabled: self.history_enabled,
+            transcription_text: self.transcription_text,
+            final_text: self.final_text,
+            model_group: self.model_group,
+            transcription_elapsed_ms: self.transcription_elapsed_ms,
+            recording_duration_ms: self.recording_duration_ms,
+            triggered: self.triggered,
+            triggered_by_keyword: self.triggered_by_keyword,
+            trigger_matches: self.trigger_matches,
+            alignment: self.alignment,
+            error_message: Some(msg.into()),
+        }
+    }
+}
+
 pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> ProcessingOutcome {
     let settings = match store.load() {
         Ok(value) => value,
         Err(err) => {
-            return ProcessingOutcome::failed(
-                false,
-                String::new(),
-                String::new(),
-                String::new(),
-                0,
-                0,
-                false,
-                false,
-                Vec::new(),
-                None,
-                format!("设置读取失败: {err}"),
-            )
+            return ProcessingOutcome::builder()
+                .build_error(format!("设置读取失败: {err}"));
         }
     };
     let history_enabled = settings.history.enabled;
@@ -122,21 +119,18 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     let model_group = engine.model_group();
     let recording_duration_ms = calculate_recording_duration_ms(&recording);
 
+    // Common builder with shared context
+    let base = || {
+        ProcessingOutcome::builder()
+            .history_enabled(history_enabled)
+            .model_group(model_group.clone())
+            .recording_duration_ms(recording_duration_ms)
+    };
+
     if recording.samples.is_empty() {
         dev_log("录音为空，跳过转写");
         emit_status("completed");
-        return ProcessingOutcome::success(
-            history_enabled,
-            String::new(),
-            String::new(),
-            model_group,
-            0,
-            recording_duration_ms,
-            false,
-            false,
-            Vec::new(),
-            None,
-        );
+        return base().build();
     }
     let transcription_started = Instant::now();
     let segment_seconds = settings.recording.segment_seconds.max(1);
@@ -148,13 +142,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     let paths = match audio_processing::write_segments(&recording, segment_seconds) {
         Ok(value) => value,
         Err(err) => {
-            return processing_audio_error(
-                history_enabled,
-                model_group,
-                elapsed_since_ms(transcription_started),
-                recording_duration_ms,
-                err,
-            );
+            return base()
+                .transcription_elapsed_ms(elapsed_since_ms(transcription_started))
+                .build_error(format!("录音分段失败: {err}"));
         }
     };
     dev_log(&format!("生成 {} 段录音", paths.len()));
@@ -170,19 +160,11 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             Err(err) => {
                 cleanup_files(&paths);
                 let partial = normalize_text_for_output(&transcripts.join(" "), remove_newlines);
-                return ProcessingOutcome::failed(
-                    history_enabled,
-                    partial.clone(),
-                    partial,
-                    model_group.clone(),
-                    elapsed_since_ms(transcription_started),
-                    recording_duration_ms,
-                    false,
-                    false,
-                    Vec::new(),
-                    None,
-                    err.to_string(),
-                );
+                return base()
+                    .transcription_text(partial.clone())
+                    .final_text(partial)
+                    .transcription_elapsed_ms(elapsed_since_ms(transcription_started))
+                    .build_error(err.to_string());
             }
         };
         let text = transcription.text;
@@ -215,23 +197,22 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     };
     let transcription_elapsed_ms = elapsed_since_ms(transcription_started);
     dev_log(&format!("合并转写结果: {}", combined));
+
+    // After transcription, build the post-transcription base
+    let post = || {
+        base()
+            .transcription_text(combined.clone())
+            .transcription_elapsed_ms(transcription_elapsed_ms)
+            .alignment(alignment.clone())
+    };
+
     let logger = |message: &str| dev_log(message);
     let result = match triggers::apply_triggers(&settings, &combined, &logger) {
         Ok(value) => value,
         Err(err) => {
-            return ProcessingOutcome::failed(
-                history_enabled,
-                combined.clone(),
-                combined,
-                model_group,
-                transcription_elapsed_ms,
-                recording_duration_ms,
-                false,
-                false,
-                Vec::new(),
-                alignment.clone(),
-                format!("触发词处理失败: {err}"),
-            );
+            return post()
+                .final_text(combined.clone())
+                .build_error(format!("触发词处理失败: {err}"));
         }
     };
     dev_log(&format!(
@@ -245,53 +226,28 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     dev_log(&format!("触发词输出: {}", result.output));
     let final_output = normalize_text_for_output(&result.output, remove_newlines);
 
+    let post_trigger = || {
+        post()
+            .final_text(final_output.clone())
+            .triggered(result.triggered)
+            .triggered_by_keyword(result.triggered_by_keyword)
+            .trigger_matches(result.trigger_matches.clone())
+    };
+
     if result.triggered {
         dev_log("复制原文到剪贴板");
         if let Err(err) = paste::write_text(&combined) {
-            return processing_paste_error(
-                history_enabled,
-                &combined,
-                &final_output,
-                model_group.clone(),
-                transcription_elapsed_ms,
-                recording_duration_ms,
-                result.triggered,
-                result.triggered_by_keyword,
-                result.trigger_matches,
-                alignment.clone(),
-                err,
-            );
+            return post_trigger()
+                .build_error(format!("写入剪贴板失败: {err}"));
         }
     }
     dev_log("写入并粘贴处理后的文本");
     if let Err(err) = paste::write_and_paste(&final_output) {
-        return processing_paste_error(
-            history_enabled,
-            &combined,
-            &final_output,
-            model_group.clone(),
-            transcription_elapsed_ms,
-            recording_duration_ms,
-            result.triggered,
-            result.triggered_by_keyword,
-            result.trigger_matches,
-            alignment.clone(),
-            err,
-        );
+        return post_trigger()
+            .build_error(format!("写入剪贴板失败: {err}"));
     }
     emit_status("completed");
-    ProcessingOutcome::success(
-        history_enabled,
-        combined,
-        final_output,
-        model_group,
-        transcription_elapsed_ms,
-        recording_duration_ms,
-        result.triggered,
-        result.triggered_by_keyword,
-        result.trigger_matches,
-        alignment,
-    )
+    post_trigger().build()
 }
 
 /// Show status overlay with native window.
@@ -356,56 +312,6 @@ fn calculate_recording_duration_ms(recording: &RecordedAudio) -> u64 {
 
 fn elapsed_since_ms(started: Instant) -> u64 {
     started.elapsed().as_millis() as u64
-}
-
-fn processing_audio_error(
-    history_enabled: bool,
-    model_group: String,
-    transcription_elapsed_ms: u64,
-    recording_duration_ms: u64,
-    err: AudioProcessingError,
-) -> ProcessingOutcome {
-    ProcessingOutcome::failed(
-        history_enabled,
-        String::new(),
-        String::new(),
-        model_group,
-        transcription_elapsed_ms,
-        recording_duration_ms,
-        false,
-        false,
-        Vec::new(),
-        None,
-        format!("录音分段失败: {err}"),
-    )
-}
-
-fn processing_paste_error(
-    history_enabled: bool,
-    transcription_text: &str,
-    final_text: &str,
-    model_group: String,
-    transcription_elapsed_ms: u64,
-    recording_duration_ms: u64,
-    triggered: bool,
-    triggered_by_keyword: bool,
-    trigger_matches: Vec<TriggerMatch>,
-    alignment: Option<TranscriptionAlignment>,
-    err: PasteError,
-) -> ProcessingOutcome {
-    ProcessingOutcome::failed(
-        history_enabled,
-        transcription_text.to_string(),
-        final_text.to_string(),
-        model_group,
-        transcription_elapsed_ms,
-        recording_duration_ms,
-        triggered,
-        triggered_by_keyword,
-        trigger_matches,
-        alignment,
-        format!("写入剪贴板失败: {err}"),
-    )
 }
 
 #[cfg(test)]
