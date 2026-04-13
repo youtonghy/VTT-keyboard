@@ -113,12 +113,22 @@ export function SpeechSettingsSection({
                   : prev.aliyun,
               }))
             }
-            options={[
-              { value: "openai", label: "OpenAI" },
-              { value: "volcengine", label: t("speech.volcengine") },
-              { value: "sensevoice", label: t("speech.sensevoice") },
-              { value: "aliyun-asr", label: t("speech.aliyunAsr") },
-              { value: "aliyun-paraformer", label: t("speech.aliyunParaformer") },
+            groups={[
+              {
+                label: t("speech.categoryCloud"),
+                options: [
+                  { value: "openai", label: "OpenAI" },
+                  { value: "volcengine", label: t("speech.volcengine") },
+                  { value: "aliyun-asr", label: t("speech.aliyunAsr") },
+                  { value: "aliyun-paraformer", label: t("speech.aliyunParaformer") },
+                ],
+              },
+              {
+                label: t("speech.categoryLocal"),
+                options: [
+                  { value: "sensevoice", label: t("speech.sensevoice") },
+                ],
+              },
             ]}
           />
         </label>

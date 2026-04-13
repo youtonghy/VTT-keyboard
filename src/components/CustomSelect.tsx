@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { ChevronDown, Check } from "lucide-react";
 
 export interface SelectOption {
@@ -6,18 +6,31 @@ export interface SelectOption {
   label: string;
 }
 
+export interface SelectOptionGroup {
+  label: string;
+  options: SelectOption[];
+}
+
 interface CustomSelectProps {
   value: string;
-  options: SelectOption[];
+  options?: SelectOption[];
+  groups?: SelectOptionGroup[];
   onChange: (value: string) => void;
   disabled?: boolean;
 }
 
-export function CustomSelect({ value, options, onChange, disabled = false }: CustomSelectProps) {
+export function CustomSelect({ value, options, groups, onChange, disabled = false }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const selectedOption = options.find((opt) => opt.value === value) || options[0];
+  const flatOptions = useMemo(() => {
+    if (groups) {
+      return groups.flatMap((g) => g.options);
+    }
+    return options ?? [];
+  }, [options, groups]);
+
+  const selectedOption = flatOptions.find((opt) => opt.value === value) || flatOptions[0];
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -46,6 +59,24 @@ export function CustomSelect({ value, options, onChange, disabled = false }: Cus
     }
   };
 
+  const renderOption = (option: SelectOption) => {
+    const isSelected = option.value === value;
+    return (
+      <li key={option.value}>
+        <button
+          type="button"
+          className={`custom-select-option ${isSelected ? "selected" : ""}`}
+          role="option"
+          aria-selected={isSelected}
+          onClick={() => handleSelect(option.value)}
+        >
+          <span className="custom-select-option-label">{option.label}</span>
+          {isSelected && <Check size={16} className="custom-select-check" />}
+        </button>
+      </li>
+    );
+  };
+
   return (
     <div className={`custom-select-container ${disabled ? "disabled" : ""}`} ref={containerRef}>
       <button
@@ -63,23 +94,16 @@ export function CustomSelect({ value, options, onChange, disabled = false }: Cus
       {isOpen && !disabled && (
         <div className="custom-select-dropdown">
           <ul className="custom-select-options" role="listbox">
-            {options.map((option) => {
-              const isSelected = option.value === value;
-              return (
-                <li key={option.value}>
-                  <button
-                    type="button"
-                    className={`custom-select-option ${isSelected ? "selected" : ""}`}
-                    role="option"
-                    aria-selected={isSelected}
-                    onClick={() => handleSelect(option.value)}
-                  >
-                    <span className="custom-select-option-label">{option.label}</span>
-                    {isSelected && <Check size={16} className="custom-select-check" />}
-                  </button>
-                </li>
-              );
-            })}
+            {groups
+              ? groups.map((group) => (
+                  <li key={group.label} role="presentation">
+                    <span className="custom-select-group-label">{group.label}</span>
+                    <ul role="group" aria-label={group.label}>
+                      {group.options.map(renderOption)}
+                    </ul>
+                  </li>
+                ))
+              : flatOptions.map(renderOption)}
           </ul>
         </div>
       )}

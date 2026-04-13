@@ -807,6 +807,24 @@
     color: var(--color-accent);
   }
 
+  .custom-select-group-label {
+    @apply block px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide select-none;
+    color: var(--color-text-secondary);
+  }
+
+  .custom-select-options [role="group"] {
+    @apply list-none m-0 p-0;
+  }
+
+  .custom-select-options [role="group"] li {
+    @apply m-0 p-0;
+  }
+
+  .custom-select-options > li[role="presentation"] + li[role="presentation"] {
+    @apply border-t;
+    border-color: var(--color-border);
+  }
+
   @keyframes slide-down {
     from {
       opacity: 0;

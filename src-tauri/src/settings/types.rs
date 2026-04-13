@@ -367,6 +367,39 @@ pub enum TranscriptionProvider {
     AliyunParaformer,
 }
 
+// ── 提供商分层分类 ────────────────────────────────────────────
+
+/// 提供商大类：云端 / 本地
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderCategory {
+    Cloud,
+    Local,
+}
+
+impl TranscriptionProvider {
+    /// 返回提供商所属的大类
+    pub fn category(&self) -> ProviderCategory {
+        match self {
+            Self::Sensevoice => ProviderCategory::Local,
+            Self::Openai
+            | Self::Volcengine
+            | Self::AliyunAsr
+            | Self::AliyunParaformer => ProviderCategory::Cloud,
+        }
+    }
+
+    /// 判断是否为本地提供商
+    pub fn is_local(&self) -> bool {
+        self.category() == ProviderCategory::Local
+    }
+
+    /// 判断是否为云端提供商
+    pub fn is_cloud(&self) -> bool {
+        self.category() == ProviderCategory::Cloud
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TextProcessingProvider {
@@ -503,4 +536,35 @@ pub(crate) struct UpdaterState {
     pub deferred_version: Option<String>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn provider_category_classification() {
+        assert_eq!(TranscriptionProvider::Openai.category(), ProviderCategory::Cloud);
+        assert_eq!(TranscriptionProvider::Volcengine.category(), ProviderCategory::Cloud);
+        assert_eq!(TranscriptionProvider::AliyunAsr.category(), ProviderCategory::Cloud);
+        assert_eq!(TranscriptionProvider::AliyunParaformer.category(), ProviderCategory::Cloud);
+        assert_eq!(TranscriptionProvider::Sensevoice.category(), ProviderCategory::Local);
+    }
+
+    #[test]
+    fn provider_is_local_and_is_cloud() {
+        assert!(TranscriptionProvider::Openai.is_cloud());
+        assert!(!TranscriptionProvider::Openai.is_local());
+        assert!(TranscriptionProvider::Sensevoice.is_local());
+        assert!(!TranscriptionProvider::Sensevoice.is_cloud());
+    }
+
+    #[test]
+    fn provider_category_does_not_serialize_into_provider() {
+        let provider = TranscriptionProvider::Sensevoice;
+        let json = serde_json::to_string(&provider).unwrap();
+        assert_eq!(json, "\"sensevoice\"");
+
+        let provider = TranscriptionProvider::Openai;
+        let json = serde_json::to_string(&provider).unwrap();
+        assert_eq!(json, "\"openai\"");
+    }
+}
