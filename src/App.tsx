@@ -263,6 +263,7 @@ function App() {
   const { settings, setSettings, loading, saveSettings } = useSettings();
   const { syncAutostart } = useAutostart();
   const autostartSyncedOnStartup = useRef(false);
+  const skipNextDraftSync = useRef(false);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [activeSection, setActiveSection] = useState("general");
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistentBoolean(
@@ -311,53 +312,57 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    if (settings) {
-      const normalizedLocalModel = normalizeLocalModel(settings.sensevoice.localModel);
+  const createDraftFromSettings = useCallback(
+    (s: Settings): Settings => {
+      const normalizedLocalModel = normalizeLocalModel(s.sensevoice.localModel);
       const effectiveLocalModel =
         !supportsSherpaOnnxSenseVoice &&
         normalizedLocalModel === "sherpa-onnx-sensevoice"
           ? "sensevoice"
           : normalizedLocalModel;
-      const normalizedAliyunRegion = normalizeAliyunRegion(settings.aliyun.region);
+      const normalizedAliyunRegion = normalizeAliyunRegion(s.aliyun.region);
       const effectiveAliyunRegion =
-        settings.provider === "aliyun-paraformer" ? "beijing" : normalizedAliyunRegion;
-      setDraft({
-        ...settings,
+        s.provider === "aliyun-paraformer" ? "beijing" : normalizedAliyunRegion;
+      return {
+        ...s,
         sensevoice: {
-          ...settings.sensevoice,
+          ...s.sensevoice,
           localModel: effectiveLocalModel,
-          stopMode: normalizeStopMode(settings.sensevoice.stopMode),
-          modelId: normalizeSenseVoiceModelId(
-            effectiveLocalModel,
-            settings.sensevoice.modelId
-          ),
-          language: normalizeSenseVoiceLanguage(settings.sensevoice.language),
-          device: normalizeSenseVoiceDevice(
-            effectiveLocalModel,
-            settings.sensevoice.device
-          ),
+          stopMode: normalizeStopMode(s.sensevoice.stopMode),
+          modelId: normalizeSenseVoiceModelId(effectiveLocalModel, s.sensevoice.modelId),
+          language: normalizeSenseVoiceLanguage(s.sensevoice.language),
+          device: normalizeSenseVoiceDevice(effectiveLocalModel, s.sensevoice.device),
         },
         aliyun: {
-          ...settings.aliyun,
+          ...s.aliyun,
           region: effectiveAliyunRegion,
           apiKeys: {
-            beijing: settings.aliyun.apiKeys.beijing ?? "",
-            singapore: settings.aliyun.apiKeys.singapore ?? "",
+            beijing: s.aliyun.apiKeys.beijing ?? "",
+            singapore: s.aliyun.apiKeys.singapore ?? "",
           },
           asr: {
-            ...settings.aliyun.asr,
-            vocabularyId: settings.aliyun.asr.vocabularyId ?? "",
+            ...s.aliyun.asr,
+            vocabularyId: s.aliyun.asr.vocabularyId ?? "",
           },
           paraformer: {
-            ...settings.aliyun.paraformer,
-            vocabularyId: settings.aliyun.paraformer.vocabularyId ?? "",
-            languageHints: settings.aliyun.paraformer.languageHints ?? [],
+            ...s.aliyun.paraformer,
+            vocabularyId: s.aliyun.paraformer.vocabularyId ?? "",
+            languageHints: s.aliyun.paraformer.languageHints ?? [],
           },
         },
-      });
+      };
+    },
+    [supportsSherpaOnnxSenseVoice]
+  );
+
+  useEffect(() => {
+    if (!settings) return;
+    if (skipNextDraftSync.current) {
+      skipNextDraftSync.current = false;
+      return;
     }
-  }, [settings, supportsSherpaOnnxSenseVoice]);
+    setDraft(createDraftFromSettings(settings));
+  }, [settings, createDraftFromSettings]);
 
   useEffect(() => {
     if (!settings || autostartSyncedOnStartup.current) {
@@ -636,9 +641,25 @@ function App() {
       return;
     }
     try {
-      await saveSettings(nextSettings);
+      const persisted = await saveSettings(nextSettings);
+      // Prevent the settings→draft useEffect from overwriting user's pending edits
+      skipNextDraftSync.current = true;
+      // Merge only runtime-managed fields from the backend response into draft
+      setDraft((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sensevoice: {
+            ...prev.sensevoice,
+            enabled: persisted.sensevoice.enabled,
+            installed: persisted.sensevoice.installed,
+            downloadState: persisted.sensevoice.downloadState,
+            lastError: persisted.sensevoice.lastError,
+          },
+        };
+      });
       try {
-        await syncAutostart(nextSettings.startup.launchOnBoot);
+        await syncAutostart(persisted.startup.launchOnBoot);
       } catch (error) {
         toast.error(t("general.launchOnBootSyncError", { error: toErrorMessage(error) }));
         return;
@@ -741,18 +762,10 @@ function App() {
     if (!draft) {
       return null;
     }
-    const nextSenseVoiceSettings = {
-      ...draft.sensevoice,
-      enabled: sensevoiceStatus.enabled,
-      installed: sensevoiceStatus.installed,
-      downloadState: sensevoiceStatus.downloadState,
-      lastError: sensevoiceStatus.lastError,
-    };
-    return {
-      ...draft,
-      sensevoice: nextSenseVoiceSettings,
-    };
-  }, [draft, sensevoiceStatus]);
+    // Runtime sensevoice fields (enabled, installed, downloadState, lastError)
+    // are preserved by the backend — do NOT inject them from the frontend.
+    return { ...draft };
+  }, [draft]);
 
   const handleSenseVoicePrepare = async () => {
     const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();

@@ -594,10 +594,18 @@ impl SettingsStore {
         self.persist_settings(&normalized)
     }
 
-    /// Save settings and return the normalized version that was persisted.
-    pub fn save_and_return(&self, settings: &Settings) -> Result<Settings, SettingsError> {
+    /// Save settings from the UI, preserving runtime-managed SenseVoice
+    /// fields from the current persisted state.  The merge + persist happens
+    /// under the write lock so concurrent runtime updates cannot be lost.
+    pub fn save_user_settings(&self, settings: &Settings) -> Result<Settings, SettingsError> {
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
-        let normalized = Self::normalize(settings);
+        let current = self.load()?;
+        let mut merged = settings.clone();
+        merged.sensevoice.enabled = current.sensevoice.enabled;
+        merged.sensevoice.installed = current.sensevoice.installed;
+        merged.sensevoice.download_state = current.sensevoice.download_state.clone();
+        merged.sensevoice.last_error = current.sensevoice.last_error.clone();
+        let normalized = Self::normalize(&merged);
         validate_settings(&normalized)?;
         self.persist_settings(&normalized)?;
         Ok(normalized)

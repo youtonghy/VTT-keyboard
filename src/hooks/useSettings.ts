@@ -11,11 +11,12 @@ export function useSettings() {
     setSettings(data);
   }, []);
 
-  const saveSettings = useCallback(async (next: Settings) => {
+  const saveSettings = useCallback(async (next: Settings): Promise<Settings> => {
     // update_settings returns the normalized/persisted version so React
     // state stays in sync with what's actually on disk.
     const persisted = await invoke<Settings>("update_settings", { settings: next });
     setSettings(persisted);
+    return persisted;
   }, []);
 
   useEffect(() => {

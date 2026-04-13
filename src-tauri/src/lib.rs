@@ -78,7 +78,7 @@ fn update_settings(
 
     let persisted = state
         .settings_store
-        .save_and_return(&settings)
+        .save_user_settings(&settings)
         .map_err(|err| err.to_string())?;
 
     updater::handle_settings_changed(app.clone(), state.settings_store.clone());
@@ -87,7 +87,7 @@ fn update_settings(
         &app,
         &state,
         &previous_local_model,
-        &settings.sensevoice.local_model,
+        &persisted.sensevoice.local_model,
     )?;
 
     Ok(persisted)
@@ -170,7 +170,7 @@ fn import_settings(state: State<AppState>, path: String) -> Result<Settings, Str
     let settings: Settings = serde_json::from_str(&data).map_err(|err| err.to_string())?;
     let persisted = state
         .settings_store
-        .save_and_return(&settings)
+        .save_user_settings(&settings)
         .map_err(|err| err.to_string())?;
     Ok(persisted)
 }
