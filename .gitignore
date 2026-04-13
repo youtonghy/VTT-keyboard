@@ -24,8 +24,6 @@ dist-ssr
 *.sw?
 ~
 
-# AGENTS.md
-AGENTS.md
 
 # Python cache
 __pycache__/

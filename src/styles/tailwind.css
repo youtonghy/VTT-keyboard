@@ -605,7 +605,20 @@
   }
 
   .history-dialog-header {
-    @apply mb-4 flex items-center justify-between gap-3;
+    @apply mb-4 flex items-center justify-between gap-2;
+  }
+
+  .history-dialog-header-actions {
+    @apply flex items-center gap-2;
+  }
+
+  .history-status-badge {
+    @apply rounded-md px-2 py-0.5 text-xs font-medium;
+  }
+
+  .history-status-failed {
+    color: var(--color-error, #dc2626);
+    background-color: color-mix(in oklab, var(--color-error, #dc2626) 12%, transparent);
   }
 
   .history-dialog-header h4 {
@@ -648,15 +661,45 @@
     word-break: break-word;
   }
 
-  .history-trigger-list {
-    @apply m-0 list-none space-y-1 p-0;
+  .history-trigger-chips {
+    @apply flex flex-wrap gap-1.5 mt-1;
   }
 
-  .history-trigger-list li {
-    @apply text-sm;
+  .history-trigger-chip {
+    @apply inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs;
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface));
+    border: 1px solid color-mix(in oklab, var(--color-accent) 20%, var(--color-border));
     color: var(--color-text-primary);
+  }
+
+  .history-trigger-chip strong {
+    @apply font-semibold;
+  }
+
+  .history-trigger-chip-sep {
+    color: var(--color-text-secondary);
+    opacity: 0.5;
+  }
+
+  .history-trigger-chip-mode {
+    @apply rounded px-1.5 py-0 text-[10px] font-medium;
+    background-color: color-mix(in oklab, var(--color-accent) 18%, transparent);
+    color: var(--color-accent-strong, var(--color-accent));
+  }
+
+  .history-detail-meta {
+    @apply flex flex-wrap items-center gap-1.5 rounded-xl px-3 py-2.5 text-xs;
+    color: var(--color-text-secondary);
+    background-color: color-mix(in oklab, var(--color-surface) 80%, var(--color-border));
+  }
+
+  .history-detail-meta > span {
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  .history-detail-meta-sep {
+    opacity: 0.4;
   }
 
   .history-error-text {

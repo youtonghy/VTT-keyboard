@@ -42,6 +42,7 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
     : t("history.unknownModelGroup");
   const transcriptionElapsed = formatMillisecondsAsSeconds(item.transcriptionElapsedMs);
   const recordingDuration = formatMillisecondsAsSeconds(item.recordingDurationMs);
+  const isFailed = item.status === "failed";
 
   return (
     <div className="history-dialog-backdrop" role="presentation" onClick={onClose}>
@@ -54,27 +55,19 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
       >
         <header className="history-dialog-header">
           <h4>{t("history.detailTitle")}</h4>
-          <button type="button" className="history-dialog-close" onClick={onClose}>
-            <X size={16} />
-          </button>
+          <div className="history-dialog-header-actions">
+            {isFailed && (
+              <span className="history-status-badge history-status-failed">
+                {t("history.failed")}
+              </span>
+            )}
+            <button type="button" className="history-dialog-close" onClick={onClose}>
+              <X size={16} />
+            </button>
+          </div>
         </header>
 
         <div className="history-dialog-body">
-          <div className="history-detail-row">
-            <span>{t("history.detailModelGroup")}</span>
-            <strong>{modelGroup}</strong>
-          </div>
-
-          <div className="history-detail-row">
-            <span>{t("history.detailTranscriptionElapsed")}</span>
-            <strong>{transcriptionElapsed}</strong>
-          </div>
-
-          <div className="history-detail-row">
-            <span>{t("history.detailRecordingDuration")}</span>
-            <strong>{recordingDuration}</strong>
-          </div>
-
           <div className="history-detail-row">
             <span>{t("history.detailTranscription")}</span>
             <strong>{item.transcriptionText || t("history.emptyText")}</strong>
@@ -82,39 +75,26 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
 
           {hasTriggerDetails ? (
             <>
-              <div className="history-detail-row">
-                <span>{t("history.detailTriggerEvent")}</span>
-                {item.triggerMatches.length > 0 ? (
-                  <ul className="history-trigger-list">
+              {item.triggerMatches.length > 0 && (
+                <div className="history-detail-row">
+                  <span>{t("history.detailTriggerMatch")}</span>
+                  <div className="history-trigger-chips">
                     {item.triggerMatches.map((match) => (
-                      <li key={`${item.id}-${match.triggerId}-${match.mode}-${match.matchedValue}`}>
-                        {match.triggerTitle} / {match.keyword || t("history.noKeyword")} / {match.matchedValue} / {t(`history.triggerMode.${match.mode}`)}
-                      </li>
+                      <span
+                        className="history-trigger-chip"
+                        key={`${item.id}-${match.triggerId}-${match.mode}-${match.matchedValue}`}
+                      >
+                        <strong>{match.triggerTitle}</strong>
+                        <span className="history-trigger-chip-sep">·</span>
+                        {match.matchedValue}
+                        <span className="history-trigger-chip-mode">
+                          {t(`history.triggerMode.${match.mode}`)}
+                        </span>
+                      </span>
                     ))}
-                  </ul>
-                ) : (
-                  <strong>{t("history.none")}</strong>
-                )}
-              </div>
-
-              <div className="history-detail-row">
-                <span>{t("history.detailTriggered")}</span>
-                <strong>{item.triggeredByKeyword ? t("history.yes") : t("history.no")}</strong>
-              </div>
-
-              <div className="history-detail-row">
-                <span>{t("history.detailTriggeredWhich")}</span>
-                <strong>
-                  {item.triggerMatches.length > 0
-                    ? item.triggerMatches.map((match) => match.triggerTitle).join(" / ")
-                    : t("history.none")}
-                </strong>
-              </div>
-
-              <div className="history-detail-row">
-                <span>{t("history.detailOriginal")}</span>
-                <strong>{item.transcriptionText || t("history.emptyText")}</strong>
-              </div>
+                  </div>
+                </div>
+              )}
 
               <div className="history-detail-row">
                 <span>{t("history.detailFinal")}</span>
@@ -129,6 +109,14 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
               <strong className="history-error-text">{item.errorMessage}</strong>
             </div>
           ) : null}
+
+          <div className="history-detail-meta">
+            <span title={modelGroup}>{modelGroup}</span>
+            <span className="history-detail-meta-sep">·</span>
+            <span>{t("history.detailTranscriptionElapsed")} {transcriptionElapsed}</span>
+            <span className="history-detail-meta-sep">·</span>
+            <span>{t("history.detailRecordingDuration")} {recordingDuration}</span>
+          </div>
         </div>
       </section>
     </div>
