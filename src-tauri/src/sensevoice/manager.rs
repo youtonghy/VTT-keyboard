@@ -1,3 +1,8 @@
+use super::docker_utils::{
+    bind_mount, docker_command, docker_container_running, docker_image_exists, hide_window,
+    normalize_log_line, normalize_publish_host, parse_host_and_port, read_selected_hub,
+    remove_container_if_exists, run_command_streaming,
+};
 use super::{
     model::{
         is_vllm_local_model, normalize_local_model, resolve_vllm_model_id, runtime_container_name,
@@ -15,7 +20,6 @@ use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Write};
-use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -829,8 +833,10 @@ fn run_startup_task(
             }
             ensure_docker_available()?;
             check_start_cancelled(&cancel_flag)?;
-            let (host, port) = parse_host_and_port(&sensevoice.service_url)?;
-            let publish_host = normalize_publish_host(&host)?;
+            let (host, port) = parse_host_and_port(&sensevoice.service_url)
+                .map_err(SenseVoiceError::Url)?;
+            let publish_host = normalize_publish_host(&host)
+                .map_err(SenseVoiceError::Config)?;
             let current_log_path = paths.runtime_dir.join("server.log");
             log_path = Some(current_log_path.clone());
             let current_runtime_tail = Arc::new(Mutex::new(VecDeque::with_capacity(200)));
@@ -1590,7 +1596,8 @@ fn ensure_runtime_image(app: &AppHandle, runtime_dir: &Path) -> Result<(), Sense
                 let _ = app.emit("sensevoice-progress", payload);
             }
         },
-    )?;
+    )
+    .map_err(SenseVoiceError::Process)?;
 
     fs::write(stamp_path, expected_stamp).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
     Ok(())
@@ -1631,7 +1638,8 @@ fn ensure_vllm_image(app: &AppHandle) -> Result<(), SenseVoiceError> {
                 let _ = app.emit("sensevoice-progress", payload);
             }
         },
-    )?;
+    )
+    .map_err(SenseVoiceError::Process)?;
     Ok(())
 }
 
@@ -1642,13 +1650,6 @@ fn runtime_stamp() -> String {
     REQUIREMENTS_TXT.hash(&mut hasher);
     DOCKERFILE_TXT.hash(&mut hasher);
     format!("{:x}", hasher.finish())
-}
-
-fn docker_image_exists(image: &str) -> bool {
-    let mut inspect = docker_command();
-    inspect.arg("image").arg("inspect").arg(image);
-    hide_window(&mut inspect);
-    inspect.status().is_ok_and(|status| status.success())
 }
 
 fn run_service_container(
@@ -1785,50 +1786,6 @@ fn stop_container(name: &str) -> Result<(), SenseVoiceError> {
     )))
 }
 
-fn remove_container_if_exists(name: &str) -> Result<(), SenseVoiceError> {
-    let mut command = docker_command();
-    command.arg("rm").arg("-f").arg(name);
-    hide_window(&mut command);
-    let output = command
-        .output()
-        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let detail = String::from_utf8_lossy(&output.stderr);
-    if detail.contains("No such container") {
-        return Ok(());
-    }
-    Err(SenseVoiceError::Process(format!(
-        "移除容器失败: {}",
-        detail.trim()
-    )))
-}
-
-fn docker_container_running(name: &str) -> Result<bool, SenseVoiceError> {
-    let mut command = docker_command();
-    command
-        .arg("inspect")
-        .arg("-f")
-        .arg("{{.State.Running}}")
-        .arg(name);
-    hide_window(&mut command);
-    let output = command
-        .output()
-        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        if detail.contains("No such object") || detail.contains("No such container") {
-            return Ok(false);
-        }
-        return Err(SenseVoiceError::Process(format!(
-            "读取容器状态失败: {}",
-            detail.trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim() == "true")
-}
-
 fn docker_container_state(name: &str) -> Result<RuntimeState, SenseVoiceError> {
     let mut command = docker_command();
     command
@@ -1955,13 +1912,6 @@ fn stop_all_runtime_containers() {
         let _ = stop_container(VLLM_CONTAINER_NAME);
         let _ = remove_container_if_exists(VLLM_CONTAINER_NAME);
     }
-}
-
-fn bind_mount(source: &Path, target: &str) -> String {
-    format!(
-        "type=bind,source={},target={target}",
-        source.to_string_lossy()
-    )
 }
 
 fn attach_runtime_logs(
@@ -2182,158 +2132,6 @@ fn read_log_tail(path: &Path, max_lines: usize) -> String {
         "（无日志）".to_string()
     } else {
         tail.into_iter().collect::<Vec<_>>().join(" || ")
-    }
-}
-
-fn run_command_streaming<F>(
-    command: &mut Command,
-    step: &str,
-    timeout: Duration,
-    mut on_line: F,
-) -> Result<(), SenseVoiceError>
-where
-    F: FnMut(&str),
-{
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    hide_window(command);
-
-    let mut child = command
-        .spawn()
-        .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| SenseVoiceError::Process(format!("{step}失败: 无法读取 stdout")))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| SenseVoiceError::Process(format!("{step}失败: 无法读取 stderr")))?;
-
-    let (tx, rx) = mpsc::channel::<String>();
-    let tx_out = tx.clone();
-    let stdout_handle = thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(value) = line {
-                let _ = tx_out.send(value);
-            }
-        }
-    });
-    let stderr_handle = thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(value) = line {
-                let _ = tx.send(value);
-            }
-        }
-    });
-
-    let started = Instant::now();
-    let mut tail = VecDeque::with_capacity(30);
-    let exit_status = loop {
-        while let Ok(line) = rx.try_recv() {
-            if !line.trim().is_empty() {
-                if tail.len() >= 30 {
-                    tail.pop_front();
-                }
-                tail.push_back(line.clone());
-                on_line(&line);
-            }
-        }
-
-        if started.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_handle.join();
-            let _ = stderr_handle.join();
-            return Err(SenseVoiceError::Process(format!(
-                "{step}超时（{} 秒），请检查网络或重试。最近日志: {}",
-                timeout.as_secs(),
-                tail.into_iter().collect::<Vec<_>>().join(" || ")
-            )));
-        }
-
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => thread::sleep(Duration::from_millis(200)),
-            Err(err) => {
-                let _ = stdout_handle.join();
-                let _ = stderr_handle.join();
-                return Err(SenseVoiceError::Process(format!("{step}失败: {err}")));
-            }
-        }
-    };
-
-    while let Ok(line) = rx.try_recv() {
-        if !line.trim().is_empty() {
-            if tail.len() >= 30 {
-                tail.pop_front();
-            }
-            tail.push_back(line.clone());
-            on_line(&line);
-        }
-    }
-
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
-
-    if exit_status.success() {
-        return Ok(());
-    }
-
-    Err(SenseVoiceError::Process(format!(
-        "{step}失败: {}",
-        tail.into_iter().collect::<Vec<_>>().join(" || ")
-    )))
-}
-
-fn normalize_log_line(line: &str) -> String {
-    line.replace('\r', "").trim().to_string()
-}
-
-fn parse_host_and_port(service_url: &str) -> Result<(String, u16), SenseVoiceError> {
-    let parsed = Url::parse(service_url).map_err(|err| SenseVoiceError::Url(err.to_string()))?;
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| SenseVoiceError::Url("服务地址缺少主机名".to_string()))?
-        .to_string();
-    let port = parsed
-        .port_or_known_default()
-        .ok_or_else(|| SenseVoiceError::Url("服务地址缺少端口".to_string()))?;
-    Ok((host, port))
-}
-
-fn normalize_publish_host(host: &str) -> Result<String, SenseVoiceError> {
-    if host.eq_ignore_ascii_case("localhost") {
-        return Ok("127.0.0.1".to_string());
-    }
-    if host.parse::<Ipv4Addr>().is_ok() {
-        return Ok(host.to_string());
-    }
-    Err(SenseVoiceError::Config(
-        "Docker 模式下服务地址主机仅支持 localhost 或 IPv4 地址".to_string(),
-    ))
-}
-
-fn read_selected_hub(state_file: &Path) -> Option<String> {
-    let data = fs::read_to_string(state_file).ok()?;
-    let value: Value = serde_json::from_str(&data).ok()?;
-    value
-        .get("hub")
-        .and_then(|item| item.as_str())
-        .map(str::to_string)
-}
-
-fn docker_command() -> Command {
-    Command::new("docker")
-}
-
-fn hide_window(_command: &mut Command) {
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        _command.creation_flags(0x0800_0000);
     }
 }
 

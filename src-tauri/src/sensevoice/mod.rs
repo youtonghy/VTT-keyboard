@@ -1,4 +1,5 @@
 pub mod client;
+pub mod docker_utils;
 pub mod manager;
 pub mod model;
 pub mod native_runtime;
