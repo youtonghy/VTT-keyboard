@@ -13,6 +13,8 @@ pub enum RecorderError {
     Stream(String),
     #[error("录音尚未开始")]
     NotRecording,
+    #[error("录音状态锁异常")]
+    LockPoisoned,
 }
 
 #[derive(Clone)]
@@ -82,7 +84,7 @@ impl Recorder {
     }
 
     pub fn start(&self) -> Result<(), RecorderError> {
-        let inner = self.inner.lock().expect("录音锁错误");
+        let inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
         if inner.stream.is_some() {
             return Ok(());
         }
@@ -104,31 +106,23 @@ impl Recorder {
             eprintln!("录音流错误: {_err}");
         };
 
+        macro_rules! build_stream {
+            ($sample_type:ty) => {
+                device
+                    .build_input_stream(
+                        &config,
+                        move |data: &[$sample_type], _| push_samples(data, &buffer_clone),
+                        err_fn,
+                        None,
+                    )
+                    .map_err(|err| RecorderError::Stream(err.to_string()))?
+            };
+        }
+
         let stream = match input_config.sample_format() {
-            SampleFormat::I16 => device
-                .build_input_stream(
-                    &config,
-                    move |data: &[i16], _| push_samples(data, &buffer_clone),
-                    err_fn,
-                    None,
-                )
-                .map_err(|err| RecorderError::Stream(err.to_string()))?,
-            SampleFormat::U16 => device
-                .build_input_stream(
-                    &config,
-                    move |data: &[u16], _| push_samples(data, &buffer_clone),
-                    err_fn,
-                    None,
-                )
-                .map_err(|err| RecorderError::Stream(err.to_string()))?,
-            SampleFormat::F32 => device
-                .build_input_stream(
-                    &config,
-                    move |data: &[f32], _| push_samples(data, &buffer_clone),
-                    err_fn,
-                    None,
-                )
-                .map_err(|err| RecorderError::Stream(err.to_string()))?,
+            SampleFormat::I16 => build_stream!(i16),
+            SampleFormat::U16 => build_stream!(u16),
+            SampleFormat::F32 => build_stream!(f32),
             _ => return Err(RecorderError::Config("不支持的采样格式".to_string())),
         };
 
@@ -136,7 +130,7 @@ impl Recorder {
             .play()
             .map_err(|err| RecorderError::Stream(err.to_string()))?;
 
-        let mut inner = self.inner.lock().expect("录音锁错误");
+        let mut inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
         inner.stream = Some(stream);
         inner.buffer = buffer;
         inner.config = Some(config);
@@ -144,11 +138,15 @@ impl Recorder {
     }
 
     pub fn stop(&self) -> Result<RecordedAudio, RecorderError> {
-        let mut inner = self.inner.lock().expect("录音锁错误");
+        let mut inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
         let Some(config) = inner.config.clone() else {
             return Err(RecorderError::NotRecording);
         };
-        let buffer = inner.buffer.lock().expect("录音缓冲锁错误").clone();
+        let buffer = inner
+            .buffer
+            .lock()
+            .map_err(|_| RecorderError::LockPoisoned)?
+            .clone();
         inner.stream.take();
         inner.config = None;
         Ok(RecordedAudio {
@@ -171,6 +169,7 @@ where
     T: Sample,
     i16: FromSample<T>,
 {
-    let mut guard = buffer.lock().expect("录音缓冲锁错误");
-    guard.extend(data.iter().map(|sample| i16::from_sample(*sample)));
+    if let Ok(mut guard) = buffer.lock() {
+        guard.extend(data.iter().map(|sample| i16::from_sample(*sample)));
+    }
 }
