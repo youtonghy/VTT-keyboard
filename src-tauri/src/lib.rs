@@ -7,6 +7,7 @@ mod recorder;
 mod sensevoice;
 mod settings;
 mod status_native;
+mod transcription;
 mod transcription_dispatcher;
 mod triggers;
 mod updater;
