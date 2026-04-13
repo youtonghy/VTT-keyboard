@@ -205,11 +205,21 @@ fn build_run_task_message(settings: &Settings, provider: ProviderKind, task_id: 
     .to_string()
 }
 
-fn wait_for_task_started(
-    socket: &mut WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+/// WebSocket 消息读取循环的停止条件
+enum WsLoopAction {
+    Continue,
+    Done,
+}
+
+type WsStream = WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>;
+
+/// 通用的 WebSocket 事件读取循环
+fn read_ws_events(
+    socket: &mut WsStream,
+    segments: &mut Vec<Segment>,
+    sequence: &mut u64,
+    on_event: impl Fn(ServerEventAction) -> Result<WsLoopAction, AliyunRealtimeError>,
 ) -> Result<(), AliyunRealtimeError> {
-    let mut segments = Vec::new();
-    let mut sequence = 0u64;
     loop {
         let message = socket
             .read()
@@ -218,21 +228,13 @@ fn wait_for_task_started(
             Message::Text(text) => {
                 let value: Value = serde_json::from_str(&text)
                     .map_err(|err| AliyunRealtimeError::Parse(err.to_string()))?;
-                match handle_server_event(&value, &mut segments, &mut sequence)? {
-                    ServerEventAction::TaskStarted => return Ok(()),
-                    ServerEventAction::TaskFinished => {
-                        return Err(AliyunRealtimeError::Request(
-                            "服务端在任务启动前结束了任务".to_string(),
-                        ))
-                    }
-                    ServerEventAction::Continue => {}
+                let action = handle_server_event(&value, segments, sequence)?;
+                match on_event(action)? {
+                    WsLoopAction::Done => return Ok(()),
+                    WsLoopAction::Continue => {}
                 }
             }
-            Message::Close(_) => {
-                return Err(AliyunRealtimeError::WebSocket(
-                    "等待任务启动时连接已关闭".to_string(),
-                ))
-            }
+            Message::Close(_) => return Ok(()),
             Message::Ping(payload) => {
                 socket
                     .send(Message::Pong(payload))
@@ -243,34 +245,32 @@ fn wait_for_task_started(
     }
 }
 
-fn collect_transcription_result(
-    socket: &mut WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
-) -> Result<String, AliyunRealtimeError> {
+fn wait_for_task_started(socket: &mut WsStream) -> Result<(), AliyunRealtimeError> {
+    let mut segments = Vec::new();
+    let mut sequence = 0u64;
+    read_ws_events(&mut *socket, &mut segments, &mut sequence, |action| {
+        match action {
+            ServerEventAction::TaskStarted => Ok(WsLoopAction::Done),
+            ServerEventAction::TaskFinished => Err(AliyunRealtimeError::Request(
+                "服务端在任务启动前结束了任务".to_string(),
+            )),
+            ServerEventAction::Continue => Ok(WsLoopAction::Continue),
+        }
+    })
+}
+
+fn collect_transcription_result(socket: &mut WsStream) -> Result<String, AliyunRealtimeError> {
     let mut segments = Vec::<Segment>::new();
     let mut sequence = 0u64;
 
-    loop {
-        let message = socket
-            .read()
-            .map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
-        match message {
-            Message::Text(text) => {
-                let value: Value = serde_json::from_str(&text)
-                    .map_err(|err| AliyunRealtimeError::Parse(err.to_string()))?;
-                match handle_server_event(&value, &mut segments, &mut sequence)? {
-                    ServerEventAction::TaskFinished => break,
-                    ServerEventAction::Continue | ServerEventAction::TaskStarted => {}
-                }
+    read_ws_events(&mut *socket, &mut segments, &mut sequence, |action| {
+        match action {
+            ServerEventAction::TaskFinished => Ok(WsLoopAction::Done),
+            ServerEventAction::Continue | ServerEventAction::TaskStarted => {
+                Ok(WsLoopAction::Continue)
             }
-            Message::Close(_) => break,
-            Message::Ping(payload) => {
-                socket
-                    .send(Message::Pong(payload))
-                    .map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
-            }
-            _ => {}
         }
-    }
+    })?;
 
     if segments.is_empty() {
         return Ok(String::new());
