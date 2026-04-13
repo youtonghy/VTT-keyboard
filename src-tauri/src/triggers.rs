@@ -1,6 +1,7 @@
 use crate::openai::{self, OpenAiError};
 use crate::settings::{Settings, TriggerCard, TriggerMatch, TriggerMatchMode};
 use regex::Regex;
+use std::collections::HashMap;
 
 const VALUE_PLACEHOLDER: &str = "{value}";
 const SENTENCE_DELIMITERS: [char; 12] = [
@@ -14,6 +15,28 @@ pub struct TriggerResult {
     pub trigger_matches: Vec<TriggerMatch>,
 }
 
+/// 预编译的正则缓存，避免每次调用都重新编译
+struct RegexCache {
+    patterns: HashMap<String, Regex>,
+}
+
+impl RegexCache {
+    fn new() -> Self {
+        Self {
+            patterns: HashMap::new(),
+        }
+    }
+
+    fn get_or_compile(&mut self, pattern: &str) -> Option<&Regex> {
+        if !self.patterns.contains_key(pattern) {
+            if let Ok(regex) = Regex::new(pattern) {
+                self.patterns.insert(pattern.to_string(), regex);
+            }
+        }
+        self.patterns.get(pattern)
+    }
+}
+
 pub fn apply_triggers(
     settings: &Settings,
     input: &str,
@@ -24,9 +47,10 @@ pub fn apply_triggers(
     let mut triggered = false;
     let mut triggered_by_keyword = false;
     let mut trigger_matches = Vec::new();
+    let mut cache = RegexCache::new();
 
     for card in settings.triggers.iter().filter(|card| card.enabled) {
-        let matched = match_card(card, &sentences).or_else(|| {
+        let matched = match_card(card, &sentences, &mut cache).or_else(|| {
             if card.auto_apply {
                 first_non_empty_variable(card).map(|value| (value, false))
             } else {
@@ -50,7 +74,7 @@ pub fn apply_triggers(
                 ));
             }
             let cleaned = if matched_by_keyword {
-                remove_trigger_phrase(&output, &card.keyword)
+                remove_trigger_phrase(&output, &card.keyword, &mut cache)
             } else {
                 output.clone()
             };
@@ -101,14 +125,22 @@ fn split_sentences(input: &str) -> Vec<String> {
         .collect()
 }
 
-fn match_card(card: &TriggerCard, sentences: &[String]) -> Option<(String, bool)> {
-    let sentence = find_keyword_sentence(card, sentences)?;
+fn match_card(
+    card: &TriggerCard,
+    sentences: &[String],
+    cache: &mut RegexCache,
+) -> Option<(String, bool)> {
+    let sentence = find_keyword_sentence(card, sentences, cache)?;
     let value = match_variable_in_sentence(sentence, &card.variables)
         .or_else(|| first_non_empty_variable(card))?;
     Some((value, true))
 }
 
-fn find_keyword_sentence<'a>(card: &TriggerCard, sentences: &'a [String]) -> Option<&'a str> {
+fn find_keyword_sentence<'a>(
+    card: &TriggerCard,
+    sentences: &'a [String],
+    cache: &mut RegexCache,
+) -> Option<&'a str> {
     let keyword = card.keyword.trim();
     if keyword.is_empty() {
         return None;
@@ -117,7 +149,7 @@ fn find_keyword_sentence<'a>(card: &TriggerCard, sentences: &'a [String]) -> Opt
     if let Some((prefix, suffix)) = split_keyword(keyword) {
         return sentences
             .iter()
-            .find(|sentence| match_sentence(sentence, prefix, suffix).is_some())
+            .find(|sentence| match_sentence(sentence, prefix, suffix, cache).is_some())
             .map(String::as_str);
     }
 
@@ -137,32 +169,24 @@ fn match_variable_in_sentence(sentence: &str, variables: &[String]) -> Option<St
         return None;
     }
 
-    let mut matched: Option<(usize, usize, String)> = None;
-    for variable in variables {
-        let trimmed = variable.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let normalized_variable = normalize_for_compare(trimmed);
-        if normalized_variable.is_empty() {
-            continue;
-        }
-
-        if let Some(start) = normalized_sentence.find(&normalized_variable) {
-            let length = normalized_variable.chars().count();
-            let should_replace = match matched.as_ref() {
-                Some((best_start, best_len, _)) => {
-                    start < *best_start || (start == *best_start && length > *best_len)
-                }
-                None => true,
-            };
-            if should_replace {
-                matched = Some((start, length, trimmed.to_string()));
+    variables
+        .iter()
+        .filter_map(|variable| {
+            let trimmed = variable.trim();
+            if trimmed.is_empty() {
+                return None;
             }
-        }
-    }
-
-    matched.map(|(_, _, value)| value)
+            let normalized_variable = normalize_for_compare(trimmed);
+            if normalized_variable.is_empty() {
+                return None;
+            }
+            let start = normalized_sentence.find(&normalized_variable)?;
+            let length = normalized_variable.chars().count();
+            Some((start, length, trimmed.to_string()))
+        })
+        // 优先匹配最早出现的，长度相同则取更长的匹配
+        .min_by_key(|(start, length, _)| (*start, std::cmp::Reverse(*length)))
+        .map(|(_, _, value)| value)
 }
 
 fn first_non_empty_variable(card: &TriggerCard) -> Option<String> {
@@ -171,7 +195,7 @@ fn first_non_empty_variable(card: &TriggerCard) -> Option<String> {
         .find_map(|value| (!value.trim().is_empty()).then(|| value.trim().to_string()))
 }
 
-fn remove_trigger_phrase(input: &str, keyword: &str) -> String {
+fn remove_trigger_phrase(input: &str, keyword: &str, cache: &mut RegexCache) -> String {
     let keyword = keyword.trim();
     if keyword.is_empty() {
         return input.trim().to_string();
@@ -186,8 +210,8 @@ fn remove_trigger_phrase(input: &str, keyword: &str) -> String {
         }
         format!("(?i){}", keyword_pattern)
     };
-    let regex = Regex::new(&pattern).ok();
-    let cleaned = regex
+    let cleaned = cache
+        .get_or_compile(&pattern)
         .map(|re| re.replace(input, ""))
         .unwrap_or_else(|| input.into());
     cleaned.trim().to_string()
@@ -203,9 +227,14 @@ fn split_keyword(keyword: &str) -> Option<(&str, &str)> {
     Some((prefix, suffix))
 }
 
-fn match_sentence(sentence: &str, prefix: &str, suffix: &str) -> Option<String> {
+fn match_sentence(
+    sentence: &str,
+    prefix: &str,
+    suffix: &str,
+    cache: &mut RegexCache,
+) -> Option<String> {
     let pattern = build_trigger_pattern(prefix, suffix);
-    let regex = Regex::new(&pattern).ok()?;
+    let regex = cache.get_or_compile(&pattern)?;
     let captures = regex.captures(sentence)?;
     let value = captures
         .name("value")
@@ -298,7 +327,8 @@ mod tests {
     fn plain_keyword_matches_by_contains() {
         let card = build_card("润色", &["口语"]);
         let sentences = split_sentences("请帮我润色这句话");
-        let matched = find_keyword_sentence(&card, &sentences);
+        let mut cache = RegexCache::new();
+        let matched = find_keyword_sentence(&card, &sentences, &mut cache);
         assert_eq!(matched, Some("请帮我润色这句话"));
     }
 
@@ -316,7 +346,8 @@ mod tests {
     fn match_card_falls_back_to_first_variable_when_missing() {
         let card = build_card("润色", &["口语", "书面"]);
         let sentences = split_sentences("请帮我润色一下");
-        let matched = match_card(&card, &sentences);
+        let mut cache = RegexCache::new();
+        let matched = match_card(&card, &sentences, &mut cache);
         assert_eq!(matched, Some(("口语".to_string(), true)));
     }
 
@@ -324,7 +355,8 @@ mod tests {
     fn placeholder_keyword_is_still_supported() {
         let card = build_card("翻译为{value}", &["英文", "日文"]);
         let sentences = split_sentences("帮我翻译为日文");
-        let matched = match_card(&card, &sentences);
+        let mut cache = RegexCache::new();
+        let matched = match_card(&card, &sentences, &mut cache);
         assert_eq!(matched, Some(("日文".to_string(), true)));
     }
 }
