@@ -40,17 +40,15 @@ const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
-    #[error("闂佸搫鍟版慨鐢垫兜閸洘鍤旂€瑰嫭婢樼徊鍧楀箹鐎涙ɑ鈷掗柡浣靛€濋幆鍕敊閼测晝协: {0}")]
+    #[error("设置路径解析失败: {0}")]
     PathResolve(String),
-    #[error(
-        "闂佸搫鍟版慨鐢垫兜閸撲焦瀚氶悹鍥ㄥ絻閺呮悂鎮规担绋库挃闁汇倕妫濆顒勫炊閿旂瓔鍋? {0}"
-    )]
+    #[error("设置文件读写失败: {0}")]
     Io(String),
-    #[error("闂佸搫鍟版慨鐢垫兜閼搁潧绶為柛鏇ㄥ幗閸婄偤鏌涢弮鍌毿㈤柣锔藉灴瀵偊鎮ч崼婵堛偊: {0}")]
+    #[error("设置加密解密失败: {0}")]
     Crypto(String),
-    #[error("闂佸搫鍟版慨鐢垫兜閸撲焦鍠嗛柨婵嗘閳ь剛鏅幏瀣礈瑜忛弸鍌炴煕閹邦剚鍣规い? {0}")]
+    #[error("设置序列化失败: {0}")]
     Serde(String),
-    #[error("闂佸搫鍟版慨鐢垫兜閸撲焦瀚氶悹鍥ㄥ絻缁插潡鎮楀☉娅亪宕? {0}")]
+    #[error("设置存储操作失败: {0}")]
     Store(String),
 }
 
@@ -585,7 +583,8 @@ impl SettingsStore {
             }
         }
     }
-
+
+
     #[allow(dead_code)]
     pub fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
