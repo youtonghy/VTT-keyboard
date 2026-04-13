@@ -1,7 +1,7 @@
 {
   "app": {
     "title": "Voice Keyboard Settings",
-    "subtitle": "Hold the shortcut to record, release to transcribe and paste.",
+    "subtitle": "Tap the shortcut to toggle recording, or hold to record and release to stop.",
     "loading": "Loading settings..."
   },
   "nav": {
@@ -47,7 +47,7 @@
   },
   "shortcut": {
     "title": "Global Shortcut",
-    "description": "Hold to record, release to stop.",
+    "description": "Tap to toggle recording, or hold to record.",
     "key": "Shortcut",
     "capture": "Capture Shortcut",
     "capturing": "Capturing...",

@@ -405,11 +405,57 @@ function App() {
 
   
 
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
+
   useEffect(() => {
     if (!draft) {
       return;
     }
     let active = true;
+
+    // State for short-press toggle / long-press hold-to-record
+    const LONG_PRESS_THRESHOLD_MS = 300;
+    let isRecording = false;
+    let pressStartTime: number | null = null;
+    let keyDown = false;
+    let inFlight = false; // serialize start/stop transitions
+
+    const doStart = () => {
+      if (inFlight) return;
+      inFlight = true;
+      invoke("start_recording")
+        .then(() => {
+          logDebug("start_recording ok");
+          isRecording = true;
+          pressStartTime = Date.now();
+        })
+        .catch((error) => {
+          isRecording = false;
+          pressStartTime = null;
+          const message = toErrorMessage(error);
+          logError("start_recording failed", message);
+          toast.error(tRef.current("shortcut.startError", { error: message }));
+        })
+        .finally(() => { inFlight = false; });
+    };
+
+    const doStop = (silent = false) => {
+      if (inFlight) return;
+      inFlight = true;
+      isRecording = false;
+      pressStartTime = null;
+      invoke("stop_recording")
+        .then(() => logDebug("stop_recording ok"))
+        .catch((error) => {
+          const message = toErrorMessage(error);
+          logError("stop_recording failed", message);
+          if (!silent) {
+            toast.error(tRef.current("shortcut.stopError", { error: message }));
+          }
+        })
+        .finally(() => { inFlight = false; });
+    };
 
     const registerShortcut = async () => {
       try {
@@ -417,7 +463,7 @@ function App() {
         logDebug("unregister all success");
       } catch (error) {
         logError("unregister all failed", error);
-        toast.error(t("shortcut.unregisterError"));
+        toast.error(tRef.current("shortcut.unregisterError"));
       }
 
       try {
@@ -426,23 +472,30 @@ function App() {
             return;
           }
           logDebug("event", event.state);
+
           if (event.state === "Pressed") {
-            invoke("start_recording")
-              .then(() => logDebug("start_recording ok"))
-              .catch((error) => {
-                const message = toErrorMessage(error);
-                logError("start_recording failed", message);
-                toast.error(t("shortcut.startError", { error: message }));
-              });
+            if (keyDown) return; // ignore OS key-repeat
+            keyDown = true;
+
+            if (!isRecording) {
+              doStart();
+            } else {
+              // toggle mode: second press stops recording
+              doStop();
+            }
           }
+
           if (event.state === "Released") {
-            invoke("stop_recording")
-              .then(() => logDebug("stop_recording ok"))
-              .catch((error) => {
-                const message = toErrorMessage(error);
-                logError("stop_recording failed", message);
-                toast.error(t("shortcut.stopError", { error: message }));
-              });
+            keyDown = false;
+
+            if (isRecording && pressStartTime != null) {
+              const duration = Date.now() - pressStartTime;
+              if (duration >= LONG_PRESS_THRESHOLD_MS) {
+                // long-press release → stop recording
+                doStop();
+              }
+              // else: short press → toggle mode, keep recording
+            }
           }
         });
         logDebug("register success", draft.shortcut.key);
@@ -450,9 +503,9 @@ function App() {
         const message = toErrorMessage(error);
         logError("register failed", message);
         if (isConflictError(message)) {
-          toast.error(t("shortcut.conflict", { shortcut: draft.shortcut.key }));
+          toast.error(tRef.current("shortcut.conflict", { shortcut: draft.shortcut.key }));
         } else {
-          toast.error(t("shortcut.registerError", { error: message }));
+          toast.error(tRef.current("shortcut.registerError", { error: message }));
         }
       }
     };
@@ -461,11 +514,15 @@ function App() {
 
     return () => {
       active = false;
+      // ensure backend stops recording on cleanup
+      if (isRecording) {
+        invoke("stop_recording").catch(() => {});
+      }
       unregisterAll()
         .then(() => logDebug("unregister all cleanup"))
         .catch((error) => logError("unregister cleanup failed", error));
     };
-  }, [draft?.shortcut.key, t]);
+  }, [draft?.shortcut.key]);
 
   useEffect(() => {
     if (!isCapturing) {
