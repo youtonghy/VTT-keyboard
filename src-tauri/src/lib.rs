@@ -11,6 +11,7 @@ mod transcription;
 mod transcription_dispatcher;
 mod triggers;
 mod updater;
+mod util;
 mod volcengine;
 
 use recorder::RecorderService;

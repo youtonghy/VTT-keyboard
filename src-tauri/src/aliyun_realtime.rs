@@ -94,7 +94,7 @@ fn transcribe_realtime(
     let (mut socket, _) =
         connect(request).map_err(|err| AliyunRealtimeError::WebSocket(err.to_string()))?;
 
-    let task_id = uuid_simple();
+    let task_id = crate::util::timestamp_id();
     let start_message = build_run_task_message(settings, provider, &task_id);
     socket
         .send(Message::Text(start_message))
@@ -483,15 +483,6 @@ fn non_empty(value: &str) -> Option<&str> {
     } else {
         Some(trimmed)
     }
-}
-
-fn uuid_simple() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{timestamp:x}")
 }
 
 #[cfg(test)]

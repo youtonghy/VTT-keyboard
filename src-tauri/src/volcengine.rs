@@ -295,7 +295,7 @@ fn build_streaming_handshake(
             "uid": "vtt-keyboard"
         },
         "request": {
-            "reqid": uuid_simple(),
+            "reqid": crate::util::timestamp_id(),
             "workflow": "audio_in,resample,partition,vad,fe,decode,itn,nlu_punctuate",
             "sequence": 1,
             "nbest": 1,
@@ -382,14 +382,4 @@ fn ensure_config(settings: &VolcengineSettings) -> Result<(), VolcengineError> {
         return Err(VolcengineError::Config("Access Token 不能为空".to_string()));
     }
     Ok(())
-}
-
-/// 生成简单的 UUID
-fn uuid_simple() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("{:x}", timestamp)
 }
