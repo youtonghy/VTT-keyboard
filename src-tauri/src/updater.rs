@@ -114,9 +114,10 @@ fn log_dev_update_error<E>(app: &AppHandle, context: &str, error: &E)
 where
     E: Display + Debug,
 {
+    eprintln!("[updater] {context} failed: {error}");
+
     #[cfg(debug_assertions)]
     {
-        eprintln!("[updater] {context} failed: {error}");
         eprintln!("[updater] debug error: {error:?}");
 
         match with_manager(app, |manager| manager.status.clone()) {
@@ -133,7 +134,7 @@ where
     }
     #[cfg(not(debug_assertions))]
     {
-        let _ = (app, context, error);
+        let _ = app;
     }
 }
 
@@ -240,8 +241,25 @@ async fn check_for_updates(
     }
 
     let deferred_version = store.load_deferred_update_version().unwrap_or(None);
+
+    // Use updater_builder() instead of updater() to set on_before_exit callback.
+    // On Windows, update.install() calls std::process::exit(0) after launching
+    // the NSIS installer, so code after install() is unreachable. The on_before_exit
+    // callback runs just before exit(0), giving us a chance to do critical cleanup.
+    let app_for_exit = app.clone();
+    let store_for_exit = store.clone();
     let update = app
-        .updater()
+        .updater_builder()
+        .on_before_exit(move || {
+            app_for_exit.cleanup_before_exit();
+            let _ = store_for_exit.save_deferred_update_version(None);
+            let state = app_for_exit.state::<AppState>();
+            let lock_result = state.sensevoice_manager.lock();
+            if let Ok(mut manager) = lock_result {
+                manager.pause_runtime_for_exit(&app_for_exit);
+            }
+        })
+        .build()
         .map_err(|err| stringify_update_error(&app, "create_updater", err))?
         .check()
         .await
@@ -379,6 +397,12 @@ async fn download_pending_update_inner(
     emit_status(&app, &status);
 
     if install_after_download {
+        // Pause SenseVoice runtime before install, since install() may call
+        // exit(0) on Windows without running normal shutdown hooks.
+        let state = app.state::<AppState>();
+        if let Ok(mut manager) = state.sensevoice_manager.lock() {
+            manager.pause_runtime_for_exit(&app);
+        }
         install_downloaded_update(&app)?;
     }
 
@@ -407,11 +431,16 @@ pub fn install_downloaded_update(app: &AppHandle) -> Result<(), String> {
         state.settings_store.clone()
     };
 
+    // Clear deferred version BEFORE install(). On Windows, install() calls
+    // std::process::exit(0) after launching the NSIS installer, so code in the
+    // Ok(()) branch is unreachable. Clearing here prevents an infinite auto-install
+    // loop if the NSIS installer fails externally.
+    let _ = settings_store.save_deferred_update_version(None);
+
     match update.install(&bytes) {
         Ok(()) => {
-            settings_store
-                .save_deferred_update_version(None)
-                .map_err(|err| err.to_string())?;
+            // Only reached on Linux/macOS where install() returns normally.
+            // On Windows, the on_before_exit callback handles pre-exit cleanup.
             app.restart();
         }
         Err(error) => {
