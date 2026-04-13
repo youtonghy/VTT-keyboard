@@ -260,8 +260,15 @@ async fn check_for_updates(
                 .map(|version| version == latest_version)
                 .unwrap_or(false);
 
+            let is_dev = cfg!(debug_assertions);
+            if is_dev {
+                eprintln!("[updater] DEV 模式：检测到新版本 {latest_version}，跳过自动下载");
+            }
+
             let status = with_manager(&app, |manager| {
-                manager.pending_update = Some(update);
+                if !is_dev {
+                    manager.pending_update = Some(update);
+                }
                 manager.downloaded_package = None;
                 manager.check_in_progress = false;
                 manager.download_in_progress = false;
@@ -270,13 +277,16 @@ async fn check_for_updates(
                 manager.status.latest_version = Some(latest_version);
                 manager.status.notes = notes;
                 manager.status.pub_date = pub_date;
-                manager.status.downloaded_bytes = Some(0);
+                manager.status.downloaded_bytes = None;
                 manager.status.total_bytes = None;
                 manager.status.error = None;
                 manager.status.clone()
             })?;
             emit_status(&app, &status);
-            download_pending_update(app, should_install_after_download);
+
+            if !is_dev {
+                download_pending_update(app, should_install_after_download);
+            }
         }
         None => {
             store
