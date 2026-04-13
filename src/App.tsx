@@ -5,14 +5,12 @@ import { NumberWheelInput } from "./components/NumberWheelInput";
 import { SegmentedControl } from "./components/SegmentedControl";
 import { Toaster, toast } from "sonner";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getName, getVersion } from "@tauri-apps/api/app";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { Sidebar } from "./components/Sidebar";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { SettingsCard } from "./components/SettingsCard";
@@ -22,191 +20,36 @@ import { TagInput } from "./components/TagInput";
 import { TitleBar } from "./components/TitleBar";
 import { useAutostart } from "./hooks/useAutostart";
 import { usePersistentBoolean } from "./hooks/usePersistentBoolean";
-import { useSenseVoice } from "./hooks/useSenseVoice";
 import { useSettings } from "./hooks/useSettings";
 import { useUpdater } from "./hooks/useUpdater";
+import { useShortcuts } from "./hooks/useShortcuts";
+import { useSettingsSync } from "./hooks/useSettingsSync";
+import { useSenseVoiceManagement } from "./hooks/useSenseVoiceManagement";
 import { HistoryDetailDialog } from "./components/HistoryDetailDialog";
 import type { TranscriptionHistoryItem } from "./types/history";
 import type { Settings } from "./types/settings";
 
-import { parseList, normalizeAliyunRegion, toErrorMessage } from "./utils";
+import { parseList, toErrorMessage } from "./utils";
+import {
+  normalizeLocalModel,
+  normalizeStopMode,
+  normalizeSenseVoiceLanguage,
+  normalizeSenseVoiceDevice,
+  isCudaOnlyLocalModel,
+  getDefaultModelId,
+  getQwenVariantByModelId,
+  formatBytes,
+  SHERPA_LANGUAGE_OPTIONS,
+  QWEN3_ASR_MODEL_VARIANTS,
+} from "./utils/sensevoice";
 
-const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
-const DEFAULT_SENSEVOICE_MODEL_ID = "FunAudioLLM/SenseVoiceSmall";
-const DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID =
-  "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09";
-const DEFAULT_VOXTRAL_MODEL_ID = "mistralai/Voxtral-Mini-4B-Realtime-2602";
-const DEFAULT_QWEN3_ASR_MODEL_ID = "Qwen/Qwen3-ASR-1.7B";
-const SHERPA_LANGUAGE_OPTIONS = [
-  { value: "auto", labelKey: "sensevoice.languageAuto" },
-  { value: "zh", labelKey: "sensevoice.languageZh" },
-  { value: "en", labelKey: "sensevoice.languageEn" },
-  { value: "ja", labelKey: "sensevoice.languageJa" },
-  { value: "ko", labelKey: "sensevoice.languageKo" },
-  { value: "yue", labelKey: "sensevoice.languageYue" },
-] as const;
-const QWEN3_ASR_MODEL_VARIANTS = [
-  { value: "Qwen/Qwen3-ASR-1.7B", labelKey: "sensevoice.qwenVariant17b" },
-  { value: "Qwen/Qwen3-ASR-0.6B", labelKey: "sensevoice.qwenVariant06b" },
-  {
-    value: "Qwen/Qwen3-ForcedAligner-0.6B",
-    labelKey: "sensevoice.qwenVariantForcedAligner",
-  },
-] as const;
 const MAX_HISTORY_ITEMS = 200;
 const HISTORY_PREVIEW_MAX_CHARS = 50;
-
-const logDebug = (..._args: unknown[]) => {};
-
-const logError = (..._args: unknown[]) => {};
-
-const isConflictError = (message: string) => {
-  const lowered = message.toLowerCase();
-  return (
-    lowered.includes("already") ||
-    lowered.includes("registered") ||
-    lowered.includes("conflict") ||
-    lowered.includes("in use")
-  );
-};
-
-const normalizeShortcutKey = (key: string) => {
-  if (key === " ") {
-    return "Space";
-  }
-  if (key.startsWith("Arrow")) {
-    return key.replace("Arrow", "");
-  }
-  if (key.length === 1) {
-    return key.toUpperCase();
-  }
-  return key;
-};
-
-const buildShortcut = (event: KeyboardEvent) => {
-  const parts: string[] = [];
-  if (event.metaKey || event.ctrlKey) {
-    parts.push("CommandOrControl");
-  }
-  if (event.altKey) {
-    parts.push("Alt");
-  }
-  if (event.shiftKey) {
-    parts.push("Shift");
-  }
-  const key = normalizeShortcutKey(event.key);
-  parts.push(key);
-  return parts.join("+");
-};
 
 const createId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-const normalizeLocalModel = (value: string | undefined) => {
-  if (value === "sherpa-onnx-sensevoice") {
-    return "sherpa-onnx-sensevoice";
-  }
-  if (value === "voxtral") {
-    return "voxtral";
-  }
-  if (value === "qwen3-asr") {
-    return "qwen3-asr";
-  }
-  return "sensevoice";
-};
-
-const normalizeStopMode = (value: string | undefined): "stop" | "pause" => {
-  if (value === "pause") {
-    return "pause";
-  }
-  return "stop";
-};
-
-const isCudaOnlyLocalModel = (localModel: string | undefined) => {
-  const normalized = normalizeLocalModel(localModel);
-  return normalized === "voxtral" || normalized === "qwen3-asr";
-};
-
-const isSherpaLocalModel = (localModel: string | undefined) =>
-  normalizeLocalModel(localModel) === "sherpa-onnx-sensevoice";
-
-const normalizeSenseVoiceDevice = (
-  localModel: string | undefined,
-  device: string | undefined
-) => {
-  if (isCudaOnlyLocalModel(localModel)) {
-    return "cuda";
-  }
-  if (isSherpaLocalModel(localModel)) {
-    return "cpu";
-  }
-  if (device === "cpu" || device === "cuda") {
-    return device;
-  }
-  return "auto";
-};
-
-const getDefaultModelId = (localModel: string) => {
-  const normalized = normalizeLocalModel(localModel);
-  if (normalized === "sherpa-onnx-sensevoice") {
-    return DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID;
-  }
-  if (normalized === "voxtral") {
-    return DEFAULT_VOXTRAL_MODEL_ID;
-  }
-  if (normalized === "qwen3-asr") {
-    return DEFAULT_QWEN3_ASR_MODEL_ID;
-  }
-  return DEFAULT_SENSEVOICE_MODEL_ID;
-};
-
-const normalizeSenseVoiceModelId = (localModel: string, modelId: string | undefined) => {
-  const normalized = normalizeLocalModel(localModel);
-  if (normalized !== "qwen3-asr") {
-    return getDefaultModelId(normalized);
-  }
-  const trimmed = modelId?.trim();
-  if (!trimmed) {
-    return DEFAULT_QWEN3_ASR_MODEL_ID;
-  }
-  const matched = QWEN3_ASR_MODEL_VARIANTS.find((option) => option.value === trimmed);
-  return matched ? matched.value : DEFAULT_QWEN3_ASR_MODEL_ID;
-};
-
-const normalizeSenseVoiceLanguage = (language: string | undefined) => {
-  if (language === "zh" || language === "en" || language === "ja" || language === "ko" || language === "yue") {
-    return language;
-  }
-  return "auto";
-};
-
-const formatBytes = (value: number | undefined) => {
-  if (value === undefined || !Number.isFinite(value) || value < 0) {
-    return "";
-  }
-  if (value < 1024) {
-    return `${value} B`;
-  }
-  const units = ["KB", "MB", "GB", "TB"];
-  let next = value / 1024;
-  let index = 0;
-  while (next >= 1024 && index < units.length - 1) {
-    next /= 1024;
-    index += 1;
-  }
-  return `${next.toFixed(next >= 100 ? 0 : next >= 10 ? 1 : 2)} ${units[index]}`;
-};
-
-const getQwenVariantByModelId = (modelId: string | undefined) => {
-  const trimmed = modelId?.trim();
-  if (!trimmed) {
-    return DEFAULT_QWEN3_ASR_MODEL_ID;
-  }
-  const matched = QWEN3_ASR_MODEL_VARIANTS.find((option) => option.value === trimmed);
-  return matched ? matched.value : DEFAULT_QWEN3_ASR_MODEL_ID;
-};
 
 interface AppInfoPayload {
   buildDate: string;
@@ -246,9 +89,6 @@ function App() {
   const { t, i18n } = useTranslation();
   const { settings, setSettings, loading, saveSettings } = useSettings();
   const { syncAutostart } = useAutostart();
-  const autostartSyncedOnStartup = useRef(false);
-  const skipNextDraftSync = useRef(false);
-  const [draft, setDraft] = useState<Settings | null>(null);
   const [activeSection, setActiveSection] = useState("general");
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistentBoolean(
     "vtt.sidebar.collapsed",
@@ -258,20 +98,7 @@ function App() {
     "vtt.sensevoice.logs.expanded",
     false
   );
-  const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
-  const {
-    status: sensevoiceStatus,
-    progress: sensevoiceProgress,
-    logLines: sensevoiceLogLines,
-    loading: sensevoiceLoading,
-    refreshStatus: refreshSenseVoiceStatus,
-    prepare: prepareSenseVoice,
-    updateSettings: updateSenseVoiceSettings,
-    startService: startSenseVoiceService,
-    stopService: stopSenseVoiceService,
-  } = useSenseVoice(isSenseVoiceActive);
   const updater = useUpdater();
-  const [isCapturing, setIsCapturing] = useState(false);
   const [appInfo, setAppInfo] = useState<
     ({ name: string; version: string } & AppInfoPayload) | null
   >(null);
@@ -279,12 +106,50 @@ function App() {
   const [historyItems, setHistoryItems] = useState<TranscriptionHistoryItem[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] =
     useState<TranscriptionHistoryItem | null>(null);
-  const [pendingSherpaAutoStart, setPendingSherpaAutoStart] = useState(false);
   const supportsSherpaOnnxSenseVoice =
     appInfo?.supportsSherpaOnnxSenseVoice ?? true;
   const sherpaFallbackActive =
     !supportsSherpaOnnxSenseVoice &&
     normalizeLocalModel(settings?.sensevoice.localModel) === "sherpa-onnx-sensevoice";
+
+  const { draft, updateDraft, handleImport, handleExport } = useSettingsSync({
+    settings,
+    setSettings,
+    saveSettings,
+    syncAutostart,
+    supportsSherpaOnnxSenseVoice,
+  });
+
+  const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
+
+  const {
+    sensevoiceStatus,
+    sensevoiceProgress,
+    sensevoiceLogLines,
+    sensevoiceLoading,
+    handleSenseVoicePrepare,
+    handleSenseVoiceStart,
+    handleSenseVoiceStop,
+  } = useSenseVoiceManagement({
+    isSenseVoiceActive,
+    draft,
+    supportsSherpaOnnxSenseVoice,
+  });
+
+  const onShortcutCaptured = useCallback(
+    (key: string) => {
+      updateDraft((prev) => ({
+        ...prev,
+        shortcut: { ...prev.shortcut, key },
+      }));
+    },
+    [updateDraft]
+  );
+
+  const { isCapturing, setIsCapturing } = useShortcuts(
+    draft?.shortcut.key,
+    onShortcutCaptured
+  );
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -295,68 +160,6 @@ function App() {
       setHistoryLoading(false);
     }
   }, []);
-
-  const createDraftFromSettings = useCallback(
-    (s: Settings): Settings => {
-      const normalizedLocalModel = normalizeLocalModel(s.sensevoice.localModel);
-      const effectiveLocalModel =
-        !supportsSherpaOnnxSenseVoice &&
-        normalizedLocalModel === "sherpa-onnx-sensevoice"
-          ? "sensevoice"
-          : normalizedLocalModel;
-      const normalizedAliyunRegion = normalizeAliyunRegion(s.aliyun.region);
-      const effectiveAliyunRegion =
-        s.provider === "aliyun-paraformer" ? "beijing" : normalizedAliyunRegion;
-      return {
-        ...s,
-        sensevoice: {
-          ...s.sensevoice,
-          localModel: effectiveLocalModel,
-          stopMode: normalizeStopMode(s.sensevoice.stopMode),
-          modelId: normalizeSenseVoiceModelId(effectiveLocalModel, s.sensevoice.modelId),
-          language: normalizeSenseVoiceLanguage(s.sensevoice.language),
-          device: normalizeSenseVoiceDevice(effectiveLocalModel, s.sensevoice.device),
-        },
-        aliyun: {
-          ...s.aliyun,
-          region: effectiveAliyunRegion,
-          apiKeys: {
-            beijing: s.aliyun.apiKeys.beijing ?? "",
-            singapore: s.aliyun.apiKeys.singapore ?? "",
-          },
-          asr: {
-            ...s.aliyun.asr,
-            vocabularyId: s.aliyun.asr.vocabularyId ?? "",
-          },
-          paraformer: {
-            ...s.aliyun.paraformer,
-            vocabularyId: s.aliyun.paraformer.vocabularyId ?? "",
-            languageHints: s.aliyun.paraformer.languageHints ?? [],
-          },
-        },
-      };
-    },
-    [supportsSherpaOnnxSenseVoice]
-  );
-
-  useEffect(() => {
-    if (!settings) return;
-    if (skipNextDraftSync.current) {
-      skipNextDraftSync.current = false;
-      return;
-    }
-    setDraft(createDraftFromSettings(settings));
-  }, [settings, createDraftFromSettings]);
-
-  useEffect(() => {
-    if (!settings || autostartSyncedOnStartup.current) {
-      return;
-    }
-    autostartSyncedOnStartup.current = true;
-    void syncAutostart(settings.startup.launchOnBoot).catch((error) => {
-      toast.error(t("general.launchOnBootSyncError", { error: toErrorMessage(error) }));
-    });
-  }, [settings, syncAutostart, t]);
 
   useEffect(() => {
     const fetchAppInfo = async () => {
@@ -386,155 +189,6 @@ function App() {
     }
     root.setAttribute("data-theme", draft.appearance.theme);
   }, [draft?.appearance.theme]);
-
-  
-
-  const tRef = useRef(t);
-  useEffect(() => { tRef.current = t; }, [t]);
-
-  useEffect(() => {
-    if (!draft) {
-      return;
-    }
-    let active = true;
-
-    // State for short-press toggle / long-press hold-to-record
-    const LONG_PRESS_THRESHOLD_MS = 300;
-    let isRecording = false;
-    let pressStartTime: number | null = null;
-    let keyDown = false;
-    let inFlight = false; // serialize start/stop transitions
-
-    const doStart = () => {
-      if (inFlight) return;
-      inFlight = true;
-      invoke("start_recording")
-        .then(() => {
-          logDebug("start_recording ok");
-          isRecording = true;
-          pressStartTime = Date.now();
-        })
-        .catch((error) => {
-          isRecording = false;
-          pressStartTime = null;
-          const message = toErrorMessage(error);
-          logError("start_recording failed", message);
-          toast.error(tRef.current("shortcut.startError", { error: message }));
-        })
-        .finally(() => { inFlight = false; });
-    };
-
-    const doStop = (silent = false) => {
-      if (inFlight) return;
-      inFlight = true;
-      isRecording = false;
-      pressStartTime = null;
-      invoke("stop_recording")
-        .then(() => logDebug("stop_recording ok"))
-        .catch((error) => {
-          const message = toErrorMessage(error);
-          logError("stop_recording failed", message);
-          if (!silent) {
-            toast.error(tRef.current("shortcut.stopError", { error: message }));
-          }
-        })
-        .finally(() => { inFlight = false; });
-    };
-
-    const registerShortcut = async () => {
-      try {
-        await unregisterAll();
-        logDebug("unregister all success");
-      } catch (error) {
-        logError("unregister all failed", error);
-        toast.error(tRef.current("shortcut.unregisterError"));
-      }
-
-      try {
-        await register(draft.shortcut.key, (event: { state: string }) => {
-          if (!active) {
-            return;
-          }
-          logDebug("event", event.state);
-
-          if (event.state === "Pressed") {
-            if (keyDown) return; // ignore OS key-repeat
-            keyDown = true;
-
-            if (!isRecording) {
-              doStart();
-            } else {
-              // toggle mode: second press stops recording
-              doStop();
-            }
-          }
-
-          if (event.state === "Released") {
-            keyDown = false;
-
-            if (isRecording && pressStartTime != null) {
-              const duration = Date.now() - pressStartTime;
-              if (duration >= LONG_PRESS_THRESHOLD_MS) {
-                // long-press release → stop recording
-                doStop();
-              }
-              // else: short press → toggle mode, keep recording
-            }
-          }
-        });
-        logDebug("register success", draft.shortcut.key);
-      } catch (error) {
-        const message = toErrorMessage(error);
-        logError("register failed", message);
-        if (isConflictError(message)) {
-          toast.error(tRef.current("shortcut.conflict", { shortcut: draft.shortcut.key }));
-        } else {
-          toast.error(tRef.current("shortcut.registerError", { error: message }));
-        }
-      }
-    };
-
-    void registerShortcut();
-
-    return () => {
-      active = false;
-      // ensure backend stops recording on cleanup
-      if (isRecording) {
-        invoke("stop_recording").catch(() => {});
-      }
-      unregisterAll()
-        .then(() => logDebug("unregister all cleanup"))
-        .catch((error) => logError("unregister cleanup failed", error));
-    };
-  }, [draft?.shortcut.key]);
-
-  useEffect(() => {
-    if (!isCapturing) {
-      return;
-    }
-    const handleKeydown = (event: KeyboardEvent) => {
-      if (modifierKeys.has(event.key)) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      const hasModifier = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
-      if (!hasModifier) {
-        toast.error(t("shortcut.requireModifier"));
-        setIsCapturing(false);
-        return;
-      }
-      const shortcut = buildShortcut(event);
-      updateDraft((prev) => ({
-        ...prev,
-        shortcut: { ...prev.shortcut, key: shortcut },
-      }));
-      setIsCapturing(false);
-      toast.success(t("shortcut.captureSuccess", { shortcut }));
-    };
-    window.addEventListener("keydown", handleKeydown, true);
-    return () => window.removeEventListener("keydown", handleKeydown, true);
-  }, [isCapturing, t]);
 
   useEffect(() => {
     void invoke("set_tray_menu", {
@@ -600,33 +254,6 @@ function App() {
     [t]
   );
 
-  const updateDraft = (updater: (prev: Settings) => Settings) => {
-    setDraft((prev) => (prev ? updater(prev) : prev));
-  };
-
-  const validateTriggers = (next: Settings) => {
-    const invalidRange = next.triggers.find((card) =>
-      card.variables.every((value) => value.trim().length === 0)
-    );
-    if (invalidRange) {
-      return t("triggers.validationVariables", { title: invalidRange.title });
-    }
-    const invalidKeyword = next.triggers.find((card) => card.keyword.trim().length === 0);
-    if (invalidKeyword) {
-      return t("triggers.validationKeyword", { title: invalidKeyword.title });
-    }
-    const invalidKeywordPlaceholder = next.triggers.find((card) => {
-      const count = card.keyword.split("{value}").length - 1;
-      return count > 1;
-    });
-    if (invalidKeywordPlaceholder) {
-      return t("triggers.validationKeywordPlaceholder", {
-        title: invalidKeywordPlaceholder.title,
-      });
-    }
-    return null;
-  };
-
   const createTriggerCard = () => ({
     id: createId(),
     title: t("triggers.newTitle"),
@@ -671,79 +298,6 @@ function App() {
     }));
   };
 
-  const handleSave = async () => {
-    const nextSettings = buildPersistedSettings();
-    if (!nextSettings) {
-      return;
-    }
-    const error = validateTriggers(nextSettings);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    try {
-      const persisted = await saveSettings(nextSettings);
-      // Prevent the settings→draft useEffect from overwriting user's pending edits
-      skipNextDraftSync.current = true;
-      // Merge only runtime-managed fields from the backend response into draft
-      setDraft((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          sensevoice: {
-            ...prev.sensevoice,
-            enabled: persisted.sensevoice.enabled,
-            installed: persisted.sensevoice.installed,
-            downloadState: persisted.sensevoice.downloadState,
-            lastError: persisted.sensevoice.lastError,
-          },
-        };
-      });
-      try {
-        await syncAutostart(persisted.startup.launchOnBoot);
-      } catch (error) {
-        toast.error(t("general.launchOnBootSyncError", { error: toErrorMessage(error) }));
-        return;
-      }
-      toast.success(t("actions.saveSuccess"));
-    } catch (err) {
-      toast.error(t("actions.saveError") + ": " + toErrorMessage(err));
-    }
-  };
-
-  const handleImport = async () => {
-    const path = await open({
-      multiple: false,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    const selected = Array.isArray(path) ? path[0] : path;
-    if (!selected) {
-      return;
-    }
-    try {
-      const data = await invoke<Settings>("import_settings", { path: selected });
-      setSettings(data);
-      toast.success(t("data.importSuccess"));
-    } catch (err) {
-      toast.error(t("data.importError"));
-    }
-  };
-
-  const handleExport = async () => {
-    const path = await save({
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    if (!path) {
-      return;
-    }
-    try {
-      await invoke("export_settings", { path });
-      toast.success(t("data.exportSuccess"));
-    } catch (err) {
-      toast.error(t("data.exportError"));
-    }
-  };
-
   const handleClearHistory = async () => {
     const confirmed = window.confirm(t("history.clearConfirm"));
     if (!confirmed) {
@@ -758,164 +312,6 @@ function App() {
       toast.error(t("history.clearError", { error: toErrorMessage(error) }));
     }
   };
-
-  // Always keep ref pointing to the latest handleSave to avoid stale-closure in the debounce
-  const handleSaveRef = useRef(handleSave);
-  handleSaveRef.current = handleSave;
-
-  useEffect(() => {
-    if (!draft || !settings) {
-      return;
-    }
-    // Avoid saving if no changes
-    if (JSON.stringify(draft) === JSON.stringify(settings)) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      handleSaveRef.current();
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [draft, settings]);
-
-  useEffect(() => {
-    if (!isSenseVoiceActive) {
-      return;
-    }
-    void refreshSenseVoiceStatus().catch(() => {});
-  }, [isSenseVoiceActive, refreshSenseVoiceStatus]);
-
-  const buildPersistedSenseVoiceSettings = useCallback(() => {
-    if (!draft) {
-      return null;
-    }
-    return {
-      ...draft.sensevoice,
-      enabled: sensevoiceStatus.enabled,
-      installed: sensevoiceStatus.installed,
-      downloadState: sensevoiceStatus.downloadState,
-      lastError: sensevoiceStatus.lastError,
-    };
-  }, [draft, sensevoiceStatus]);
-
-  const buildPersistedSettings = useCallback(() => {
-    if (!draft) {
-      return null;
-    }
-    // Runtime sensevoice fields (enabled, installed, downloadState, lastError)
-    // are preserved by the backend — do NOT inject them from the frontend.
-    return { ...draft };
-  }, [draft]);
-
-  const handleSenseVoicePrepare = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings) {
-      return;
-    }
-    try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
-    }
-    try {
-      await prepareSenseVoice();
-      await refreshSenseVoiceStatus();
-      toast.success(t("sensevoice.prepareQueued"));
-    } catch (error) {
-      toast.error(t("sensevoice.prepareError", { error: toErrorMessage(error) }));
-    }
-  };
-
-  const handleSenseVoiceStart = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings) {
-      return;
-    }
-    try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
-    }
-    try {
-      await startSenseVoiceService();
-      await refreshSenseVoiceStatus();
-      toast.success(t("sensevoice.startQueued"));
-    } catch (error) {
-      toast.error(t("sensevoice.startError", { error: toErrorMessage(error) }));
-    }
-  };
-
-  const handleSenseVoiceStop = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings || !draft) {
-      return;
-    }
-    try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
-    }
-    try {
-      await stopSenseVoiceService();
-      await refreshSenseVoiceStatus();
-      const runtimeKind = sensevoiceStatus.runtimeKind;
-      const stopMode = normalizeStopMode(draft.sensevoice.stopMode);
-      if (runtimeKind === "native") {
-        toast.success(t("sensevoice.unloadSuccess"));
-      } else if (stopMode === "pause") {
-        toast.success(t("sensevoice.pauseSuccess"));
-      } else {
-        toast.success(t("sensevoice.stopSuccess"));
-      }
-    } catch (error) {
-      toast.error(t("sensevoice.stopError", { error: toErrorMessage(error) }));
-    }
-  };
-
-  useEffect(() => {
-    const unlisten = listen("sensevoice-startup-download-required", async () => {
-      const confirmed = window.confirm(t("sensevoice.startupDownloadPrompt"));
-      if (!confirmed) {
-        return;
-      }
-      setPendingSherpaAutoStart(true);
-      await handleSenseVoicePrepare();
-    });
-    return () => {
-      void unlisten.then((dispose) => dispose());
-    };
-  }, [t, handleSenseVoicePrepare]);
-
-  useEffect(() => {
-    if (!pendingSherpaAutoStart || !draft || !supportsSherpaOnnxSenseVoice) {
-      if (!supportsSherpaOnnxSenseVoice) {
-        setPendingSherpaAutoStart(false);
-      }
-      return;
-    }
-    if (normalizeLocalModel(draft.sensevoice.localModel) !== "sherpa-onnx-sensevoice") {
-      setPendingSherpaAutoStart(false);
-      return;
-    }
-    if (!sensevoiceStatus.installed || sensevoiceStatus.running) {
-      return;
-    }
-    if (sensevoiceStatus.downloadState !== "ready") {
-      return;
-    }
-    setPendingSherpaAutoStart(false);
-    void handleSenseVoiceStart();
-  }, [
-    draft,
-    handleSenseVoiceStart,
-    pendingSherpaAutoStart,
-    sensevoiceStatus,
-    supportsSherpaOnnxSenseVoice,
-  ]);
 
   if (loading || !draft) {
     return (
