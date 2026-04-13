@@ -29,13 +29,7 @@ import { HistoryDetailDialog } from "./components/HistoryDetailDialog";
 import type { TranscriptionHistoryItem } from "./types/history";
 import type { Settings } from "./types/settings";
 
-const parseList = (value: string) =>
-  value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-const normalizeAliyunRegion = (value: string | undefined) =>
-  value === "singapore" ? "singapore" : "beijing";
+import { parseList, normalizeAliyunRegion, toErrorMessage } from "./utils";
 
 const modifierKeys = new Set(["Shift", "Control", "Alt", "Meta"]);
 const DEFAULT_SENSEVOICE_MODEL_ID = "FunAudioLLM/SenseVoiceSmall";
@@ -65,16 +59,6 @@ const HISTORY_PREVIEW_MAX_CHARS = 50;
 const logDebug = (..._args: unknown[]) => {};
 
 const logError = (..._args: unknown[]) => {};
-
-const toErrorMessage = (error: unknown) => {
-  if (typeof error === "string") {
-    return error;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-};
 
 const isConflictError = (message: string) => {
   const lowered = message.toLowerCase();

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { parseList, listToString } from "../utils";
 
 interface TagInputProps {
   values: string[];
@@ -6,14 +7,6 @@ interface TagInputProps {
   placeholder?: string;
   disabled?: boolean;
 }
-
-const listToString = (values: string[]) => values.join(", ");
-
-const parseList = (value: string) =>
-  value
-    .split(/[,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
 
 const areListsEqual = (left: string[], right: string[]) =>
   left.length === right.length && left.every((value, index) => value === right[index]);

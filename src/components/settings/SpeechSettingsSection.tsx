@@ -4,17 +4,7 @@ import { NumberWheelInput } from "../NumberWheelInput";
 import { SettingsCard } from "../SettingsCard";
 import type { SenseVoiceProgress, SenseVoiceStatus } from "../../hooks/useSenseVoice";
 import type { Settings } from "../../types/settings";
-
-const listToString = (values: string[]) => values.join(", ");
-
-const parseList = (value: string) =>
-  value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-const normalizeAliyunRegion = (value: string | undefined) =>
-  value === "singapore" ? "singapore" : "beijing";
+import { parseList, listToString, normalizeAliyunRegion } from "../../utils";
 
 const isAliyunProvider = (provider: Settings["provider"]) =>
   provider === "aliyun-asr" || provider === "aliyun-paraformer";

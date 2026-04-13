@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import type { UpdateStatusPayload } from "../types/updater";
+import { toErrorMessage } from "../utils";
 
 const DEFAULT_UPDATE_STATUS: UpdateStatusPayload = {
   status: "idle",
@@ -14,16 +15,6 @@ const DEFAULT_UPDATE_STATUS: UpdateStatusPayload = {
   downloadedBytes: null,
   totalBytes: null,
   error: null,
-};
-
-const toErrorMessage = (error: unknown) => {
-  if (typeof error === "string") {
-    return error;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 };
 
 export function useUpdater() {
