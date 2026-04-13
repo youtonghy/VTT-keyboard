@@ -210,3 +210,79 @@ pub(super) fn read_selected_hub(state_file: &Path) -> Option<String> {
         .and_then(|item| item.as_str())
         .map(str::to_string)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn bind_mount_formats_correctly() {
+        let source = PathBuf::from("/home/user/models");
+        assert_eq!(
+            bind_mount(&source, "/models"),
+            "type=bind,source=/home/user/models,target=/models"
+        );
+    }
+
+    #[test]
+    fn normalize_log_line_strips_cr_and_whitespace() {
+        assert_eq!(normalize_log_line("hello\r\n"), "hello");
+        assert_eq!(normalize_log_line("  test  "), "test");
+        assert_eq!(normalize_log_line("\r"), "");
+    }
+
+    #[test]
+    fn parse_host_and_port_extracts_correctly() {
+        let (host, port) = parse_host_and_port("http://localhost:8080/api").unwrap();
+        assert_eq!(host, "localhost");
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn parse_host_and_port_uses_default_port() {
+        let (host, port) = parse_host_and_port("http://example.com/path").unwrap();
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 80);
+    }
+
+    #[test]
+    fn parse_host_and_port_rejects_invalid_url() {
+        assert!(parse_host_and_port("not-a-url").is_err());
+    }
+
+    #[test]
+    fn normalize_publish_host_converts_localhost() {
+        assert_eq!(normalize_publish_host("localhost").unwrap(), "127.0.0.1");
+        assert_eq!(normalize_publish_host("LOCALHOST").unwrap(), "127.0.0.1");
+    }
+
+    #[test]
+    fn normalize_publish_host_accepts_ipv4() {
+        assert_eq!(
+            normalize_publish_host("192.168.1.1").unwrap(),
+            "192.168.1.1"
+        );
+    }
+
+    #[test]
+    fn normalize_publish_host_rejects_hostname() {
+        assert!(normalize_publish_host("myserver.local").is_err());
+    }
+
+    #[test]
+    fn read_selected_hub_parses_json() {
+        let dir = std::env::temp_dir().join("vtt_test_hub");
+        let _ = fs::create_dir_all(&dir);
+        let state_file = dir.join("state.json");
+        fs::write(&state_file, r#"{"hub":"ms"}"#).unwrap();
+        assert_eq!(read_selected_hub(&state_file), Some("ms".to_string()));
+        let _ = fs::remove_file(&state_file);
+    }
+
+    #[test]
+    fn read_selected_hub_returns_none_for_missing() {
+        let missing = PathBuf::from("/nonexistent/state.json");
+        assert_eq!(read_selected_hub(&missing), None);
+    }
+}
