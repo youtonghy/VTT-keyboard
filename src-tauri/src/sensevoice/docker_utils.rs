@@ -92,6 +92,27 @@ pub(super) fn start_container(name: &str) -> Result<(), String> {
     Err(format!("启动容器失败: {}", detail.trim()))
 }
 
+/// 读取容器的 Docker label 值
+pub(super) fn get_container_label(name: &str, label: &str) -> Option<String> {
+    let mut command = docker_command();
+    command
+        .arg("inspect")
+        .arg("-f")
+        .arg(format!("{{{{index .Config.Labels \"{label}\"}}}}"))
+        .arg(name);
+    hide_window(&mut command);
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 pub(super) fn run_command_streaming<F>(
     command: &mut Command,
     step: &str,

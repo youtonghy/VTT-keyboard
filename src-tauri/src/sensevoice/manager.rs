@@ -1,13 +1,15 @@
 use super::docker_utils::{
-    bind_mount, docker_command, docker_container_running, docker_image_exists, hide_window,
-    normalize_log_line, normalize_publish_host, parse_host_and_port, read_selected_hub,
-    remove_container_if_exists, run_command_streaming, start_container,
+    bind_mount, docker_command, docker_container_running, docker_image_exists,
+    get_container_label, hide_window, normalize_log_line, normalize_publish_host,
+    parse_host_and_port, read_selected_hub, remove_container_if_exists, run_command_streaming,
+    start_container,
 };
 use super::{
     model::{
-        all_docker_container_names, is_vllm_local_model, normalize_local_model,
-        resolve_vllm_model_id, runtime_container_name, runtime_image_tag, service_start_timeout,
-        spec_for_local_model, LocalRuntimeKind, LOCAL_MODEL_SENSEVOICE, LOCAL_MODEL_VOXTRAL,
+        docker_container_name, is_vllm_local_model, legacy_container_names,
+        normalize_local_model, resolve_vllm_model_id, runtime_container_name,
+        runtime_image_tag, service_start_timeout, spec_for_local_model, LocalRuntimeKind,
+        CONTAINER_LABEL_MODEL_KEY, LOCAL_MODEL_SENSEVOICE, LOCAL_MODEL_VOXTRAL,
     },
     native_runtime, SenseVoiceError,
 };
@@ -128,6 +130,8 @@ pub struct SenseVoiceManager {
     container_running_cache: Arc<AtomicBool>,
     /// 缓存的容器暂停状态，由后台流程更新，避免在 Mutex 持有期间调用 docker inspect
     container_paused_cache: Arc<AtomicBool>,
+    /// 标记 pause_runtime_for_exit 是否已执行，避免 Drop 重复操作
+    exit_cleanup_done: bool,
 }
 
 impl SenseVoiceManager {
@@ -141,6 +145,7 @@ impl SenseVoiceManager {
             native_prepare_in_progress: Arc::new(AtomicBool::new(false)),
             container_running_cache: Arc::new(AtomicBool::new(false)),
             container_paused_cache: Arc::new(AtomicBool::new(false)),
+            exit_cleanup_done: false,
         }
     }
 
@@ -257,6 +262,7 @@ impl SenseVoiceManager {
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
         let local_model = normalize_local_model(&sensevoice.local_model);
         let local_model_spec = spec_for_local_model(local_model);
+        let container_name = docker_container_name();
         let runtime_state = if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
             if native_runtime::is_loaded(local_model) {
                 RuntimeState::Running
@@ -266,7 +272,19 @@ impl SenseVoiceManager {
         } else {
             self.refresh_runtime_state_cache()
         };
-        if runtime_state == RuntimeState::Running {
+        // 仅当容器正在运行且模型匹配时才可直接复用
+        if runtime_state == RuntimeState::Running
+            && local_model_spec.runtime_kind == LocalRuntimeKind::Docker
+        {
+            let loaded_model = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
+            if loaded_model.as_deref() == Some(local_model) {
+                self.start_in_progress = false;
+                self.start_cancel_flag.store(false, Ordering::Relaxed);
+                return self.status(store);
+            }
+            // 模型不匹配，需要重建容器，不要提前返回
+        } else if runtime_state == RuntimeState::Running {
+            // 原生运行时已在运行
             self.start_in_progress = false;
             self.start_cancel_flag.store(false, Ordering::Relaxed);
             return self.status(store);
@@ -407,14 +425,23 @@ impl SenseVoiceManager {
             self.container_paused_cache.store(false, Ordering::Relaxed);
             self.container_name = None;
             self.emit_progress(app, "stopped", "Native model unloaded", None);
+            self.exit_cleanup_done = true;
             return;
         }
-        // 应用退出时使用 docker stop（释放端口和 GPU 资源），但保留容器
-        stop_all_runtime_containers_keep();
-        self.container_running_cache.store(false, Ordering::Relaxed);
-        self.container_paused_cache.store(false, Ordering::Relaxed);
+        // 应用退出时 pause 容器（保留状态，下次秒恢复）
+        let container_name = docker_container_name();
+        if pause_runtime_container_if_needed(container_name).unwrap_or(false) {
+            self.container_running_cache.store(false, Ordering::Relaxed);
+            self.container_paused_cache.store(true, Ordering::Relaxed);
+            self.emit_progress(app, "paused", "Runtime container paused for exit", None);
+        } else {
+            // 容器可能已停止或不存在
+            self.container_running_cache.store(false, Ordering::Relaxed);
+            self.container_paused_cache.store(false, Ordering::Relaxed);
+            self.emit_progress(app, "stopped", "Runtime container stopped", None);
+        }
         self.container_name = None;
-        self.emit_progress(app, "stopped", "Runtime containers stopped", None);
+        self.exit_cleanup_done = true;
     }
 
     fn stop_service_with_mode(
@@ -460,7 +487,7 @@ impl SenseVoiceManager {
             self.container_running_cache.store(false, Ordering::Relaxed);
             self.container_paused_cache.store(false, Ordering::Relaxed);
             // stop 模式：停止容器但不删除，保留容器以便后续 docker start 恢复
-            stop_all_runtime_containers_keep();
+            let _ = stop_container(container_name);
             self.container_name = None;
             let _ = self.update_state(store, "idle", "", None, None);
             self.emit_progress(app, "stopped", "Service stopped", None);
@@ -469,7 +496,9 @@ impl SenseVoiceManager {
     }
 
     fn refresh_runtime_state_cache(&self) -> RuntimeState {
-        let runtime_state = detect_any_runtime_state();
+        let container_name = docker_container_name();
+        let runtime_state =
+            docker_container_state(container_name).unwrap_or(RuntimeState::Stopped);
         self.container_running_cache
             .store(runtime_state == RuntimeState::Running, Ordering::Relaxed);
         self.container_paused_cache
@@ -483,13 +512,15 @@ impl SenseVoiceManager {
     #[allow(dead_code)]
     fn is_running(&mut self) -> bool {
         self.reconcile_prepare_task();
-        let (runtime_state, found_container) = detect_any_runtime_state_with_name();
+        let container_name = docker_container_name();
+        let runtime_state =
+            docker_container_state(container_name).unwrap_or(RuntimeState::Stopped);
         self.container_running_cache
             .store(runtime_state == RuntimeState::Running, Ordering::Relaxed);
         self.container_paused_cache
             .store(runtime_state == RuntimeState::Paused, Ordering::Relaxed);
         if runtime_state != RuntimeState::Stopped && runtime_state != RuntimeState::Exited {
-            self.container_name = found_container;
+            self.container_name = Some(container_name.to_string());
         } else {
             self.container_name = None;
             self.stop_log_stream();
@@ -749,10 +780,16 @@ impl Drop for SenseVoiceManager {
     fn drop(&mut self) {
         self.stop_prepare_task();
         self.stop_log_stream();
+        // 如果 pause_runtime_for_exit 已执行过退出清理，跳过重复操作
+        if self.exit_cleanup_done {
+            return;
+        }
         if native_runtime::is_loaded("sherpa-onnx-sensevoice") {
             native_runtime::unload("sherpa-onnx-sensevoice");
         } else {
-            stop_all_runtime_containers_keep();
+            // Drop 时 pause 容器（与退出行为一致）
+            let container_name = docker_container_name();
+            let _ = pause_runtime_container_if_needed(container_name);
         }
     }
 }
@@ -917,11 +954,23 @@ fn run_startup_task(
                 paused_cache = Arc::clone(&manager.container_paused_cache);
             }
 
-            // 先停止其他模型的容器（释放端口）
-            stop_other_runtime_containers(container_name);
+            // 单容器模式：检查当前容器加载的模型是否匹配
+            let mut effective_container_state = container_state;
+            if container_state != RuntimeState::Stopped {
+                let loaded_model =
+                    get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
+                if loaded_model.as_deref() != Some(local_model) {
+                    // 模型不匹配，需要删除并重建容器
+                    let _ = remove_container_if_exists(container_name);
+                    effective_container_state = RuntimeState::Stopped;
+                }
+            }
+
+            // 清理旧版多容器遗留（仅在 flag 文件不存在时执行一次）
+            cleanup_legacy_containers(&app);
 
             // 根据容器当前状态选择启动策略
-            match container_state {
+            match effective_container_state {
                 RuntimeState::Paused => {
                     // 暂停的容器 → docker unpause（最快路径）
                     emit_progress_payload(
@@ -1454,7 +1503,7 @@ fn report_monitor_failure(
         None,
     );
     cleanup_runtime_state(app);
-    stop_all_runtime_containers_keep();
+    let _ = stop_container(docker_container_name());
 }
 
 fn handle_startup_failure(
@@ -1501,7 +1550,7 @@ fn handle_startup_failure(
     cleanup_runtime_state(app);
     if runtime_kind == LocalRuntimeKind::Docker {
         // 启动失败时停止容器但保留，便于调试和后续重试
-        stop_all_runtime_containers_keep();
+        let _ = stop_container(docker_container_name());
     }
 }
 
@@ -1875,6 +1924,8 @@ fn run_service_container(
         .arg("-d")
         .arg("--name")
         .arg(container_name)
+        .arg("--label")
+        .arg(format!("{CONTAINER_LABEL_MODEL_KEY}={LOCAL_MODEL_SENSEVOICE}"))
         .arg("-p")
         .arg(format!("{publish_host}:{port}:{port}"))
         .arg("--mount")
@@ -1933,6 +1984,8 @@ fn run_vllm_service_container(
         .arg("-d")
         .arg("--name")
         .arg(container_name)
+        .arg("--label")
+        .arg(format!("{CONTAINER_LABEL_MODEL_KEY}={local_model}"))
         .arg("--runtime")
         .arg("nvidia")
         .arg("--gpus")
@@ -2032,24 +2085,20 @@ fn docker_container_state(name: &str) -> Result<RuntimeState, SenseVoiceError> {
 }
 
 fn detect_any_runtime_state() -> RuntimeState {
-    for name in all_docker_container_names() {
-        let state = docker_container_state(name).unwrap_or(RuntimeState::Stopped);
-        if state == RuntimeState::Running || state == RuntimeState::Paused {
-            return state;
-        }
-    }
-    RuntimeState::Stopped
+    let container_name = docker_container_name();
+    docker_container_state(container_name).unwrap_or(RuntimeState::Stopped)
 }
 
-/// 检测所有容器状态并返回最高优先级状态及对应容器名
+/// 检测容器状态并返回容器名
+#[allow(dead_code)]
 fn detect_any_runtime_state_with_name() -> (RuntimeState, Option<String>) {
-    for name in all_docker_container_names() {
-        let state = docker_container_state(name).unwrap_or(RuntimeState::Stopped);
-        if state == RuntimeState::Running || state == RuntimeState::Paused {
-            return (state, Some(name.to_string()));
-        }
+    let container_name = docker_container_name();
+    let state = docker_container_state(container_name).unwrap_or(RuntimeState::Stopped);
+    if state == RuntimeState::Running || state == RuntimeState::Paused {
+        (state, Some(container_name.to_string()))
+    } else {
+        (state, None)
     }
-    (RuntimeState::Stopped, None)
 }
 
 fn pause_container(name: &str) -> Result<(), SenseVoiceError> {
@@ -2116,29 +2165,32 @@ fn unpause_runtime_container_if_needed(name: &str) -> Result<bool, SenseVoiceErr
 
 #[allow(dead_code)]
 fn pause_all_runtime_containers() -> bool {
-    let mut paused_any = false;
-    for name in all_docker_container_names() {
-        if pause_runtime_container_if_needed(name).unwrap_or(false) {
-            paused_any = true;
-        }
-    }
-    paused_any
+    let container_name = docker_container_name();
+    pause_runtime_container_if_needed(container_name).unwrap_or(false)
 }
 
-/// 停止所有运行时容器但保留（不删除），下次可通过 docker start 恢复
+/// 停止运行时容器但保留（不删除），下次可通过 docker start 恢复
+#[allow(dead_code)]
 fn stop_all_runtime_containers_keep() {
-    for name in all_docker_container_names() {
-        let _ = stop_container(name);
-    }
+    let container_name = docker_container_name();
+    let _ = stop_container(container_name);
 }
 
-/// 停止指定容器以外的所有运行时容器（用于模型切换时释放端口）
-fn stop_other_runtime_containers(current: &str) {
-    for name in all_docker_container_names() {
-        if *name != current {
-            let _ = stop_container(name);
-        }
+/// 清理旧版多容器遗留（一次性操作）
+fn cleanup_legacy_containers(app: &AppHandle) {
+    let app_data_dir = match app.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(_) => return,
+    };
+    let flag_file = app_data_dir.join(".legacy_containers_cleaned");
+    if flag_file.exists() {
+        return;
     }
+    for name in legacy_container_names() {
+        let _ = remove_container_if_exists(name);
+    }
+    let _ = fs::create_dir_all(&app_data_dir);
+    let _ = fs::write(&flag_file, "done");
 }
 
 fn attach_runtime_logs(
