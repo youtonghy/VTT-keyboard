@@ -10,6 +10,13 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
+/// 请求超时（秒），覆盖模型推理 + 网络传输
+const REQUEST_TIMEOUT_SECS: u64 = 300;
+/// 连接超时（秒）
+const CONNECT_TIMEOUT_SECS: u64 = 10;
+/// 网络错误最大重试次数
+const MAX_RETRIES: u32 = 2;
+
 #[derive(Deserialize)]
 struct SenseVoiceResponse {
     text: String,
@@ -69,11 +76,20 @@ pub fn transcribe_audio(
         .and_then(|name| name.to_str())
         .unwrap_or("recording.wav");
 
-    let client = Client::new();
-    for attempt in 0..2 {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+        .build()
+        .map_err(|err| SenseVoiceError::Request(format!("HTTP 客户端创建失败: {err}")))?;
+
+    let mut last_error = String::new();
+    for attempt in 0..MAX_RETRIES {
         let mut form = multipart::Form::new().part(
             "file",
-            multipart::Part::bytes(file_bytes.clone()).file_name(file_name.to_string()),
+            multipart::Part::bytes(file_bytes.clone())
+                .file_name(file_name.to_string())
+                .mime_str("audio/wav")
+                .unwrap(),
         );
         let endpoint = if local_model == "sensevoice" {
             form = form.text("language", "auto".to_string());
@@ -86,11 +102,26 @@ pub fn transcribe_audio(
             "/v1/audio/transcriptions"
         };
 
-        let response = client
+        let response = match client
             .post(format!("{service_url}{endpoint}"))
             .multipart(form)
             .send()
-            .map_err(|err| SenseVoiceError::Request(err.to_string()))?;
+        {
+            Ok(resp) => resp,
+            Err(err) => {
+                last_error = format_reqwest_error(&err);
+                eprintln!(
+                    "[SenseVoice] 请求失败 (尝试 {}/{}): {last_error}",
+                    attempt + 1,
+                    MAX_RETRIES,
+                );
+                if attempt + 1 < MAX_RETRIES {
+                    thread::sleep(Duration::from_secs(2));
+                    continue;
+                }
+                return Err(SenseVoiceError::Request(last_error));
+            }
+        };
 
         if response.status().is_success() {
             let data: SenseVoiceResponse = response
@@ -112,8 +143,23 @@ pub fn transcribe_audio(
     }
 
     Err(SenseVoiceError::Request(
-        "SenseVoice 服务暂不可用，请稍后重试".to_string(),
+        if last_error.is_empty() {
+            "SenseVoice 服务暂不可用，请稍后重试".to_string()
+        } else {
+            last_error
+        },
     ))
+}
+
+/// 展开 reqwest 错误链，便于诊断
+fn format_reqwest_error(err: &reqwest::Error) -> String {
+    let mut msg = err.to_string();
+    let mut source = std::error::Error::source(err);
+    while let Some(inner) = source {
+        msg.push_str(&format!(" -> {inner}"));
+        source = std::error::Error::source(inner);
+    }
+    msg
 }
 
 fn is_warming_up_error(body: &str) -> bool {
