@@ -9,7 +9,8 @@ use super::{
         docker_container_name, is_vllm_local_model, legacy_container_names,
         normalize_local_model, resolve_vllm_model_id, runtime_container_name,
         runtime_image_tag, service_start_timeout, spec_for_local_model, LocalRuntimeKind,
-        CONTAINER_LABEL_MODEL_KEY, LOCAL_MODEL_SENSEVOICE, LOCAL_MODEL_VOXTRAL,
+        CONTAINER_LABEL_MODEL_ID, CONTAINER_LABEL_MODEL_KEY, LOCAL_MODEL_SENSEVOICE,
+        LOCAL_MODEL_VOXTRAL,
     },
     native_runtime, SenseVoiceError,
 };
@@ -277,7 +278,11 @@ impl SenseVoiceManager {
             && local_model_spec.runtime_kind == LocalRuntimeKind::Docker
         {
             let loaded_model = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
-            if loaded_model.as_deref() == Some(local_model) {
+            let loaded_model_id = get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
+            let expected_model_id = resolve_vllm_model_id(local_model, &sensevoice.model_id);
+            if loaded_model.as_deref() == Some(local_model)
+                && loaded_model_id.as_deref() == Some(&expected_model_id)
+            {
                 self.start_in_progress = false;
                 self.start_cancel_flag.store(false, Ordering::Relaxed);
                 return self.status(store);
@@ -954,13 +959,18 @@ fn run_startup_task(
                 paused_cache = Arc::clone(&manager.container_paused_cache);
             }
 
-            // 单容器模式：检查当前容器加载的模型是否匹配
+            // 单容器模式：检查当前容器加载的模型是否匹配（含具体变体 ID）
             let mut effective_container_state = container_state;
+            let expected_model_id = resolve_vllm_model_id(local_model, &sensevoice.model_id);
             if container_state != RuntimeState::Stopped {
                 let loaded_model =
                     get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
-                if loaded_model.as_deref() != Some(local_model) {
-                    // 模型不匹配，需要删除并重建容器
+                let loaded_model_id =
+                    get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
+                let key_matches = loaded_model.as_deref() == Some(local_model);
+                let id_matches = loaded_model_id.as_deref() == Some(&expected_model_id);
+                if !key_matches || !id_matches {
+                    // 模型系列或具体变体不匹配，需要删除并重建容器
                     let _ = remove_container_if_exists(container_name);
                     effective_container_state = RuntimeState::Stopped;
                 }
@@ -1926,6 +1936,8 @@ fn run_service_container(
         .arg(container_name)
         .arg("--label")
         .arg(format!("{CONTAINER_LABEL_MODEL_KEY}={LOCAL_MODEL_SENSEVOICE}"))
+        .arg("--label")
+        .arg(format!("{CONTAINER_LABEL_MODEL_ID}={model_id}"))
         .arg("-p")
         .arg(format!("{publish_host}:{port}:{port}"))
         .arg("--mount")
@@ -1986,6 +1998,8 @@ fn run_vllm_service_container(
         .arg(container_name)
         .arg("--label")
         .arg(format!("{CONTAINER_LABEL_MODEL_KEY}={local_model}"))
+        .arg("--label")
+        .arg(format!("{CONTAINER_LABEL_MODEL_ID}={model_id}"))
         .arg("--runtime")
         .arg("nvidia")
         .arg("--gpus")

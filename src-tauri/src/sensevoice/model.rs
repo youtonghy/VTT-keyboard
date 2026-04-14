@@ -24,6 +24,8 @@ const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 pub const DOCKER_CONTAINER_NAME: &str = "vtt-docker-service";
 /// 用于标记容器所属模型的 Docker label key
 pub const CONTAINER_LABEL_MODEL_KEY: &str = "vtt.model-key";
+/// 用于标记容器所加载的具体模型 ID（区分同一模型系列的不同变体）
+pub const CONTAINER_LABEL_MODEL_ID: &str = "vtt.model-id";
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const VLLM_SERVICE_START_TIMEOUT_SECS: u64 = 5 * 60;
 /// 旧版单独容器名，用于迁移清理
