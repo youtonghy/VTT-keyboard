@@ -15,7 +15,9 @@ mod util;
 mod volcengine;
 
 use recorder::RecorderService;
-use sensevoice::model::{spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind};
+use sensevoice::model::{
+    resolve_vllm_model_id, spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind,
+};
 use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
 use settings::{
     SenseVoiceSettings, Settings, SettingsStore, TranscriptionHistoryItem, TranscriptionProvider,
@@ -71,12 +73,12 @@ fn update_settings(
     state: State<AppState>,
     settings: Settings,
 ) -> Result<Settings, String> {
-    let previous_local_model = state
+    let previous = state
         .settings_store
         .load()
-        .map_err(|err| err.to_string())?
-        .sensevoice
-        .local_model;
+        .map_err(|err| err.to_string())?;
+    let previous_local_model = previous.sensevoice.local_model.clone();
+    let previous_model_id = previous.sensevoice.model_id.clone();
 
     let persisted = state
         .settings_store
@@ -89,7 +91,9 @@ fn update_settings(
         &app,
         &state,
         &previous_local_model,
+        &previous_model_id,
         &persisted.sensevoice.local_model,
+        &persisted.sensevoice.model_id,
     )?;
 
     Ok(persisted)
@@ -109,11 +113,12 @@ fn update_sensevoice_settings(
     state: State<AppState>,
     sensevoice: SenseVoiceSettings,
 ) -> Result<(), String> {
-    let previous_local_model = state
+    let previous = state
         .settings_store
         .load_sensevoice()
-        .map_err(|err| err.to_string())?
-        .local_model;
+        .map_err(|err| err.to_string())?;
+    let previous_local_model = previous.local_model.clone();
+    let previous_model_id = previous.model_id.clone();
 
     state
         .settings_store
@@ -124,7 +129,9 @@ fn update_sensevoice_settings(
         &app,
         &state,
         &previous_local_model,
+        &previous_model_id,
         &sensevoice.local_model,
+        &sensevoice.model_id,
     )
 }
 
@@ -132,11 +139,16 @@ fn maybe_restart_local_runtime_if_switched(
     app: &tauri::AppHandle,
     state: &State<AppState>,
     previous_local_model: &str,
+    previous_model_id: &str,
     next_local_model: &str,
+    next_model_id: &str,
 ) -> Result<(), String> {
     let previous = spec_for_local_model(previous_local_model);
     let next = spec_for_local_model(next_local_model);
-    if previous.model_key == next.model_key {
+    // 比较模型系列和具体变体 ID（解析后的完整 model ID）
+    let prev_resolved = resolve_vllm_model_id(previous_local_model, previous_model_id);
+    let next_resolved = resolve_vllm_model_id(next_local_model, next_model_id);
+    if previous.model_key == next.model_key && prev_resolved == next_resolved {
         return Ok(());
     }
 

@@ -41,6 +41,9 @@ const PREPARE_SCRIPT: &str = include_str!("scripts/prepare.py");
 const SERVER_SCRIPT: &str = include_str!("scripts/server.py");
 const REQUIREMENTS_TXT: &str = include_str!("scripts/requirements.txt");
 const DOCKERFILE_TXT: &str = include_str!("scripts/Dockerfile");
+const VLLM_ENTRYPOINT_SH: &str = include_str!("scripts/vllm_entrypoint.sh");
+
+const VLLM_CONFIG_DIR_NAME: &str = "vllm-config";
 
 const VLLM_INTERNAL_PORT: u16 = 8000;
 const VLLM_REQUIRED_DEVICE: &str = "cuda";
@@ -277,12 +280,22 @@ impl SenseVoiceManager {
         if runtime_state == RuntimeState::Running
             && local_model_spec.runtime_kind == LocalRuntimeKind::Docker
         {
-            let loaded_model = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
-            let loaded_model_id = get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
+            // 优先读取宿主机配置文件，回退到 Docker labels
+            let config_dir_result = app
+                .path()
+                .app_local_data_dir()
+                .map(|d| d.join("sensevoice").join("runtime").join(VLLM_CONFIG_DIR_NAME));
+            let (loaded_key, loaded_id) = config_dir_result
+                .ok()
+                .and_then(|dir| read_vllm_config_model(&dir))
+                .or_else(|| {
+                    let k = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
+                    let i = get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
+                    Some((k?, i?))
+                })
+                .unwrap_or_default();
             let expected_model_id = resolve_vllm_model_id(local_model, &sensevoice.model_id);
-            if loaded_model.as_deref() == Some(local_model)
-                && loaded_model_id.as_deref() == Some(&expected_model_id)
-            {
+            if loaded_key == local_model && loaded_id == expected_model_id {
                 self.start_in_progress = false;
                 self.start_cancel_flag.store(false, Ordering::Relaxed);
                 return self.status(store);
@@ -959,20 +972,63 @@ fn run_startup_task(
                 paused_cache = Arc::clone(&manager.container_paused_cache);
             }
 
-            // 单容器模式：检查当前容器加载的模型是否匹配（含具体变体 ID）
+            // 单容器模式：检查当前容器配置的模型是否匹配（含具体变体 ID）
+            // 优先读取宿主机配置文件（容器内模型调度的真实来源），回退到 Docker labels
             let mut effective_container_state = container_state;
             let expected_model_id = resolve_vllm_model_id(local_model, &sensevoice.model_id);
+            let config_dir = vllm_config_dir(&paths.runtime_dir);
             if container_state != RuntimeState::Stopped {
-                let loaded_model =
-                    get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
-                let loaded_model_id =
-                    get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
-                let key_matches = loaded_model.as_deref() == Some(local_model);
-                let id_matches = loaded_model_id.as_deref() == Some(&expected_model_id);
+                let (loaded_key, loaded_id) = read_vllm_config_model(&config_dir)
+                    .or_else(|| {
+                        // 旧容器没有配置文件，回退到 Docker labels
+                        let k = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
+                        let i = get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
+                        Some((k?, i?))
+                    })
+                    .unwrap_or_default();
+                let key_matches = loaded_key == local_model;
+                let id_matches = loaded_id == expected_model_id;
                 if !key_matches || !id_matches {
-                    // 模型系列或具体变体不匹配，需要删除并重建容器
-                    let _ = remove_container_if_exists(container_name);
-                    effective_container_state = RuntimeState::Stopped;
+                    // 模型不匹配：判断是否可以容器内切换
+                    let old_is_vllm = is_vllm_local_model(&loaded_key);
+                    let new_is_vllm = is_vllm_local_model(local_model);
+                    let has_config_file = config_dir.join("model.conf").exists();
+                    if old_is_vllm && new_is_vllm && has_config_file {
+                        // 同为 vLLM 模型且有 entrypoint：容器内切换（stop → 改配置 → start）
+                        emit_progress_payload(
+                            &app,
+                            "switching",
+                            "Switching vLLM model in-place",
+                            Some(70),
+                            None,
+                            None,
+                            None,
+                        );
+                        // 如果容器被 pause 了，先 unpause 再 stop
+                        if container_state == RuntimeState::Paused {
+                            let _ = unpause_container(container_name);
+                        }
+                        if container_state == RuntimeState::Running
+                            || container_state == RuntimeState::Paused
+                        {
+                            let _ = stop_container(container_name);
+                        }
+                        // 写入新配置
+                        write_vllm_config(
+                            &config_dir,
+                            normalize_local_model(local_model),
+                            &expected_model_id,
+                            port,
+                            VLLM_GPU_MEMORY_UTILIZATION,
+                            &vllm_extra_args(local_model),
+                        )?;
+                        // 容器已处于 exited 状态，走 docker start 路径
+                        effective_container_state = RuntimeState::Exited;
+                    } else {
+                        // 不同镜像类型或旧容器无 entrypoint：删除并重建
+                        let _ = remove_container_if_exists(container_name);
+                        effective_container_state = RuntimeState::Stopped;
+                    }
                 }
             }
 
@@ -1216,6 +1272,7 @@ fn run_startup_task(
                     port,
                     &paths.models_dir,
                     &model_id,
+                    &config_dir,
                 )?;
             }
             check_start_cancelled(&cancel_flag)?;
@@ -1978,18 +2035,18 @@ fn run_vllm_service_container(
     host_port: u16,
     model_dir: &Path,
     model_id: &str,
+    config_dir: &Path,
 ) -> Result<(), SenseVoiceError> {
     fs::create_dir_all(model_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    let escaped_model_id = model_id.replace('\'', "'\\''");
-    let vllm_command = if local_model == LOCAL_MODEL_VOXTRAL {
-        format!(
-            "pip install --no-cache-dir \"vllm[audio]\" \"mistral-common[soundfile]>=1.9.0\" && vllm serve '{escaped_model_id}' --attention-backend {VOXTRAL_ATTENTION_BACKEND} --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager --gpu-memory-utilization {VLLM_GPU_MEMORY_UTILIZATION}"
-        )
-    } else {
-        format!(
-            "pip install --no-cache-dir \"vllm[audio]\" && vllm serve '{escaped_model_id}' --host 0.0.0.0 --port {VLLM_INTERNAL_PORT} --enforce-eager --gpu-memory-utilization {VLLM_GPU_MEMORY_UTILIZATION} --max-model-len 12288"
-        )
-    };
+    // 写入 entrypoint.sh 和 model.conf 到宿主机配置目录
+    write_vllm_config(
+        config_dir,
+        normalize_local_model(local_model),
+        model_id,
+        VLLM_INTERNAL_PORT,
+        VLLM_GPU_MEMORY_UTILIZATION,
+        &vllm_extra_args(local_model),
+    )?;
     let mut gpu_command = docker_command();
     gpu_command
         .arg("run")
@@ -2008,12 +2065,13 @@ fn run_vllm_service_container(
         .arg(format!("{publish_host}:{host_port}:{VLLM_INTERNAL_PORT}"))
         .arg("--mount")
         .arg(bind_mount(model_dir, "/root/.cache/huggingface"))
+        .arg("--mount")
+        .arg(bind_mount(config_dir, "/config"))
         .arg("--ipc=host")
         .arg("--entrypoint")
         .arg("/bin/bash")
         .arg(runtime_image_tag(local_model))
-        .arg("-lc")
-        .arg(vllm_command);
+        .arg("/config/entrypoint.sh");
     hide_window(&mut gpu_command);
     let gpu_output = gpu_command
         .output()
@@ -2026,7 +2084,7 @@ fn run_vllm_service_container(
     let gpu_error = docker_output_detail(&gpu_output);
     if local_model == LOCAL_MODEL_VOXTRAL {
         return Err(SenseVoiceError::Process(format!(
-            "启动 Voxtral 容器失败：Voxtral 仅支持 CUDA GPU，并已禁用 FlashAttention（使用 TRITON_ATTN）。容器会在启动时自动安装 mistral-common[soundfile] 依赖。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
+            "启动 Voxtral 容器失败：Voxtral 仅支持 CUDA GPU，并已禁用 FlashAttention（使用 TRITON_ATTN）。请确认 NVIDIA GPU 与 Docker NVIDIA Runtime 可用。详情: {gpu_error}"
         )));
     }
     Err(SenseVoiceError::Process(format!(
@@ -2098,6 +2156,7 @@ fn docker_container_state(name: &str) -> Result<RuntimeState, SenseVoiceError> {
     Ok(RuntimeState::Stopped)
 }
 
+#[allow(dead_code)]
 fn detect_any_runtime_state() -> RuntimeState {
     let container_name = docker_container_name();
     docker_container_state(container_name).unwrap_or(RuntimeState::Stopped)
@@ -2394,6 +2453,61 @@ fn current_timestamp_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     duration.as_millis() as i64
+}
+
+// ---------------------------------------------------------------------------
+// vLLM 容器内模型调度：配置文件读写
+// ---------------------------------------------------------------------------
+
+/// 获取 vLLM 配置目录路径
+fn vllm_config_dir(runtime_dir: &Path) -> PathBuf {
+    runtime_dir.join(VLLM_CONFIG_DIR_NAME)
+}
+
+/// 写入 vLLM 容器启动配置（entrypoint.sh + model.conf）
+fn write_vllm_config(
+    config_dir: &Path,
+    model_key: &str,
+    model_id: &str,
+    port: u16,
+    gpu_mem: f32,
+    extra_args: &str,
+) -> Result<(), SenseVoiceError> {
+    fs::create_dir_all(config_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    // entrypoint.sh
+    fs::write(config_dir.join("entrypoint.sh"), VLLM_ENTRYPOINT_SH)
+        .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    // model.conf（bash source 格式）
+    let conf = format!(
+        "MODEL_KEY={model_key}\nMODEL_ID={model_id}\nVLLM_PORT={port}\nVLLM_GPU_MEM={gpu_mem}\nVLLM_EXTRA_ARGS={extra_args}\n"
+    );
+    fs::write(config_dir.join("model.conf"), conf)
+        .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
+    Ok(())
+}
+
+/// 从宿主机配置文件读取 vLLM 当前配置的模型信息
+fn read_vllm_config_model(config_dir: &Path) -> Option<(String, String)> {
+    let content = fs::read_to_string(config_dir.join("model.conf")).ok()?;
+    let mut model_key = None;
+    let mut model_id = None;
+    for line in content.lines() {
+        if let Some(val) = line.strip_prefix("MODEL_KEY=") {
+            model_key = Some(val.trim().to_string());
+        } else if let Some(val) = line.strip_prefix("MODEL_ID=") {
+            model_id = Some(val.trim().to_string());
+        }
+    }
+    Some((model_key?, model_id?))
+}
+
+/// 构建 vLLM 模型的 extra_args 字符串
+fn vllm_extra_args(local_model: &str) -> String {
+    if local_model == LOCAL_MODEL_VOXTRAL {
+        format!("--attention-backend {VOXTRAL_ATTENTION_BACKEND}")
+    } else {
+        "--max-model-len 12288".to_string()
+    }
 }
 
 fn is_startup_complete_line(line: &str) -> bool {
