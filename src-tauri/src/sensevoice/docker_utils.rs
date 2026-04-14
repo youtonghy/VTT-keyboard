@@ -77,6 +77,21 @@ pub(super) fn remove_container_if_exists(name: &str) -> Result<(), String> {
     Err(format!("移除容器失败: {}", detail.trim()))
 }
 
+/// 启动一个已存在但处于 exited/stopped 状态的容器（docker start）
+pub(super) fn start_container(name: &str) -> Result<(), String> {
+    let mut command = docker_command();
+    command.arg("start").arg(name);
+    hide_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|err| format!("启动容器失败: {err}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr);
+    Err(format!("启动容器失败: {}", detail.trim()))
+}
+
 pub(super) fn run_command_streaming<F>(
     command: &mut Command,
     step: &str,

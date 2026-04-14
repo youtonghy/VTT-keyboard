@@ -29,10 +29,10 @@ interface SpeechSettingsSectionProps {
   handleSenseVoicePrepare: () => void;
   handleSenseVoiceStart: () => void;
   handleSenseVoiceStop: () => void;
+  handleUpdateRuntime: () => void;
   normalizeLocalModel: (value: string | undefined) => string;
   normalizeSenseVoiceLanguage: (value: string | undefined) => string;
   normalizeSenseVoiceDevice: (localModel: string | undefined, device: string | undefined) => string;
-  normalizeStopMode: (value: string | undefined) => "stop" | "pause";
   isCudaOnlyLocalModel: (localModel: string | undefined) => boolean;
   getDefaultModelId: (localModel: string) => string;
   getQwenVariantByModelId: (modelId: string | undefined) => string;
@@ -56,10 +56,10 @@ export function SpeechSettingsSection({
   handleSenseVoicePrepare,
   handleSenseVoiceStart,
   handleSenseVoiceStop,
+  handleUpdateRuntime,
   normalizeLocalModel,
   normalizeSenseVoiceLanguage,
   normalizeSenseVoiceDevice,
-  normalizeStopMode,
   isCudaOnlyLocalModel,
   getDefaultModelId,
   getQwenVariantByModelId,
@@ -579,7 +579,6 @@ export function SpeechSettingsSection({
             const running = sensevoiceStatus.running;
             const runtimeState = sensevoiceStatus.runtimeState || "stopped";
             const runtimeKind = sensevoiceStatus.runtimeKind || "docker";
-            const supportsPause = sensevoiceStatus.supportsPause ?? true;
             const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
             const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
             const progressStage = sensevoiceProgress?.stage ?? "";
@@ -645,7 +644,6 @@ export function SpeechSettingsSection({
               selectedLocalModel,
               draft.sensevoice.device
             );
-            const stopMode = normalizeStopMode(draft.sensevoice.stopMode);
             const selectedQwenVariant = getQwenVariantByModelId(draft.sensevoice.modelId);
 
             return (
@@ -783,30 +781,6 @@ export function SpeechSettingsSection({
                   />
                 </label>
 
-                {!isSherpaSelected && supportsPause ? (
-                  <>
-                    <label className="field">
-                      <span>{t("sensevoice.stopMode")}</span>
-                      <CustomSelect
-                        value={stopMode}
-                        onChange={(value) =>
-                          updateDraft((prev) => ({
-                            ...prev,
-                            sensevoice: {
-                              ...prev.sensevoice,
-                              stopMode: normalizeStopMode(value),
-                            },
-                          }))
-                        }
-                        options={[
-                          { value: "stop", label: t("sensevoice.stopModeStop") },
-                          { value: "pause", label: t("sensevoice.stopModePause") },
-                        ]}
-                      />
-                    </label>
-                    <div className="sensevoice-hint">{t("sensevoice.stopModeHint")}</div>
-                  </>
-                ) : null}
                 {isVoxtralSelected ? (
                   <div className="sensevoice-hint">{t("sensevoice.voxtralCudaOnlyHint")}</div>
                 ) : null}
@@ -897,6 +871,15 @@ export function SpeechSettingsSection({
                   {running ? (
                     <button type="button" onClick={handleSenseVoiceStop} disabled={stopBusy}>
                       {isNativeRuntime ? t("sensevoice.unload") : t("sensevoice.stop")}
+                    </button>
+                  ) : null}
+                  {installed && !running && !isNativeRuntime ? (
+                    <button
+                      type="button"
+                      onClick={handleUpdateRuntime}
+                      disabled={sensevoiceLoading}
+                    >
+                      {t("sensevoice.updateRuntime")}
                     </button>
                   ) : null}
                 </div>

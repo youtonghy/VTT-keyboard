@@ -20,8 +20,9 @@ pub const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
 
 const SENSEVOICE_IMAGE_TAG: &str = "vtt-sensevoice:local";
 const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
-const SERVICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
-const VLLM_CONTAINER_NAME: &str = "vtt-vllm-service";
+const SENSEVOICE_CONTAINER_NAME: &str = "vtt-sensevoice-service";
+const VOXTRAL_CONTAINER_NAME: &str = "vtt-voxtral-service";
+const QWEN3_ASR_CONTAINER_NAME: &str = "vtt-qwen3-asr-service";
 const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const VLLM_SERVICE_START_TIMEOUT_SECS: u64 = 5 * 60;
 
@@ -87,7 +88,7 @@ pub fn spec_for_local_model(value: &str) -> LocalModelSpec {
             supports_device: true,
             is_vllm: true,
             runtime_image_tag: Some(VLLM_IMAGE_TAG),
-            container_name: Some(VLLM_CONTAINER_NAME),
+            container_name: Some(VOXTRAL_CONTAINER_NAME),
             startup_timeout_secs: VLLM_SERVICE_START_TIMEOUT_SECS,
         };
     }
@@ -103,7 +104,7 @@ pub fn spec_for_local_model(value: &str) -> LocalModelSpec {
             supports_device: true,
             is_vllm: true,
             runtime_image_tag: Some(VLLM_IMAGE_TAG),
-            container_name: Some(VLLM_CONTAINER_NAME),
+            container_name: Some(QWEN3_ASR_CONTAINER_NAME),
             startup_timeout_secs: VLLM_SERVICE_START_TIMEOUT_SECS,
         };
     }
@@ -118,7 +119,7 @@ pub fn spec_for_local_model(value: &str) -> LocalModelSpec {
         supports_device: true,
         is_vllm: false,
         runtime_image_tag: Some(SENSEVOICE_IMAGE_TAG),
-        container_name: Some(SERVICE_CONTAINER_NAME),
+        container_name: Some(SENSEVOICE_CONTAINER_NAME),
         startup_timeout_secs: SERVICE_START_TIMEOUT_SECS,
     }
 }
@@ -141,10 +142,14 @@ pub fn runtime_image_tag(value: &str) -> &'static str {
         .unwrap_or(SENSEVOICE_IMAGE_TAG)
 }
 
+pub fn all_docker_container_names() -> &'static [&'static str] {
+    &[SENSEVOICE_CONTAINER_NAME, VOXTRAL_CONTAINER_NAME, QWEN3_ASR_CONTAINER_NAME]
+}
+
 pub fn runtime_container_name(value: &str) -> &'static str {
     spec_for_local_model(value)
         .container_name
-        .unwrap_or(SERVICE_CONTAINER_NAME)
+        .unwrap_or(SENSEVOICE_CONTAINER_NAME)
 }
 
 pub fn service_start_timeout(value: &str) -> Duration {

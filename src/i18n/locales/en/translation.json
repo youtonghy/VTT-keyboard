@@ -156,6 +156,9 @@
     "pauseSuccess": "Local model service paused",
     "stopSuccess": "Local model service stopped",
     "stopError": "Local model stop failed: {{error}}",
+    "updateRuntime": "Update Runtime",
+    "updateRuntimeQueued": "Runtime update started, pulling latest image...",
+    "updateRuntimeError": "Runtime update failed: {{error}}",
     "stageStatus": {
       "loading": "Loading",
       "loaded": "Loaded",

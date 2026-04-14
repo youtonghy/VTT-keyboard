@@ -111,6 +111,15 @@ export function useSenseVoice(monitoringEnabled = false) {
     }
   }, []);
 
+  const updateRuntime = useCallback(async () => {
+    setLoading(true);
+    try {
+      await invoke("update_sensevoice_runtime");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshStatus().catch(() => {});
   }, [refreshStatus]);
@@ -188,5 +197,6 @@ export function useSenseVoice(monitoringEnabled = false) {
     updateSettings,
     startService,
     stopService,
+    updateRuntime,
   };
 }

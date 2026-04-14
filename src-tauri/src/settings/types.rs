@@ -452,7 +452,7 @@ fn default_local_model() -> String {
 }
 
 fn default_stop_mode() -> String {
-    STOP_MODE_STOP.to_string()
+    STOP_MODE_PAUSE.to_string()
 }
 
 pub(crate) fn default_sensevoice_language() -> String {

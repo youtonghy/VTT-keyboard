@@ -264,6 +264,20 @@ fn stop_sensevoice_service(
 }
 
 #[tauri::command]
+fn update_sensevoice_runtime(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
+    manager
+        .update_runtime_async(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 fn set_tray_menu(
     app: tauri::AppHandle,
     state: State<AppState>,
@@ -481,6 +495,7 @@ pub fn run() {
             prepare_sensevoice,
             start_sensevoice_service,
             stop_sensevoice_service,
+            update_sensevoice_runtime,
             set_tray_menu,
             get_update_status,
             install_downloaded_update,

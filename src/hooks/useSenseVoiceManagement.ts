@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useSenseVoice } from "./useSenseVoice";
 import type { Settings } from "../types/settings";
 import { toErrorMessage } from "../utils";
-import { normalizeLocalModel, normalizeStopMode } from "../utils/sensevoice";
+import { normalizeLocalModel } from "../utils/sensevoice";
 
 interface UseSenseVoiceManagementParams {
   isSenseVoiceActive: boolean;
@@ -30,6 +30,7 @@ export function useSenseVoiceManagement({
     updateSettings: updateSenseVoiceSettings,
     startService: startSenseVoiceService,
     stopService: stopSenseVoiceService,
+    updateRuntime: updateSenseVoiceRuntime,
   } = useSenseVoice(isSenseVoiceActive);
 
   const [pendingSherpaAutoStart, setPendingSherpaAutoStart] = useState(false);
@@ -102,16 +103,33 @@ export function useSenseVoiceManagement({
       await stopSenseVoiceService();
       await refreshSenseVoiceStatus();
       const runtimeKind = sensevoiceStatus.runtimeKind;
-      const stopMode = normalizeStopMode(draft.sensevoice.stopMode);
       if (runtimeKind === "native") {
         toast.success(t("sensevoice.unloadSuccess"));
-      } else if (stopMode === "pause") {
-        toast.success(t("sensevoice.pauseSuccess"));
       } else {
-        toast.success(t("sensevoice.stopSuccess"));
+        toast.success(t("sensevoice.pauseSuccess"));
       }
     } catch (error) {
       toast.error(t("sensevoice.stopError", { error: toErrorMessage(error) }));
+    }
+  };
+
+  const handleUpdateRuntime = async () => {
+    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
+    if (!nextSenseVoiceSettings) {
+      return;
+    }
+    try {
+      await updateSenseVoiceSettings(nextSenseVoiceSettings);
+    } catch (error) {
+      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
+      return;
+    }
+    try {
+      await updateSenseVoiceRuntime();
+      await refreshSenseVoiceStatus();
+      toast.success(t("sensevoice.updateRuntimeQueued"));
+    } catch (error) {
+      toast.error(t("sensevoice.updateRuntimeError", { error: toErrorMessage(error) }));
     }
   };
 
@@ -172,5 +190,6 @@ export function useSenseVoiceManagement({
     handleSenseVoicePrepare,
     handleSenseVoiceStart,
     handleSenseVoiceStop,
+    handleUpdateRuntime,
   };
 }

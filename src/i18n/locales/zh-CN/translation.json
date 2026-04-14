@@ -156,6 +156,9 @@
                        "pauseSuccess":  "本地模型服务已暂停",
                        "stopSuccess":  "本地模型服务已停止",
                        "stopError":  "本地模型停止失败：{{error}}",
+                       "updateRuntime":  "更新运行时",
+                       "updateRuntimeQueued":  "运行时更新已启动，正在拉取最新镜像...",
+                       "updateRuntimeError":  "运行时更新失败：{{error}}",
                        "stageStatus":  {
                                            "loading":  "加载中",
                                            "loaded":  "已加载",

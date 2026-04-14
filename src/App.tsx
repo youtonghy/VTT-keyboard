@@ -32,7 +32,6 @@ import type { Settings } from "./types/settings";
 import { parseList, toErrorMessage } from "./utils";
 import {
   normalizeLocalModel,
-  normalizeStopMode,
   normalizeSenseVoiceLanguage,
   normalizeSenseVoiceDevice,
   isCudaOnlyLocalModel,
@@ -130,6 +129,7 @@ function App() {
     handleSenseVoicePrepare,
     handleSenseVoiceStart,
     handleSenseVoiceStop,
+    handleUpdateRuntime,
   } = useSenseVoiceManagement({
     isSenseVoiceActive,
     draft,
@@ -542,10 +542,10 @@ function App() {
                 handleSenseVoicePrepare={handleSenseVoicePrepare}
                 handleSenseVoiceStart={handleSenseVoiceStart}
                 handleSenseVoiceStop={handleSenseVoiceStop}
+                handleUpdateRuntime={handleUpdateRuntime}
                 normalizeLocalModel={normalizeLocalModel}
                 normalizeSenseVoiceLanguage={normalizeSenseVoiceLanguage}
                 normalizeSenseVoiceDevice={normalizeSenseVoiceDevice}
-                normalizeStopMode={normalizeStopMode}
                 isCudaOnlyLocalModel={isCudaOnlyLocalModel}
                 getDefaultModelId={getDefaultModelId}
                 getQwenVariantByModelId={getQwenVariantByModelId}
