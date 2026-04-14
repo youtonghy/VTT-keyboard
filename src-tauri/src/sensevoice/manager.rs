@@ -2465,6 +2465,7 @@ fn vllm_config_dir(runtime_dir: &Path) -> PathBuf {
 }
 
 /// 写入 vLLM 容器启动配置（entrypoint.sh + model.conf）
+/// 注意：所有写入文件均强制使用 LF 行尾，避免 Windows CRLF 在 Linux 容器内导致解析失败
 fn write_vllm_config(
     config_dir: &Path,
     model_key: &str,
@@ -2474,12 +2475,13 @@ fn write_vllm_config(
     extra_args: &str,
 ) -> Result<(), SenseVoiceError> {
     fs::create_dir_all(config_dir).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    // entrypoint.sh
-    fs::write(config_dir.join("entrypoint.sh"), VLLM_ENTRYPOINT_SH)
+    // entrypoint.sh（去除 \r 以确保 bash 兼容）
+    let entrypoint = VLLM_ENTRYPOINT_SH.replace('\r', "");
+    fs::write(config_dir.join("entrypoint.sh"), entrypoint)
         .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    // model.conf（bash source 格式）
+    // model.conf（bash source 格式，纯 LF；含空格的值必须加引号）
     let conf = format!(
-        "MODEL_KEY={model_key}\nMODEL_ID={model_id}\nVLLM_PORT={port}\nVLLM_GPU_MEM={gpu_mem}\nVLLM_EXTRA_ARGS={extra_args}\n"
+        "MODEL_KEY='{model_key}'\nMODEL_ID='{model_id}'\nVLLM_PORT={port}\nVLLM_GPU_MEM={gpu_mem}\nVLLM_EXTRA_ARGS='{extra_args}'\n"
     );
     fs::write(config_dir.join("model.conf"), conf)
         .map_err(|err| SenseVoiceError::Io(err.to_string()))?;
@@ -2493,12 +2495,24 @@ fn read_vllm_config_model(config_dir: &Path) -> Option<(String, String)> {
     let mut model_id = None;
     for line in content.lines() {
         if let Some(val) = line.strip_prefix("MODEL_KEY=") {
-            model_key = Some(val.trim().to_string());
+            model_key = Some(strip_shell_quotes(val));
         } else if let Some(val) = line.strip_prefix("MODEL_ID=") {
-            model_id = Some(val.trim().to_string());
+            model_id = Some(strip_shell_quotes(val));
         }
     }
     Some((model_key?, model_id?))
+}
+
+/// 去除 bash 单/双引号包裹
+fn strip_shell_quotes(s: &str) -> String {
+    let trimmed = s.trim();
+    if (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        || (trimmed.starts_with('"') && trimmed.ends_with('"'))
+    {
+        trimmed[1..trimmed.len() - 1].to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// 构建 vLLM 模型的 extra_args 字符串
