@@ -1,8 +1,8 @@
 use super::docker_utils::{
     bind_mount, docker_command, docker_container_running, docker_image_exists,
-    get_container_label, hide_window, normalize_log_line, normalize_publish_host,
-    parse_host_and_port, read_selected_hub, remove_container_if_exists, run_command_streaming,
-    start_container,
+    get_container_label, hide_window, is_missing_container_error, normalize_log_line,
+    normalize_publish_host, parse_host_and_port, read_selected_hub, remove_container_if_exists,
+    run_command_streaming, start_container,
 };
 use super::{
     model::{
@@ -809,6 +809,125 @@ impl Drop for SenseVoiceManager {
             let container_name = docker_container_name();
             let _ = pause_runtime_container_if_needed(container_name);
         }
+    }
+}
+
+/// 同步确保 SenseVoice 服务处于就绪状态：
+/// 1. 检查 Docker 可用性（Docker 模型）或原生模型加载情况。
+/// 2. 自动判断容器所在状态（运行中 / 暂停 / 已退出 / 不存在），并选择合适的恢复路径
+///    （unpause → start → 重新创建 → 构建镜像）。
+/// 3. 等待服务 HTTP /health 端点就绪或 `download_state` 变为 `ready`。
+///
+/// 这个函数被转写调度线程在执行前调用，以避免系统重启后容器被 Docker 丢弃/停掉
+/// 时请求失败。函数是幂等的，若服务已经就绪则立即返回。
+pub fn ensure_service_ready_blocking(
+    app: &AppHandle,
+    store: &SettingsStore,
+    timeout: Duration,
+) -> Result<(), SenseVoiceError> {
+    let sensevoice = store
+        .load_sensevoice()
+        .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+    if !sensevoice.enabled || !sensevoice.installed {
+        // 用户尚未启用或未安装，不做自动恢复，交由上层错误处理
+        return Ok(());
+    }
+    let local_model = normalize_local_model(&sensevoice.local_model);
+    let spec = spec_for_local_model(local_model);
+
+    // 快路径：原生模型已加载，或 Docker 容器运行中且 HTTP 健康 → 直接返回
+    if spec.runtime_kind == LocalRuntimeKind::Native {
+        if native_runtime::is_loaded(spec.model_key) {
+            return Ok(());
+        }
+    } else {
+        let container_name = docker_container_name();
+        if matches!(
+            docker_container_state(container_name),
+            Ok(RuntimeState::Running)
+        ) && is_service_http_ready(&sensevoice.service_url, is_vllm_local_model(local_model))
+        {
+            return Ok(());
+        }
+    }
+
+    // 否则触发 start_service_async（它内部会分情况处理 paused/exited/missing/image-upgrade）
+    // 短暂加锁后立即释放，让后台启动线程能继续获取锁执行真正的创建/恢复工作
+    {
+        let state = app.state::<AppState>();
+        let mut manager = state
+            .sensevoice_manager
+            .lock()
+            .map_err(|_| SenseVoiceError::Process("SenseVoice 状态锁获取失败".to_string()))?;
+        manager.start_service_async(app, store)?;
+    }
+
+    // 轮询就绪状态：download_state == "ready" 或 HTTP /health 正常
+    wait_for_service_ready(store, local_model, timeout)
+}
+
+/// 仅用于 ensure_service_ready_blocking 的 HTTP 健康探测（短超时，失败即认为未就绪）。
+fn is_service_http_ready(service_url: &str, is_vllm: bool) -> bool {
+    let trimmed = service_url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return false;
+    }
+    let client = health_client();
+    let health_url = format!("{trimmed}/health");
+    let Ok(response) = client.get(&health_url).send() else {
+        return false;
+    };
+    if !response.status().is_success() {
+        return false;
+    }
+    let body = response.text().unwrap_or_default();
+    is_service_ready(&client, trimmed, &body, is_vllm)
+}
+
+fn wait_for_service_ready(
+    store: &SettingsStore,
+    local_model: &str,
+    timeout: Duration,
+) -> Result<(), SenseVoiceError> {
+    let started = Instant::now();
+    let spec = spec_for_local_model(local_model);
+    let is_vllm = is_vllm_local_model(local_model);
+    loop {
+        let sensevoice = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        let state_lower = sensevoice.download_state.to_ascii_lowercase();
+        // 明确的就绪态
+        if state_lower == "ready" {
+            if spec.runtime_kind == LocalRuntimeKind::Native {
+                return Ok(());
+            }
+            if is_service_http_ready(&sensevoice.service_url, is_vllm) {
+                return Ok(());
+            }
+        }
+        // 启动失败：立即把错误抛回给调用方
+        if state_lower == "error" && !sensevoice.last_error.is_empty() {
+            return Err(SenseVoiceError::Process(sensevoice.last_error));
+        }
+        // 次路径：Docker 容器确实就绪但 state 尚未更新
+        if spec.runtime_kind == LocalRuntimeKind::Docker
+            && is_service_http_ready(&sensevoice.service_url, is_vllm)
+        {
+            return Ok(());
+        }
+        if started.elapsed() >= timeout {
+            return Err(SenseVoiceError::Request(format!(
+                "等待 SenseVoice 服务就绪超时（{} 秒）。当前状态: {}",
+                timeout.as_secs(),
+                if sensevoice.download_state.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    sensevoice.download_state
+                }
+            )));
+        }
+        thread::sleep(Duration::from_millis(500));
     }
 }
 
@@ -2111,7 +2230,7 @@ fn stop_container(name: &str) -> Result<(), SenseVoiceError> {
         return Ok(());
     }
     let detail = String::from_utf8_lossy(&output.stderr);
-    if detail.contains("No such container") {
+    if is_missing_container_error(&detail) {
         return Ok(());
     }
     Err(SenseVoiceError::Process(format!(
@@ -2133,7 +2252,7 @@ fn docker_container_state(name: &str) -> Result<RuntimeState, SenseVoiceError> {
         .map_err(|err| SenseVoiceError::Process(err.to_string()))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr);
-        if detail.contains("No such object") || detail.contains("No such container") {
+        if is_missing_container_error(&detail) {
             return Ok(RuntimeState::Stopped);
         }
         return Err(SenseVoiceError::Process(format!(
@@ -2185,7 +2304,7 @@ fn pause_container(name: &str) -> Result<(), SenseVoiceError> {
         return Ok(());
     }
     let detail = docker_output_detail(&output);
-    if detail.contains("already paused") || detail.contains("No such container") {
+    if detail.contains("already paused") || is_missing_container_error(&detail) {
         return Ok(());
     }
     Err(SenseVoiceError::Process(format!(

@@ -39,6 +39,12 @@ pub(super) fn docker_image_exists(image: &str) -> bool {
     inspect.status().is_ok_and(|status| status.success())
 }
 
+/// 判断 Docker stderr 是否属于"容器不存在"错误（忽略大小写，兼容不同 Docker 版本的输出）。
+pub(super) fn is_missing_container_error(detail: &str) -> bool {
+    let lowered = detail.to_ascii_lowercase();
+    lowered.contains("no such object") || lowered.contains("no such container")
+}
+
 pub(super) fn docker_container_running(name: &str) -> Result<bool, String> {
     let mut command = docker_command();
     command
@@ -52,7 +58,7 @@ pub(super) fn docker_container_running(name: &str) -> Result<bool, String> {
         .map_err(|err| format!("检查容器状态失败: {err}"))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr);
-        if detail.contains("No such object") || detail.contains("No such container") {
+        if is_missing_container_error(&detail) {
             return Ok(false);
         }
         return Err(detail.trim().to_string());
@@ -71,7 +77,7 @@ pub(super) fn remove_container_if_exists(name: &str) -> Result<(), String> {
         return Ok(());
     }
     let detail = String::from_utf8_lossy(&output.stderr);
-    if detail.contains("No such container") {
+    if is_missing_container_error(&detail) {
         return Ok(());
     }
     Err(format!("移除容器失败: {}", detail.trim()))

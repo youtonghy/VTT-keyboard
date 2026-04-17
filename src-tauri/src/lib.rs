@@ -479,14 +479,34 @@ pub fn run() {
                 if !settings.sensevoice.installed {
                     return;
                 }
-                let state = startup_app.state::<AppState>();
-                let Ok(mut manager) = state.sensevoice_manager.lock() else {
-                    dev_eprintln!("failed to lock SenseVoice manager on startup");
-                    return;
+                // Docker Desktop 在系统重启后可能需要一段时间才能就绪；若首次 start_service_async
+                // 因 Docker 尚未可用等原因失败，重试 10 次，每次间隔 6s，总计约 1 分钟。
+                // 原生模型不存在该问题，一次调用即可。
+                let max_attempts = if runtime_kind == LocalRuntimeKind::Docker {
+                    10
+                } else {
+                    1
                 };
-                if let Err(_err) = manager.start_service_async(&startup_app, &state.settings_store)
-                {
-                    dev_eprintln!("failed to auto start SenseVoice on startup: {_err}");
+                for attempt in 0..max_attempts {
+                    let state = startup_app.state::<AppState>();
+                    let Ok(mut manager) = state.sensevoice_manager.lock() else {
+                        dev_eprintln!("failed to lock SenseVoice manager on startup");
+                        return;
+                    };
+                    match manager.start_service_async(&startup_app, &state.settings_store) {
+                        Ok(_) => break,
+                        Err(err) => {
+                            dev_eprintln!(
+                                "failed to auto start SenseVoice on startup (attempt {}/{}): {err}",
+                                attempt + 1,
+                                max_attempts
+                            );
+                            drop(manager);
+                            if attempt + 1 < max_attempts {
+                                std::thread::sleep(std::time::Duration::from_secs(6));
+                            }
+                        }
+                    }
                 }
             });
 
