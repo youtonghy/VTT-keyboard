@@ -441,6 +441,11 @@ pub fn run() {
             });
 
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = window.set_decorations(false);
+                }
+
                 if is_autostart_launch {
                     let _ = window.hide();
                 }

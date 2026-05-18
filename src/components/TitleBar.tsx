@@ -10,6 +10,10 @@ interface TitleBarProps {
   onDismissUpdateError?: () => void;
 }
 
+interface UpdateStatusControlProps extends TitleBarProps {
+  className?: string;
+}
+
 const formatProgress = (status: UpdateStatusPayload, downloadingLabel: string) => {
   if (status.status !== "downloading") {
     return null;
@@ -23,6 +27,81 @@ const formatProgress = (status: UpdateStatusPayload, downloadingLabel: string) =
   );
   return `${downloadingLabel} ${percent}%`;
 };
+
+export function UpdateStatusControl({
+  updateStatus,
+  onInstallUpdate,
+  onRetryUpdateCheck,
+  onDismissUpdateError,
+  className = "",
+}: UpdateStatusControlProps) {
+  const { t } = useTranslation();
+  const latestVersion = updateStatus?.latestVersion ?? "";
+  const showUpdateState =
+    updateStatus &&
+    ["checking", "available", "downloading", "downloaded", "installing", "error"].includes(
+      updateStatus.status
+    );
+  const progressText = updateStatus
+    ? formatProgress(updateStatus, t("updater.downloading"))
+    : null;
+
+  if (!showUpdateState) {
+    return null;
+  }
+
+  return (
+    <div className={`titlebar-update titlebar-update-${updateStatus?.status ?? "idle"} ${className}`}>
+      {updateStatus?.status === "checking" ? (
+        <span className="titlebar-update-chip">{t("updater.checking")}</span>
+      ) : null}
+      {updateStatus?.status === "available" ? (
+        <span className="titlebar-update-chip">
+          {t("updater.availableShort", { version: latestVersion })}
+        </span>
+      ) : null}
+      {updateStatus?.status === "downloading" ? (
+        <span className="titlebar-update-chip">{progressText}</span>
+      ) : null}
+      {updateStatus?.status === "downloaded" ? (
+        <button
+          type="button"
+          className="titlebar-update-action"
+          onClick={onInstallUpdate}
+          title={t("updater.installNow")}
+        >
+          {t("updater.installNowShort", { version: latestVersion })}
+        </button>
+      ) : null}
+      {updateStatus?.status === "installing" ? (
+        <span className="titlebar-update-chip">{t("updater.installing")}</span>
+      ) : null}
+      {updateStatus?.status === "error" ? (
+        <>
+          <span className="titlebar-update-chip error" title={updateStatus.error ?? undefined}>
+            {t("updater.error")}
+          </span>
+          <button
+            type="button"
+            className="titlebar-update-action"
+            onClick={onRetryUpdateCheck}
+            title={t("updater.retry")}
+          >
+            {t("updater.retry")}
+          </button>
+          <button
+            type="button"
+            className="titlebar-update-dismiss"
+            onClick={onDismissUpdateError}
+            title={t("updater.dismiss")}
+          >
+            x
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 export function TitleBar({
   updateStatus,
@@ -53,73 +132,18 @@ export function TitleBar({
   };
   const close = () => appWindow.close();
 
-  const latestVersion = updateStatus?.latestVersion ?? "";
-  const showUpdateState =
-    updateStatus &&
-    ["checking", "available", "downloading", "downloaded", "installing", "error"].includes(
-      updateStatus.status
-    );
-  const progressText = updateStatus
-    ? formatProgress(updateStatus, t("updater.downloading"))
-    : null;
-
   return (
     <div className="titlebar">
       <div className="titlebar-drag-region" data-tauri-drag-region>
         <div className="titlebar-title">VTT Keyboard</div>
       </div>
       <div className="titlebar-controls">
-        {showUpdateState ? (
-          <div className={`titlebar-update titlebar-update-${updateStatus?.status ?? "idle"}`}>
-            {updateStatus?.status === "checking" ? (
-              <span className="titlebar-update-chip">{t("updater.checking")}</span>
-            ) : null}
-            {updateStatus?.status === "available" ? (
-              <span className="titlebar-update-chip">
-                {t("updater.availableShort", { version: latestVersion })}
-              </span>
-            ) : null}
-            {updateStatus?.status === "downloading" ? (
-              <span className="titlebar-update-chip">{progressText}</span>
-            ) : null}
-            {updateStatus?.status === "downloaded" ? (
-              <button
-                type="button"
-                className="titlebar-update-action"
-                onClick={onInstallUpdate}
-                title={t("updater.installNow")}
-              >
-                {t("updater.installNowShort", { version: latestVersion })}
-              </button>
-            ) : null}
-            {updateStatus?.status === "installing" ? (
-              <span className="titlebar-update-chip">{t("updater.installing")}</span>
-            ) : null}
-            {updateStatus?.status === "error" ? (
-              <>
-                <span className="titlebar-update-chip error" title={updateStatus.error ?? undefined}>
-                  {t("updater.error")}
-                </span>
-                <button
-                  type="button"
-                  className="titlebar-update-action"
-                  onClick={onRetryUpdateCheck}
-                  title={t("updater.retry")}
-                >
-                  {t("updater.retry")}
-                </button>
-                <button
-                  type="button"
-                  className="titlebar-update-dismiss"
-                  onClick={onDismissUpdateError}
-                  title={t("updater.dismiss")}
-                >
-                  x
-                </button>
-              </>
-            ) : null}
-          </div>
-        ) : null}
+        <UpdateStatusControl
+          updateStatus={updateStatus}
+          onInstallUpdate={onInstallUpdate}
+          onRetryUpdateCheck={onRetryUpdateCheck}
+          onDismissUpdateError={onDismissUpdateError}
+        />
         <button className="titlebar-button" onClick={minimize} title={t("titleBar.minimize")}>
           <svg width="10" height="1" viewBox="0 0 10 1">
             <rect width="10" height="1" fill="currentColor" />

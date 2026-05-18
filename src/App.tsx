@@ -17,7 +17,7 @@ import { SettingsCard } from "./components/SettingsCard";
 import { SpeechSettingsSection } from "./components/settings/SpeechSettingsSection";
 import { TextProcessingSettingsSection } from "./components/settings/TextProcessingSettingsSection";
 import { TagInput } from "./components/TagInput";
-import { TitleBar } from "./components/TitleBar";
+import { TitleBar, UpdateStatusControl } from "./components/TitleBar";
 import { useAutostart } from "./hooks/useAutostart";
 import { usePersistentBoolean } from "./hooks/usePersistentBoolean";
 import { useSettings } from "./hooks/useSettings";
@@ -107,6 +107,10 @@ function App() {
     useState<TranscriptionHistoryItem | null>(null);
   const supportsSherpaOnnxSenseVoice =
     appInfo?.supportsSherpaOnnxSenseVoice ?? true;
+  const isMacOS = appInfo?.platform
+    ? appInfo.platform === "macos"
+    : navigator.userAgent.includes("Mac OS X");
+  const showCustomTitleBar = !isMacOS;
   const sherpaFallbackActive =
     !supportsSherpaOnnxSenseVoice &&
     normalizeLocalModel(settings?.sensevoice.localModel) === "sherpa-onnx-sensevoice";
@@ -319,13 +323,24 @@ function App() {
 
         <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
 
-        <TitleBar
-          updateStatus={updater.status}
-          onInstallUpdate={updater.installUpdate}
-          onRetryUpdateCheck={updater.retryUpdateCheck}
-          onDismissUpdateError={updater.dismissUpdateError}
-        />
-        <main className="container loading">
+        {showCustomTitleBar ? (
+          <TitleBar
+            updateStatus={updater.status}
+            onInstallUpdate={updater.installUpdate}
+            onRetryUpdateCheck={updater.retryUpdateCheck}
+            onDismissUpdateError={updater.dismissUpdateError}
+          />
+        ) : null}
+        <main className={`container loading ${showCustomTitleBar ? "has-custom-titlebar" : ""}`}>
+          {!showCustomTitleBar ? (
+            <UpdateStatusControl
+              className="native-update-banner"
+              updateStatus={updater.status}
+              onInstallUpdate={updater.installUpdate}
+              onRetryUpdateCheck={updater.retryUpdateCheck}
+              onDismissUpdateError={updater.dismissUpdateError}
+            />
+          ) : null}
           <p>{t("app.loading")}</p>
         </main>
       </>
@@ -337,13 +352,24 @@ function App() {
 
       <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
 
-      <TitleBar
-        updateStatus={updater.status}
-        onInstallUpdate={updater.installUpdate}
-        onRetryUpdateCheck={updater.retryUpdateCheck}
-        onDismissUpdateError={updater.dismissUpdateError}
-      />
-      <main className="container">
+      {showCustomTitleBar ? (
+        <TitleBar
+          updateStatus={updater.status}
+          onInstallUpdate={updater.installUpdate}
+          onRetryUpdateCheck={updater.retryUpdateCheck}
+          onDismissUpdateError={updater.dismissUpdateError}
+        />
+      ) : null}
+      <main className={`container ${showCustomTitleBar ? "has-custom-titlebar" : ""}`}>
+        {!showCustomTitleBar ? (
+          <UpdateStatusControl
+            className="native-update-banner"
+            updateStatus={updater.status}
+            onInstallUpdate={updater.installUpdate}
+            onRetryUpdateCheck={updater.retryUpdateCheck}
+            onDismissUpdateError={updater.dismissUpdateError}
+          />
+        ) : null}
         <div className="settings-layout">
           <Sidebar
             items={navItems}
