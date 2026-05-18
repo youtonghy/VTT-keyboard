@@ -87,6 +87,7 @@ export interface AppearanceSettings {
 
 export interface StartupSettings {
   launchOnBoot: boolean;
+  hideDockIcon: boolean;
   autoCheckUpdates: boolean;
   autoInstallUpdatesOnQuit: boolean;
 }

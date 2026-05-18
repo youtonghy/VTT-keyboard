@@ -406,6 +406,27 @@ function App() {
                     <span>{t("general.language")}</span>
                     <LanguageSwitcher />
                   </div>
+                  {isMacOS ? (
+                    <label className="field checkbox">
+                      <input
+                        type="checkbox"
+                        checked={draft.startup.hideDockIcon}
+                        onChange={(event) =>
+                          updateDraft((prev) => ({
+                            ...prev,
+                            startup: {
+                              ...prev.startup,
+                              hideDockIcon: event.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>{t("general.hideDockIcon")}</span>
+  <Tooltip content={t("general.hideDockIconHint")}>
+    <span className="flex items-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors"><Info size={14} /></span>
+  </Tooltip>
+</label>
+                  ) : null}
                   <label className="field checkbox">
                     <input
                       type="checkbox"

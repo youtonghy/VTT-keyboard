@@ -25,6 +25,8 @@
                     "themeLight":  "日间",
                     "themeDark":  "夜间",
                     "language":  "界面语言",
+                    "hideDockIcon":  "不在 Dock 中显示",
+                    "hideDockIconHint":  "仅 macOS 生效。启用后应用只保留菜单栏入口，不驻留在 Dock。",
                     "launchOnBoot":  "开机自启",
                     "launchOnBootHint":  "系统登录后自动在后台启动，并默认隐藏到托盘。",
                     "removeNewlines":  "移除换行",

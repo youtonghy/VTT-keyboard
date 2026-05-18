@@ -25,6 +25,8 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "language": "Language",
+    "hideDockIcon": "Hide Dock icon",
+    "hideDockIconHint": "macOS only. Keep the app active from the menu bar without showing a Dock icon.",
     "launchOnBoot": "Launch on Boot",
     "launchOnBootHint": "Auto start in background after login and keep the window hidden to tray.",
     "removeNewlines": "Remove line breaks",
