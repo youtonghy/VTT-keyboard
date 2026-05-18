@@ -5,7 +5,7 @@ Desktop voice-to-text keyboard tool built with Tauri (Rust backend + React front
 ## Requirements
 
 - Rust toolchain
-- Node.js + pnpm
+- Bun
 - Docker (Docker Desktop on Windows/macOS)
 
 ## SenseVoice Local Deployment (Docker)
@@ -106,6 +106,6 @@ The app now links Sherpa-ONNX statically on supported desktop targets, so Window
 ## Development
 
 ```bash
-pnpm install
-pnpm tauri dev
+bun install
+bun run tauri dev
 ```
