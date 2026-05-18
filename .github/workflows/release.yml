@@ -32,12 +32,6 @@ jobs:
             package: exe
             platform_key: windows-aarch64
           - os: macos
-            runs-on: macos-13
-            target: x86_64-apple-darwin
-            arch: intel
-            package: dmg
-            platform_key: darwin-x86_64
-          - os: macos
             runs-on: macos-14
             target: aarch64-apple-darwin
             arch: arm64
@@ -95,9 +89,6 @@ jobs:
           case "${{ matrix.target }}" in
             x86_64-pc-windows-msvc)
               SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-win-x64-static-MT-Release-lib.tar.bz2"
-              ;;
-            x86_64-apple-darwin)
-              SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-x64-static-lib.tar.bz2"
               ;;
             aarch64-apple-darwin)
               SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-osx-arm64-static-lib.tar.bz2"
