@@ -28,8 +28,12 @@ fn send_paste_shortcut() -> Result<(), String> {
     let mut enigo = Enigo::new();
     #[cfg(target_os = "macos")]
     {
+        const KEY_CODE_V: u16 = 0x09;
+
         enigo.key_down(Key::Meta);
-        enigo.key_click(Key::Layout('v'));
+        // Avoid Key::Layout here: enigo resolves it through the current macOS
+        // input source, which can assert when called from our worker thread.
+        enigo.key_click(Key::Raw(KEY_CODE_V));
         enigo.key_up(Key::Meta);
     }
     #[cfg(not(target_os = "macos"))]
