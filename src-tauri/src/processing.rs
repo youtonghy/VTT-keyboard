@@ -61,16 +61,46 @@ struct ProcessingOutcomeBuilder {
 }
 
 impl ProcessingOutcomeBuilder {
-    fn history_enabled(mut self, v: bool) -> Self { self.history_enabled = v; self }
-    fn transcription_text(mut self, v: String) -> Self { self.transcription_text = v; self }
-    fn final_text(mut self, v: String) -> Self { self.final_text = v; self }
-    fn model_group(mut self, v: String) -> Self { self.model_group = v; self }
-    fn transcription_elapsed_ms(mut self, v: u64) -> Self { self.transcription_elapsed_ms = v; self }
-    fn recording_duration_ms(mut self, v: u64) -> Self { self.recording_duration_ms = v; self }
-    fn triggered(mut self, v: bool) -> Self { self.triggered = v; self }
-    fn triggered_by_keyword(mut self, v: bool) -> Self { self.triggered_by_keyword = v; self }
-    fn trigger_matches(mut self, v: Vec<TriggerMatch>) -> Self { self.trigger_matches = v; self }
-    fn alignment(mut self, v: Option<TranscriptionAlignment>) -> Self { self.alignment = v; self }
+    fn history_enabled(mut self, v: bool) -> Self {
+        self.history_enabled = v;
+        self
+    }
+    fn transcription_text(mut self, v: String) -> Self {
+        self.transcription_text = v;
+        self
+    }
+    fn final_text(mut self, v: String) -> Self {
+        self.final_text = v;
+        self
+    }
+    fn model_group(mut self, v: String) -> Self {
+        self.model_group = v;
+        self
+    }
+    fn transcription_elapsed_ms(mut self, v: u64) -> Self {
+        self.transcription_elapsed_ms = v;
+        self
+    }
+    fn recording_duration_ms(mut self, v: u64) -> Self {
+        self.recording_duration_ms = v;
+        self
+    }
+    fn triggered(mut self, v: bool) -> Self {
+        self.triggered = v;
+        self
+    }
+    fn triggered_by_keyword(mut self, v: bool) -> Self {
+        self.triggered_by_keyword = v;
+        self
+    }
+    fn trigger_matches(mut self, v: Vec<TriggerMatch>) -> Self {
+        self.trigger_matches = v;
+        self
+    }
+    fn alignment(mut self, v: Option<TranscriptionAlignment>) -> Self {
+        self.alignment = v;
+        self
+    }
 
     fn build(self) -> ProcessingOutcome {
         ProcessingOutcome {
@@ -109,8 +139,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     let settings = match store.load() {
         Ok(value) => value,
         Err(err) => {
-            return ProcessingOutcome::builder()
-                .build_error(format!("设置读取失败: {err}"));
+            return ProcessingOutcome::builder().build_error(format!("设置读取失败: {err}"));
         }
     };
     let history_enabled = settings.history.enabled;
@@ -237,14 +266,12 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     if result.triggered {
         dev_log("复制原文到剪贴板");
         if let Err(err) = paste::write_text(&combined) {
-            return post_trigger()
-                .build_error(format!("写入剪贴板失败: {err}"));
+            return post_trigger().build_error(format!("写入剪贴板失败: {err}"));
         }
     }
     dev_log("写入并粘贴处理后的文本");
     if let Err(err) = paste::write_and_paste(&final_output) {
-        return post_trigger()
-            .build_error(format!("写入剪贴板失败: {err}"));
+        return post_trigger().build_error(format!("写入剪贴板失败: {err}"));
     }
     emit_status("completed");
     post_trigger().build()

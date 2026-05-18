@@ -385,10 +385,9 @@ impl TranscriptionProvider {
     pub fn category(&self) -> ProviderCategory {
         match self {
             Self::Sensevoice => ProviderCategory::Local,
-            Self::Openai
-            | Self::Volcengine
-            | Self::AliyunAsr
-            | Self::AliyunParaformer => ProviderCategory::Cloud,
+            Self::Openai | Self::Volcengine | Self::AliyunAsr | Self::AliyunParaformer => {
+                ProviderCategory::Cloud
+            }
         }
     }
 
@@ -545,11 +544,26 @@ mod tests {
 
     #[test]
     fn provider_category_classification() {
-        assert_eq!(TranscriptionProvider::Openai.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::Volcengine.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::AliyunAsr.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::AliyunParaformer.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::Sensevoice.category(), ProviderCategory::Local);
+        assert_eq!(
+            TranscriptionProvider::Openai.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::Volcengine.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::AliyunAsr.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::AliyunParaformer.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::Sensevoice.category(),
+            ProviderCategory::Local
+        );
     }
 
     #[test]

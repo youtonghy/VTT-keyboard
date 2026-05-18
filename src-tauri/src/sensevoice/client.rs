@@ -142,13 +142,11 @@ pub fn transcribe_audio(
         return Err(SenseVoiceError::Request(format!("{status}: {body}")));
     }
 
-    Err(SenseVoiceError::Request(
-        if last_error.is_empty() {
-            "SenseVoice 服务暂不可用，请稍后重试".to_string()
-        } else {
-            last_error
-        },
-    ))
+    Err(SenseVoiceError::Request(if last_error.is_empty() {
+        "SenseVoice 服务暂不可用，请稍后重试".to_string()
+    } else {
+        last_error
+    }))
 }
 
 /// 展开 reqwest 错误链，便于诊断

@@ -302,10 +302,7 @@ mod tests {
         settings.volcengine.use_streaming = false;
         settings.volcengine.use_fast = false;
         let engine = create_engine(&settings);
-        assert_eq!(
-            engine.model_group(),
-            "Volcengine / volcengine_input_common"
-        );
+        assert_eq!(engine.model_group(), "Volcengine / volcengine_input_common");
 
         settings.provider = TranscriptionProvider::AliyunAsr;
         let engine = create_engine(&settings);
@@ -320,8 +317,7 @@ mod tests {
 
         settings.provider = TranscriptionProvider::Sensevoice;
         settings.sensevoice.local_model = "voxtral".to_string();
-        settings.sensevoice.model_id =
-            "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string();
+        settings.sensevoice.model_id = "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string();
         let engine = create_engine(&settings);
         assert_eq!(
             engine.model_group(),

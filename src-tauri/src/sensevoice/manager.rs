@@ -1,16 +1,15 @@
 use super::docker_utils::{
-    bind_mount, docker_command, docker_container_running, docker_image_exists,
-    get_container_label, hide_window, is_missing_container_error, normalize_log_line,
-    normalize_publish_host, parse_host_and_port, read_selected_hub, remove_container_if_exists,
-    run_command_streaming, start_container,
+    bind_mount, docker_command, docker_container_running, docker_image_exists, get_container_label,
+    hide_window, is_missing_container_error, normalize_log_line, normalize_publish_host,
+    parse_host_and_port, read_selected_hub, remove_container_if_exists, run_command_streaming,
+    start_container,
 };
 use super::{
     model::{
-        docker_container_name, is_vllm_local_model, legacy_container_names,
-        normalize_local_model, resolve_vllm_model_id, runtime_container_name,
-        runtime_image_tag, service_start_timeout, spec_for_local_model, LocalRuntimeKind,
-        CONTAINER_LABEL_MODEL_ID, CONTAINER_LABEL_MODEL_KEY, LOCAL_MODEL_SENSEVOICE,
-        LOCAL_MODEL_VOXTRAL,
+        docker_container_name, is_vllm_local_model, legacy_container_names, normalize_local_model,
+        resolve_vllm_model_id, runtime_container_name, runtime_image_tag, service_start_timeout,
+        spec_for_local_model, LocalRuntimeKind, CONTAINER_LABEL_MODEL_ID,
+        CONTAINER_LABEL_MODEL_KEY, LOCAL_MODEL_SENSEVOICE, LOCAL_MODEL_VOXTRAL,
     },
     native_runtime, SenseVoiceError,
 };
@@ -281,10 +280,11 @@ impl SenseVoiceManager {
             && local_model_spec.runtime_kind == LocalRuntimeKind::Docker
         {
             // 优先读取宿主机配置文件，回退到 Docker labels
-            let config_dir_result = app
-                .path()
-                .app_local_data_dir()
-                .map(|d| d.join("sensevoice").join("runtime").join(VLLM_CONFIG_DIR_NAME));
+            let config_dir_result = app.path().app_local_data_dir().map(|d| {
+                d.join("sensevoice")
+                    .join("runtime")
+                    .join(VLLM_CONFIG_DIR_NAME)
+            });
             let (loaded_key, loaded_id) = config_dir_result
                 .ok()
                 .and_then(|dir| read_vllm_config_model(&dir))
@@ -515,8 +515,7 @@ impl SenseVoiceManager {
 
     fn refresh_runtime_state_cache(&self) -> RuntimeState {
         let container_name = docker_container_name();
-        let runtime_state =
-            docker_container_state(container_name).unwrap_or(RuntimeState::Stopped);
+        let runtime_state = docker_container_state(container_name).unwrap_or(RuntimeState::Stopped);
         self.container_running_cache
             .store(runtime_state == RuntimeState::Running, Ordering::Relaxed);
         self.container_paused_cache
@@ -531,8 +530,7 @@ impl SenseVoiceManager {
     fn is_running(&mut self) -> bool {
         self.reconcile_prepare_task();
         let container_name = docker_container_name();
-        let runtime_state =
-            docker_container_state(container_name).unwrap_or(RuntimeState::Stopped);
+        let runtime_state = docker_container_state(container_name).unwrap_or(RuntimeState::Stopped);
         self.container_running_cache
             .store(runtime_state == RuntimeState::Running, Ordering::Relaxed);
         self.container_paused_cache
@@ -2111,7 +2109,9 @@ fn run_service_container(
         .arg("--name")
         .arg(container_name)
         .arg("--label")
-        .arg(format!("{CONTAINER_LABEL_MODEL_KEY}={LOCAL_MODEL_SENSEVOICE}"))
+        .arg(format!(
+            "{CONTAINER_LABEL_MODEL_KEY}={LOCAL_MODEL_SENSEVOICE}"
+        ))
         .arg("--label")
         .arg(format!("{CONTAINER_LABEL_MODEL_ID}={model_id}"))
         .arg("-p")

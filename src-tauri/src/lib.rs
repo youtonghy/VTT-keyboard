@@ -73,10 +73,7 @@ fn update_settings(
     state: State<AppState>,
     settings: Settings,
 ) -> Result<Settings, String> {
-    let previous = state
-        .settings_store
-        .load()
-        .map_err(|err| err.to_string())?;
+    let previous = state.settings_store.load().map_err(|err| err.to_string())?;
     let previous_local_model = previous.sensevoice.local_model.clone();
     let previous_model_id = previous.sensevoice.model_id.clone();
 

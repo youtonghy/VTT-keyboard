@@ -259,7 +259,8 @@ pub(crate) fn validate_sensevoice_settings(
     }
     if !matches!(sensevoice.device.as_str(), "auto" | "cpu" | "cuda") {
         return Err(SettingsError::Serde(
-            "SenseVoice 闂佽浜介崝搴ㄥ箖婵犲嫭濯奸柟顖嗗本校婵炲濮撮幊蹇涘极椤曗偓楠?auto/cpu/cuda".to_string(),
+            "SenseVoice 闂佽浜介崝搴ㄥ箖婵犲嫭濯奸柟顖嗗本校婵炲濮撮幊蹇涘极椤曗偓楠?auto/cpu/cuda"
+                .to_string(),
         ));
     }
     if !matches!(
@@ -354,7 +355,10 @@ mod tests {
 
         normalize_text_processing_settings(&mut settings);
 
-        assert_eq!(settings.text_processing.provider, TextProcessingProvider::Openai);
+        assert_eq!(
+            settings.text_processing.provider,
+            TextProcessingProvider::Openai
+        );
         assert_eq!(
             settings.text_processing.openai.api_base,
             "https://legacy.example/v1"
@@ -381,8 +385,14 @@ mod tests {
 
         normalize_text_processing_settings(&mut settings);
 
-        assert_eq!(settings.text_processing.provider, TextProcessingProvider::Openai);
-        assert_eq!(settings.text_processing.openai.api_base, "https://api.proxy/v1");
+        assert_eq!(
+            settings.text_processing.provider,
+            TextProcessingProvider::Openai
+        );
+        assert_eq!(
+            settings.text_processing.openai.api_base,
+            "https://api.proxy/v1"
+        );
         assert_eq!(settings.text_processing.openai.api_key, "shared-key");
     }
 
@@ -398,7 +408,10 @@ mod tests {
         let restored: Settings = serde_json::from_str(&json).expect("反序列化失败");
 
         assert_eq!(restored.text_processing.openai.api_key, "my-text-api-key");
-        assert_eq!(restored.text_processing.openai.api_base, "https://custom.api/v1");
+        assert_eq!(
+            restored.text_processing.openai.api_base,
+            "https://custom.api/v1"
+        );
         assert_eq!(restored.text_processing.openai.model, "gpt-4o");
         assert!((restored.text_processing.openai.temperature - 0.3_f32).abs() < 1e-6);
     }
