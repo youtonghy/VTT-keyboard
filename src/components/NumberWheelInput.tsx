@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { Input } from "@heroui/react";
+import { heroInputClassName } from "./HeroField";
 
 interface NumberWheelInputProps {
   value: number;
@@ -65,8 +67,10 @@ export function NumberWheelInput({
   }, [step, min, max, disabled, onChange]);
 
   return (
-    <input
+    <Input
       ref={inputRef}
+      className={heroInputClassName}
+      fullWidth
       type="number"
       value={internalValue}
       min={min}

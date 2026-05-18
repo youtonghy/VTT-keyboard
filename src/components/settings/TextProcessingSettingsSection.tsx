@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { CustomSelect } from "../CustomSelect";
+import { HeroField, HeroInputField } from "../HeroField";
 import { NumberWheelInput } from "../NumberWheelInput";
 import { SettingsCard } from "../SettingsCard";
 import type { Settings } from "../../types/settings";
@@ -18,8 +19,7 @@ export function TextProcessingSettingsSection({
   return (
     <>
       <SettingsCard title={t("text.title")} description={t("text.description")}>
-        <label className="field">
-          <span>{t("text.provider")}</span>
+        <HeroField label={t("text.provider")}>
           <CustomSelect
             value={draft.textProcessing.provider}
             onChange={(value) =>
@@ -33,85 +33,76 @@ export function TextProcessingSettingsSection({
             }
             options={[{ value: "openai", label: "OpenAI" }]}
           />
-        </label>
-        <label className="field">
-          <span>{t("openai.apiBase")}</span>
-          <input
-            value={draft.textProcessing.openai.apiBase}
-            onChange={(event) =>
+        </HeroField>
+        <HeroInputField
+          label={t("openai.apiBase")}
+          value={draft.textProcessing.openai.apiBase}
+          onChange={(value) =>
               updateDraft((prev) => ({
                 ...prev,
                 textProcessing: {
                   ...prev.textProcessing,
                   openai: {
                     ...prev.textProcessing.openai,
-                    apiBase: event.target.value,
+                    apiBase: value,
                   },
                 },
               }))
-            }
-          />
-        </label>
-        <label className="field">
-          <span>{t("openai.apiKey")}</span>
-          <input
-            type="password"
-            value={draft.textProcessing.openai.apiKey}
-            onChange={(event) =>
+          }
+        />
+        <HeroInputField
+          label={t("openai.apiKey")}
+          value={draft.textProcessing.openai.apiKey}
+          type="password"
+          onChange={(value) =>
               updateDraft((prev) => ({
                 ...prev,
                 textProcessing: {
                   ...prev.textProcessing,
                   openai: {
                     ...prev.textProcessing.openai,
-                    apiKey: event.target.value,
+                    apiKey: value,
                   },
                 },
               }))
-            }
-          />
-        </label>
+          }
+        />
       </SettingsCard>
 
       <SettingsCard title={t("text.openaiTitle")}>
-        <label className="field">
-          <span>{t("text.model")}</span>
-          <input
-            value={draft.textProcessing.openai.model}
-            onChange={(event) =>
+        <HeroInputField
+          label={t("text.model")}
+          value={draft.textProcessing.openai.model}
+          onChange={(value) =>
               updateDraft((prev) => ({
                 ...prev,
                 textProcessing: {
                   ...prev.textProcessing,
                   openai: {
                     ...prev.textProcessing.openai,
-                    model: event.target.value,
+                    model: value,
                   },
                 },
               }))
-            }
-          />
-        </label>
-        <label className="field">
-          <span>{t("text.instructions")}</span>
-          <input
-            value={draft.textProcessing.openai.instructions}
-            onChange={(event) =>
+          }
+        />
+        <HeroInputField
+          label={t("text.instructions")}
+          value={draft.textProcessing.openai.instructions}
+          onChange={(value) =>
               updateDraft((prev) => ({
                 ...prev,
                 textProcessing: {
                   ...prev.textProcessing,
                   openai: {
                     ...prev.textProcessing.openai,
-                    instructions: event.target.value,
+                    instructions: value,
                   },
                 },
               }))
-            }
-          />
-        </label>
-        <label className="field">
-          <span>{t("text.temperature")}</span>
+          }
+        />
+        <HeroField label={t("text.temperature")}>
           <NumberWheelInput
             step={0.1}
             value={draft.textProcessing.openai.temperature}
@@ -128,9 +119,8 @@ export function TextProcessingSettingsSection({
               }))
             }
           />
-        </label>
-        <label className="field">
-          <span>{t("text.maxOutputTokens")}</span>
+        </HeroField>
+        <HeroField label={t("text.maxOutputTokens")}>
           <NumberWheelInput
             min={1}
             value={draft.textProcessing.openai.maxOutputTokens}
@@ -147,9 +137,8 @@ export function TextProcessingSettingsSection({
               }))
             }
           />
-        </label>
-        <label className="field">
-          <span>{t("text.topP")}</span>
+        </HeroField>
+        <HeroField label={t("text.topP")}>
           <NumberWheelInput
             step={0.1}
             value={draft.textProcessing.openai.topP}
@@ -166,7 +155,7 @@ export function TextProcessingSettingsSection({
               }))
             }
           />
-        </label>
+        </HeroField>
       </SettingsCard>
     </>
   );

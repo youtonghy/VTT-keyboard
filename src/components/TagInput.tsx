@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Input } from "@heroui/react";
+import { heroInputClassName } from "./HeroField";
 import { parseList, listToString } from "../utils";
 
 interface TagInputProps {
@@ -35,8 +37,9 @@ export function TagInput({ values, onCommit, placeholder, disabled }: TagInputPr
   };
 
   return (
-    <input
-      className="tag-input"
+    <Input
+      className={`tag-input ${heroInputClassName}`}
+      fullWidth
       type="text"
       value={inputValue}
       placeholder={placeholder}
