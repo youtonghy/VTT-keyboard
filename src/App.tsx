@@ -1,5 +1,5 @@
 import { Info } from "lucide-react";
-import { Button, Card, Input, Tabs } from "@heroui/react";
+import { Button, Card, Input } from "@heroui/react";
 import { Tooltip } from "./components/Tooltip";
 import { PromptTemplateEditor } from "./components/PromptTemplateEditor";
 import { NumberWheelInput } from "./components/NumberWheelInput";
@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
+import { SettingsTabsNav } from "./components/SettingsTabsNav";
 import { SettingsCard } from "./components/SettingsCard";
 import { HeroCheckboxField, HeroField, HeroInputField } from "./components/HeroField";
 import { SpeechSettingsSection } from "./components/settings/SpeechSettingsSection";
@@ -383,24 +384,16 @@ function App() {
           ) : null}
         </header>
 
-        <Tabs
-          className="settings-tabs"
-          selectedKey={activeSection}
-          onSelectionChange={(key) => setActiveSection(String(key))}
-          variant="secondary"
-        >
-          <Tabs.ListContainer className="settings-tabs-list-container">
-            <Tabs.List aria-label={t("nav.sectionsAria")} className="settings-tabs-list">
-              {navItems.map((item) => (
-                <Tabs.Tab key={item.id} id={item.id} className="settings-tabs-tab">
-                  {item.label}
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-              ))}
-            </Tabs.List>
-          </Tabs.ListContainer>
+        <SettingsTabsNav
+          items={navItems}
+          activeKey={activeSection}
+          ariaLabel={t("nav.sectionsAria")}
+          onActiveKeyChange={setActiveSection}
+        />
 
-          <Tabs.Panel id="general" className="settings-content">
+        <section className="settings-content" aria-live="polite">
+          {activeSection === "general" ? (
+            <>
             <SettingsCard
               title={t("general.title")}
               description={t("general.description")}
@@ -491,9 +484,10 @@ function App() {
                 </Button>
               </div>
             </SettingsCard>
-          </Tabs.Panel>
+            </>
+          ) : null}
 
-          <Tabs.Panel id="shortcut" className="settings-content">
+          {activeSection === "shortcut" ? (
             <SettingsCard
               title={t("shortcut.title")}
               description={t("shortcut.description")}
@@ -522,9 +516,9 @@ function App() {
                 </Tooltip>
               </div>
             </SettingsCard>
-          </Tabs.Panel>
+          ) : null}
 
-          <Tabs.Panel id="recording" className="settings-content">
+          {activeSection === "recording" ? (
             <SettingsCard
               title={t("recording.title")}
               description={t("recording.description")}
@@ -542,9 +536,9 @@ function App() {
                 />
               </HeroField>
             </SettingsCard>
-          </Tabs.Panel>
+          ) : null}
 
-          <Tabs.Panel id="speech" className="settings-content">
+          {activeSection === "speech" ? (
             <SpeechSettingsSection
               draft={draft}
               t={t}
@@ -577,17 +571,17 @@ function App() {
                 label: t(option.labelKey),
               }))}
             />
-          </Tabs.Panel>
+          ) : null}
 
-          <Tabs.Panel id="text" className="settings-content">
+          {activeSection === "text" ? (
             <TextProcessingSettingsSection
               draft={draft}
               t={t}
               updateDraft={updateDraft}
             />
-          </Tabs.Panel>
+          ) : null}
 
-          <Tabs.Panel id="triggers" className="settings-content">
+          {activeSection === "triggers" ? (
             <SettingsCard
               title={t("triggers.title")}
               description={t("triggers.description")}
@@ -695,9 +689,9 @@ function App() {
                 {t("triggers.add")}
               </Button>
             </SettingsCard>
-          </Tabs.Panel>
+          ) : null}
 
-          <Tabs.Panel id="history" className="settings-content">
+          {activeSection === "history" ? (
             <SettingsCard
               title={t("history.title")}
               description={t("history.description")}
@@ -767,10 +761,10 @@ function App() {
                 </Button>
               </div>
             </SettingsCard>
-          </Tabs.Panel>
+          ) : null}
 
-          <Tabs.Panel id="about" className="settings-content">
-            {appInfo ? (
+          {activeSection === "about" ? (
+            appInfo ? (
               <SettingsCard
                 title={t("about.title")}
                 description={t("about.description")}
@@ -802,9 +796,9 @@ function App() {
                   </a>
                 </div>
               </SettingsCard>
-            ) : null}
-          </Tabs.Panel>
-        </Tabs>
+            ) : null
+          ) : null}
+        </section>
       </main>
       <HistoryDetailDialog
         item={selectedHistoryItem}

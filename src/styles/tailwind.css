@@ -107,7 +107,7 @@
   }
 
   html {
-    overflow-y: auto;
+    overflow-y: scroll;
     scrollbar-gutter: stable both-edges;
   }
 
@@ -279,12 +279,14 @@
 
   .settings-tabs {
     @apply min-w-0 gap-0;
+    isolation: isolate;
   }
 
   .settings-tabs-list-container {
-    @apply sticky top-0 z-30 -mx-4 border-b px-4 py-2 backdrop-blur md:-mx-8 md:px-8;
+    @apply sticky top-0 z-30 -mx-4 border-b px-4 py-3 backdrop-blur md:-mx-8 md:px-8;
     border-color: var(--color-border);
     background-color: color-mix(in oklab, var(--color-bg) 88%, transparent);
+    min-height: 4.5rem;
   }
 
   .container.has-custom-titlebar .settings-tabs-list-container {
@@ -293,14 +295,24 @@
 
   .settings-tabs-list {
     @apply w-full gap-1 overflow-x-auto p-1;
+    align-items: stretch;
+    display: flex;
     border: 1px solid var(--color-border);
-    border-radius: 0.75rem;
+    border-radius: 0.5rem;
     background-color: color-mix(in oklab, var(--color-surface-elevated) 82%, transparent);
+    min-height: 3rem;
+    scrollbar-width: none;
+  }
+
+  .settings-tabs-list::-webkit-scrollbar {
+    display: none;
   }
 
   .settings-tabs-tab {
-    @apply h-9 min-w-max rounded-lg px-3 text-sm font-medium;
+    @apply h-10 min-w-max shrink-0 flex-none rounded-md px-3 text-sm font-medium md:flex-1;
+    width: auto;
     color: var(--color-text-secondary);
+    line-height: 1;
   }
 
   .settings-tabs-tab[data-selected="true"] {
@@ -315,6 +327,7 @@
 
   .settings-content {
     @apply m-0 flex min-w-0 flex-1 flex-col gap-5 p-0 pt-4 outline-none;
+    min-height: max(24rem, calc(100vh - 17rem));
   }
 
   .settings-card {
@@ -338,7 +351,7 @@
   }
 
   .settings-card-body {
-    @apply grid min-w-0 gap-4 px-5 pb-5 md:px-6 md:pb-6;
+    @apply grid min-w-0 items-start gap-4 px-5 pb-5 md:px-6 md:pb-6;
   }
 
   .field {
@@ -376,9 +389,10 @@
   }
 
   .hero-checkbox {
-    @apply flex min-w-0 cursor-pointer select-none items-center gap-3 rounded-lg border px-3 py-2.5 text-sm;
+    @apply inline-flex min-w-0 max-w-full cursor-pointer select-none items-center justify-start gap-2.5 justify-self-start rounded-lg border px-3 py-2 text-sm;
     border-color: var(--color-border);
     background-color: color-mix(in oklab, var(--color-surface-elevated) 82%, transparent);
+    width: fit-content;
   }
 
   .hero-checkbox [data-slot="checkbox-control"] {
@@ -386,7 +400,13 @@
   }
 
   .hero-checkbox [data-slot="checkbox-content"] {
-    @apply flex min-w-0 flex-1 items-center gap-2;
+    @apply flex min-w-0 flex-row items-center gap-2 whitespace-nowrap leading-5;
+    width: max-content;
+  }
+
+  .hero-checkbox .tooltip-wrapper,
+  .hero-checkbox .hint-icon {
+    @apply h-4 w-4 shrink-0;
   }
 
   .hero-checkbox [data-slot="checkbox-content"] span {
