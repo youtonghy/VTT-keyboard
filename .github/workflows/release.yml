@@ -69,8 +69,14 @@ jobs:
       - name: Install Linux dependencies
         if: matrix.os == 'linux'
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libgtk-3-dev libxdo-dev pkg-config patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libgtk-3-dev libxdo-dev pkg-config patchelf xdg-utils file
+          if apt-cache show libfuse2t64 >/dev/null 2>&1; then
+            sudo apt-get install -y libfuse2t64
+          else
+            sudo apt-get install -y libfuse2
+          fi
 
       - name: Install frontend dependencies
         run: bun ci
