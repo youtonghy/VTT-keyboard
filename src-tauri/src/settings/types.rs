@@ -267,8 +267,6 @@ pub struct StartupSettings {
     pub hide_dock_icon: bool,
     #[serde(default = "default_auto_check_updates")]
     pub auto_check_updates: bool,
-    #[serde(default = "default_auto_install_updates_on_quit")]
-    pub auto_install_updates_on_quit: bool,
 }
 
 impl Default for StartupSettings {
@@ -277,16 +275,11 @@ impl Default for StartupSettings {
             launch_on_boot: false,
             hide_dock_icon: false,
             auto_check_updates: default_auto_check_updates(),
-            auto_install_updates_on_quit: default_auto_install_updates_on_quit(),
         }
     }
 }
 
 fn default_auto_check_updates() -> bool {
-    true
-}
-
-fn default_auto_install_updates_on_quit() -> bool {
     true
 }
 
@@ -529,13 +522,6 @@ pub struct AliyunParaformerSettings {
     pub language_hints: Vec<String>,
     #[serde(default)]
     pub vocabulary_id: String,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct UpdaterState {
-    #[serde(default)]
-    pub deferred_version: Option<String>,
 }
 
 #[cfg(test)]

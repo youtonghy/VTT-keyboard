@@ -437,20 +437,6 @@ function App() {
                 </Tooltip>
               </HeroCheckboxField>
               <HeroCheckboxField
-                label={t("general.autoInstallUpdatesOnQuit")}
-                isSelected={draft.startup.autoInstallUpdatesOnQuit}
-                onChange={(value) =>
-                  updateDraft((prev) => ({
-                    ...prev,
-                    startup: { ...prev.startup, autoInstallUpdatesOnQuit: value },
-                  }))
-                }
-              >
-                <Tooltip content={t("general.autoInstallUpdatesOnQuitHint")}>
-                  <span className="hint-icon"><Info size={14} /></span>
-                </Tooltip>
-              </HeroCheckboxField>
-              <HeroCheckboxField
                 label={t("general.removeNewlines")}
                 isSelected={draft.output.removeNewlines}
                 onChange={(value) =>

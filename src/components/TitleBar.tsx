@@ -56,9 +56,14 @@ export function UpdateStatusControl({
         <span className="titlebar-update-chip">{t("updater.checking")}</span>
       ) : null}
       {updateStatus?.status === "available" ? (
-        <span className="titlebar-update-chip">
+        <button
+          type="button"
+          className="titlebar-update-action"
+          onClick={onInstallUpdate}
+          title={t("updater.installNow")}
+        >
           {t("updater.availableShort", { version: latestVersion })}
-        </span>
+        </button>
       ) : null}
       {updateStatus?.status === "downloading" ? (
         <span className="titlebar-update-chip">{progressText}</span>

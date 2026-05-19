@@ -97,7 +97,6 @@ const createDefaultSettings = (): Settings => ({
     launchOnBoot: false,
     hideDockIcon: false,
     autoCheckUpdates: true,
-    autoInstallUpdatesOnQuit: true,
   },
   history: { enabled: true },
 });

@@ -240,19 +240,15 @@ async fn check_for_updates(
         }
     }
 
-    let deferred_version = store.load_deferred_update_version().unwrap_or(None);
-
     // Use updater_builder() instead of updater() to set on_before_exit callback.
     // On Windows, update.install() calls std::process::exit(0) after launching
     // the NSIS installer, so code after install() is unreachable. The on_before_exit
     // callback runs just before exit(0), giving us a chance to do critical cleanup.
     let app_for_exit = app.clone();
-    let store_for_exit = store.clone();
     let update = app
         .updater_builder()
         .on_before_exit(move || {
             app_for_exit.cleanup_before_exit();
-            let _ = store_for_exit.save_deferred_update_version(None);
             let state = app_for_exit.state::<AppState>();
             let lock_result = state.sensevoice_manager.lock();
             if let Ok(mut manager) = lock_result {
@@ -269,14 +265,6 @@ async fn check_for_updates(
         Some(update) => {
             let latest_version = update.version.clone();
             let (notes, pub_date) = update_metadata(&update);
-            store
-                .save_deferred_update_version(Some(&latest_version))
-                .map_err(|err| err.to_string())?;
-
-            let should_install_after_download = deferred_version
-                .as_deref()
-                .map(|version| version == latest_version)
-                .unwrap_or(false);
 
             let is_dev = cfg!(debug_assertions);
             if is_dev {
@@ -301,15 +289,8 @@ async fn check_for_updates(
                 manager.status.clone()
             })?;
             emit_status(&app, &status);
-
-            if !is_dev {
-                download_pending_update(app, should_install_after_download);
-            }
         }
         None => {
-            store
-                .save_deferred_update_version(None)
-                .map_err(|err| err.to_string())?;
             let status = with_manager(&app, |manager| {
                 manager.reset_to_idle();
                 manager.status.status = "upToDate".to_string();
@@ -409,7 +390,54 @@ async fn download_pending_update_inner(
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum InstallRequest {
+    InstallDownloaded,
+    DownloadThenInstall,
+    Busy,
+    Missing,
+}
+
+fn install_request(manager: &UpdateManager) -> InstallRequest {
+    install_request_from_state(
+        manager.pending_update.is_some(),
+        manager.downloaded_package.is_some(),
+        manager.download_in_progress,
+        manager.install_in_progress,
+    )
+}
+
+fn install_request_from_state(
+    has_pending_update: bool,
+    has_downloaded_package: bool,
+    download_in_progress: bool,
+    install_in_progress: bool,
+) -> InstallRequest {
+    if install_in_progress || download_in_progress {
+        return InstallRequest::Busy;
+    }
+    if has_downloaded_package {
+        return InstallRequest::InstallDownloaded;
+    }
+    if has_pending_update {
+        return InstallRequest::DownloadThenInstall;
+    }
+    InstallRequest::Missing
+}
+
 pub fn install_downloaded_update(app: &AppHandle) -> Result<(), String> {
+    match with_manager(app, |manager| install_request(manager))? {
+        InstallRequest::InstallDownloaded => install_downloaded_package(app),
+        InstallRequest::DownloadThenInstall => {
+            download_pending_update(app.clone(), true);
+            Ok(())
+        }
+        InstallRequest::Busy => Ok(()),
+        InstallRequest::Missing => Err("当前没有可安装的更新".to_string()),
+    }
+}
+
+fn install_downloaded_package(app: &AppHandle) -> Result<(), String> {
     let install_target = with_manager(app, |manager| {
         if manager.install_in_progress {
             return None;
@@ -425,17 +453,6 @@ pub fn install_downloaded_update(app: &AppHandle) -> Result<(), String> {
     let Some((update, bytes)) = install_target else {
         return Err("当前没有可安装的更新".to_string());
     };
-
-    let settings_store = {
-        let state = app.state::<AppState>();
-        state.settings_store.clone()
-    };
-
-    // Clear deferred version BEFORE install(). On Windows, install() calls
-    // std::process::exit(0) after launching the NSIS installer, so code in the
-    // Ok(()) branch is unreachable. Clearing here prevents an infinite auto-install
-    // loop if the NSIS installer fails externally.
-    let _ = settings_store.save_deferred_update_version(None);
 
     match update.install(&bytes) {
         Ok(()) => {
@@ -478,15 +495,47 @@ pub fn handle_settings_changed(app: AppHandle, store: SettingsStore) {
     schedule_update_check(app, store, false);
 }
 
-pub fn maybe_install_on_quit(app: &AppHandle, store: &SettingsStore) -> Result<bool, String> {
-    let settings = store.load().map_err(|err| err.to_string())?;
-    if !settings.startup.auto_install_updates_on_quit {
-        return Ok(false);
-    }
+pub fn maybe_install_on_quit(app: &AppHandle, _store: &SettingsStore) -> Result<bool, String> {
     let has_downloaded_update = with_manager(app, |manager| manager.downloaded_package.is_some())?;
     if !has_downloaded_update {
         return Ok(false);
     }
     install_downloaded_update(app)?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{install_request, install_request_from_state, InstallRequest, UpdateManager};
+
+    #[test]
+    fn idle_manager_has_no_install_target() {
+        let manager = UpdateManager::new("0.0.0-dev".to_string());
+
+        assert_eq!(install_request(&manager), InstallRequest::Missing);
+    }
+
+    #[test]
+    fn downloaded_package_can_install_without_pending_update() {
+        let mut manager = UpdateManager::new("0.0.0-dev".to_string());
+        manager.downloaded_package = Some(vec![1, 2, 3]);
+
+        assert_eq!(install_request(&manager), InstallRequest::InstallDownloaded);
+    }
+
+    #[test]
+    fn pending_update_downloads_before_installing() {
+        assert_eq!(
+            install_request_from_state(true, false, false, false),
+            InstallRequest::DownloadThenInstall
+        );
+    }
+
+    #[test]
+    fn active_download_is_treated_as_busy() {
+        let mut manager = UpdateManager::new("0.0.0-dev".to_string());
+        manager.download_in_progress = true;
+
+        assert_eq!(install_request(&manager), InstallRequest::Busy);
+    }
 }

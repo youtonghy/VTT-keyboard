@@ -89,7 +89,6 @@ export interface StartupSettings {
   launchOnBoot: boolean;
   hideDockIcon: boolean;
   autoCheckUpdates: boolean;
-  autoInstallUpdatesOnQuit: boolean;
 }
 
 export interface HistorySettings {

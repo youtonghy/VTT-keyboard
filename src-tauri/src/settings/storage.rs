@@ -18,7 +18,6 @@ const SETTINGS_FILE: &str = "settings.json";
 const SETTINGS_KEY_FILE: &str = "settings.key";
 const SETTINGS_STORE_KEY: &str = "payload";
 const HISTORY_STORE_KEY: &str = "transcriptionHistory";
-const UPDATER_STATE_STORE_KEY: &str = "updaterState";
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
@@ -181,55 +180,6 @@ impl SettingsStore {
 
     pub fn clear_transcription_history(&self) -> Result<(), SettingsError> {
         self.persist_transcription_history(&[])
-    }
-
-    pub fn load_deferred_update_version(&self) -> Result<Option<String>, SettingsError> {
-        let store = self
-            .app
-            .store(SETTINGS_FILE)
-            .map_err(|err| SettingsError::Store(err.to_string()))?;
-        let Some(payload) = store.get(UPDATER_STATE_STORE_KEY) else {
-            return Ok(None);
-        };
-        let Some(encoded) = payload.as_str() else {
-            return Ok(None);
-        };
-        let key = self.load_or_create_key()?;
-        let decrypted = match decrypt_payload(encoded, &key) {
-            Ok(value) => value,
-            Err(_) => return Ok(None),
-        };
-        let state = match serde_json::from_str::<UpdaterState>(&decrypted) {
-            Ok(value) => value,
-            Err(_) => return Ok(None),
-        };
-        Ok(state
-            .deferred_version
-            .filter(|value| !value.trim().is_empty()))
-    }
-
-    pub fn save_deferred_update_version(&self, version: Option<&str>) -> Result<(), SettingsError> {
-        let deferred_version = version
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToString::to_string);
-        let state = UpdaterState { deferred_version };
-        let json =
-            serde_json::to_string(&state).map_err(|err| SettingsError::Serde(err.to_string()))?;
-        let key = self.load_or_create_key()?;
-        let encrypted = encrypt_payload(&json, &key)?;
-        let store = self
-            .app
-            .store(SETTINGS_FILE)
-            .map_err(|err| SettingsError::Store(err.to_string()))?;
-        store.set(
-            UPDATER_STATE_STORE_KEY.to_string(),
-            serde_json::Value::String(encrypted),
-        );
-        store
-            .save()
-            .map_err(|err| SettingsError::Store(err.to_string()))?;
-        Ok(())
     }
 
     fn persist_settings(&self, settings: &Settings) -> Result<(), SettingsError> {

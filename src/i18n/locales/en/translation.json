@@ -33,9 +33,7 @@
     "removeNewlinesHint": "When enabled, all line breaks are removed from transcription and trigger results so output always stays on one line.",
     "launchOnBootSyncError": "Failed to sync launch on boot: {{error}}",
     "autoCheckUpdates": "Automatically check for updates",
-    "autoCheckUpdatesHint": "Check GitHub Release updates on startup and download them in the background when available.",
-    "autoInstallUpdatesOnQuit": "Install downloaded update on Quit",
-    "autoInstallUpdatesOnQuitHint": "When a new version has already been downloaded, install it automatically when you choose Quit from the tray menu."
+    "autoCheckUpdatesHint": "Check GitHub Release updates on startup and notify you when a new version is available."
   },
   "data": {
     "title": "Import & Export",

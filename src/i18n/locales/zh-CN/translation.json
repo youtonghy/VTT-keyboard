@@ -33,9 +33,7 @@
                     "removeNewlinesHint":  "启用后会删除转写和触发结果中的全部换行，确保输出始终为单行。",
                     "launchOnBootSyncError":  "开机自启同步失败：{{error}}",
                     "autoCheckUpdates":  "自动检查更新",
-                    "autoCheckUpdatesHint":  "应用启动后自动检查 GitHub Release 更新，并在发现新版本时后台下载对应安装包。",
-                    "autoInstallUpdatesOnQuit":  "退出时自动安装已下载更新",
-                    "autoInstallUpdatesOnQuitHint":  "当新版本已经下载完成后，从托盘选择“退出”时会自动安装该更新。"
+                    "autoCheckUpdatesHint":  "应用启动后自动检查 GitHub Release 更新，并在发现新版本时提示你手动安装。"
                 },
     "data":  {
                  "title":  "配置导入导出",
