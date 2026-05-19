@@ -130,6 +130,11 @@ fn normalize_sensevoice_language(language: &str) -> &str {
 
 pub(crate) fn normalize_settings(settings: &Settings) -> Settings {
     let mut normalized = settings.clone();
+    normalized.recording.input_device_name =
+        normalized.recording.input_device_name.trim().to_string();
+    if normalized.recording.segment_seconds == 0 {
+        normalized.recording.segment_seconds = 60;
+    }
     normalize_sensevoice_settings(&mut normalized.sensevoice);
     normalize_aliyun_settings(&mut normalized.aliyun, &normalized.provider);
     normalize_text_processing_settings(&mut normalized);
@@ -331,6 +336,18 @@ fn validate_aliyun_settings(settings: &Settings) -> Result<(), SettingsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_recording_settings_trims_device_and_restores_segment_default() {
+        let mut settings = Settings::default();
+        settings.recording.segment_seconds = 0;
+        settings.recording.input_device_name = "  USB Audio Interface  ".to_string();
+
+        let normalized = normalize_settings(&settings);
+
+        assert_eq!(normalized.recording.segment_seconds, 60);
+        assert_eq!(normalized.recording.input_device_name, "USB Audio Interface");
+    }
 
     #[test]
     fn normalize_text_processing_migrates_legacy_openai_text_settings() {

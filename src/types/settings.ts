@@ -29,6 +29,7 @@ export interface ShortcutSettings {
 
 export interface RecordingSettings {
   segmentSeconds: number;
+  inputDeviceName: string;
 }
 
 export interface OpenAiSettings {

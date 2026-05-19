@@ -62,8 +62,20 @@
                  },
     "recording":  {
                       "title":  "录音设置",
-                      "description":  "控制录音分段长度。",
-                      "segmentSeconds":  "分段秒数"
+                      "description":  "控制录音分段长度与麦克风输入。",
+                      "segmentSeconds":  "分段秒数",
+                      "inputDevice":  "麦克风",
+                      "systemAuto":  "跟随系统自动选择",
+                      "defaultDevice":  "系统默认",
+                      "refreshDevices":  "刷新麦克风列表",
+                      "systemDeviceHint":  "正在使用系统自动选择：{{device}}。",
+                      "systemDeviceFallbackHint":  "正在使用系统自动选择的输入设备。",
+                      "selectedDeviceHint":  "已固定使用 {{device}}。",
+                      "testInput":  "测试麦克风",
+                      "testingInput":  "测试中...",
+                      "inputLevel":  "输入音量",
+                      "testSuccess":  "麦克风测试完成",
+                      "testError":  "麦克风测试失败：{{error}}"
                   },
     "openai":  {
                    "apiBase":  "API 基础地址",

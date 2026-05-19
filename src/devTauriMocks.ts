@@ -13,7 +13,7 @@ declare global {
 
 const createDefaultSettings = (): Settings => ({
   shortcut: { key: "CommandOrControl+Shift+Space" },
-  recording: { segmentSeconds: 60 },
+  recording: { segmentSeconds: 60, inputDeviceName: "" },
   provider: "openai",
   openai: {
     apiBase: "https://api.openai.com/v1",
@@ -209,6 +209,19 @@ export async function setupDevTauriMocks() {
             platform: "macos",
             arch: "aarch64",
             supportsSherpaOnnxSenseVoice: true,
+          };
+        case "list_audio_input_devices":
+          return [
+            { name: "MacBook Pro Microphone", isDefault: true },
+            { name: "USB Audio Interface", isDefault: false },
+          ];
+        case "test_audio_input_device":
+          return {
+            peakLevel: 0.52,
+            averageLevel: 0.18,
+            sampleCount: 24000,
+            sampleRate: 48000,
+            channels: 1,
           };
         case "plugin:app|name":
           return "VTT Keyboard";

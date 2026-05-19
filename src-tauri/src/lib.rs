@@ -14,7 +14,7 @@ mod updater;
 mod util;
 mod volcengine;
 
-use recorder::RecorderService;
+use recorder::{AudioInputDevice, AudioInputTestResult, RecorderService};
 use sensevoice::model::{
     resolve_vllm_model_id, spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind,
 };
@@ -203,9 +203,33 @@ fn import_settings(state: State<AppState>, path: String) -> Result<Settings, Str
 
 #[tauri::command]
 fn start_recording(state: State<AppState>) -> Result<(), String> {
-    state.recorder.start().map_err(|err| err.to_string())?;
+    let settings = state.settings_store.load().map_err(|err| err.to_string())?;
+    let input_device_name = if settings.recording.input_device_name.trim().is_empty() {
+        None
+    } else {
+        Some(settings.recording.input_device_name)
+    };
+    state
+        .recorder
+        .start(input_device_name)
+        .map_err(|err| err.to_string())?;
     processing::emit_status("recording");
     Ok(())
+}
+
+#[tauri::command]
+fn list_audio_input_devices() -> Result<Vec<AudioInputDevice>, String> {
+    recorder::list_input_devices().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn test_audio_input_device(input_device_name: String) -> Result<AudioInputTestResult, String> {
+    let selected = input_device_name
+        .trim()
+        .is_empty()
+        .then_some(None)
+        .unwrap_or(Some(input_device_name.as_str()));
+    recorder::test_input_device(selected, 900).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -546,6 +570,8 @@ pub fn run() {
             import_settings,
             start_recording,
             stop_recording,
+            list_audio_input_devices,
+            test_audio_input_device,
             get_transcription_history,
             clear_transcription_history,
             get_sensevoice_status,

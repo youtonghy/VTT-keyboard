@@ -428,6 +428,56 @@
     color: var(--color-text-secondary);
   }
 
+  .recording-device-panel {
+    @apply grid gap-3 rounded-lg border p-3;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 78%, transparent);
+  }
+
+  .recording-device-header {
+    @apply flex min-w-0 items-start justify-between gap-3;
+  }
+
+  .recording-device-header h4 {
+    @apply m-0 text-sm font-semibold;
+    color: var(--color-text-primary);
+  }
+
+  .recording-device-header p {
+    @apply mt-1 text-sm;
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .recording-device-option {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+
+  .recording-device-option span {
+    @apply min-w-0 truncate;
+  }
+
+  .recording-device-option small {
+    @apply text-xs font-normal;
+    color: var(--color-text-secondary);
+  }
+
+  .recording-device-error {
+    @apply m-0 rounded-lg border px-3 py-2 text-sm;
+    border-color: #cc334f;
+    color: #cc334f;
+    background-color: color-mix(in oklab, #cc334f 10%, transparent);
+    overflow-wrap: anywhere;
+  }
+
+  .recording-test-row {
+    @apply grid gap-3 md:grid-cols-[auto_minmax(12rem,1fr)] md:items-center;
+  }
+
+  .recording-level {
+    @apply min-w-0;
+  }
+
   .button-row {
     @apply flex flex-wrap gap-3;
   }

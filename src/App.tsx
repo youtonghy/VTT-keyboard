@@ -2,7 +2,6 @@ import { Info } from "lucide-react";
 import { Button, Card, Input } from "@heroui/react";
 import { Tooltip } from "./components/Tooltip";
 import { PromptTemplateEditor } from "./components/PromptTemplateEditor";
-import { NumberWheelInput } from "./components/NumberWheelInput";
 import { SegmentedControl } from "./components/SegmentedControl";
 import { Toaster, toast } from "sonner";
 
@@ -18,6 +17,7 @@ import { SettingsCard } from "./components/SettingsCard";
 import { HeroCheckboxField, HeroField, HeroInputField } from "./components/HeroField";
 import { SpeechSettingsSection } from "./components/settings/SpeechSettingsSection";
 import { TextProcessingSettingsSection } from "./components/settings/TextProcessingSettingsSection";
+import { RecordingSettingsSection } from "./components/settings/RecordingSettingsSection";
 import { TagInput } from "./components/TagInput";
 import { TitleBar, UpdateStatusControl } from "./components/TitleBar";
 import { useAutostart } from "./hooks/useAutostart";
@@ -27,6 +27,7 @@ import { useUpdater } from "./hooks/useUpdater";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { useSenseVoiceManagement } from "./hooks/useSenseVoiceManagement";
+import { useAudioInputDevices, type AudioInputTestResult } from "./hooks/useAudioInputDevices";
 import { HistoryDetailDialog } from "./components/HistoryDetailDialog";
 import type { TranscriptionHistoryItem } from "./types/history";
 import type { Settings } from "./types/settings";
@@ -103,6 +104,8 @@ function App() {
   const [historyItems, setHistoryItems] = useState<TranscriptionHistoryItem[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] =
     useState<TranscriptionHistoryItem | null>(null);
+  const [inputTesting, setInputTesting] = useState(false);
+  const [inputTestResult, setInputTestResult] = useState<AudioInputTestResult | null>(null);
   const supportsSherpaOnnxSenseVoice =
     appInfo?.supportsSherpaOnnxSenseVoice ?? true;
   const isMacOS = appInfo?.platform
@@ -122,6 +125,14 @@ function App() {
   });
 
   const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
+  const isRecordingSectionActive = activeSection === "recording";
+  const {
+    devices: audioInputDevices,
+    error: audioInputDevicesError,
+    loading: audioInputDevicesLoading,
+    refreshDevices,
+    testDevice,
+  } = useAudioInputDevices(isRecordingSectionActive);
 
   const {
     sensevoiceStatus,
@@ -298,6 +309,22 @@ function App() {
       ...prev,
       triggers: [...prev.triggers, createTriggerCard()],
     }));
+  };
+
+  const handleTestAudioInput = async () => {
+    if (!draft || inputTesting) {
+      return;
+    }
+    setInputTesting(true);
+    try {
+      const result = await testDevice(draft.recording.inputDeviceName ?? "");
+      setInputTestResult(result);
+      toast.success(t("recording.testSuccess"));
+    } catch (error) {
+      toast.error(t("recording.testError", { error: toErrorMessage(error) }));
+    } finally {
+      setInputTesting(false);
+    }
   };
 
   const handleClearHistory = async () => {
@@ -516,18 +543,18 @@ function App() {
               title={t("recording.title")}
               description={t("recording.description")}
             >
-              <HeroField label={t("recording.segmentSeconds")}>
-                <NumberWheelInput
-                  min={10}
-                  value={draft.recording.segmentSeconds}
-                  onChange={(value) =>
-                    updateDraft((prev) => ({
-                      ...prev,
-                      recording: { ...prev.recording, segmentSeconds: value },
-                    }))
-                  }
-                />
-              </HeroField>
+              <RecordingSettingsSection
+                draft={draft}
+                devices={audioInputDevices}
+                devicesError={audioInputDevicesError}
+                devicesLoading={audioInputDevicesLoading}
+                inputTestResult={inputTestResult}
+                inputTesting={inputTesting}
+                t={t}
+                onRefreshDevices={refreshDevices}
+                onTestInput={handleTestAudioInput}
+                updateDraft={updateDraft}
+              />
             </SettingsCard>
           ) : null}
 

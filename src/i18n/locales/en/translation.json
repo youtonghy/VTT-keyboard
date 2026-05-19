@@ -62,8 +62,20 @@
   },
   "recording": {
     "title": "Recording",
-    "description": "Configure audio segmentation length.",
-    "segmentSeconds": "Segment Seconds"
+    "description": "Configure audio segmentation and microphone input.",
+    "segmentSeconds": "Segment Seconds",
+    "inputDevice": "Microphone",
+    "systemAuto": "System Auto Select",
+    "defaultDevice": "System default",
+    "refreshDevices": "Refresh microphones",
+    "systemDeviceHint": "Using the system's automatic input: {{device}}.",
+    "systemDeviceFallbackHint": "Using the system's automatic input device.",
+    "selectedDeviceHint": "Pinned to {{device}}.",
+    "testInput": "Test Mic",
+    "testingInput": "Testing...",
+    "inputLevel": "Input level",
+    "testSuccess": "Microphone test completed",
+    "testError": "Microphone test failed: {{error}}"
   },
   "openai": {
     "apiBase": "API Base URL",

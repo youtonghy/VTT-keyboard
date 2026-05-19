@@ -57,6 +57,7 @@ impl Default for Settings {
             },
             recording: RecordingSettings {
                 segment_seconds: 60,
+                input_device_name: String::new(),
             },
             provider: TranscriptionProvider::default(),
             openai: OpenAiSettings {
@@ -146,7 +147,14 @@ pub struct ShortcutSettings {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingSettings {
+    #[serde(default = "default_segment_seconds")]
     pub segment_seconds: u64,
+    #[serde(default)]
+    pub input_device_name: String,
+}
+
+fn default_segment_seconds() -> u64 {
+    60
 }
 
 #[derive(Clone, Serialize, Deserialize)]
