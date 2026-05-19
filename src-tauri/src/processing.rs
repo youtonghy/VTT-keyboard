@@ -181,13 +181,22 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
         }
     };
     dev_log(&format!("生成 {} 段录音", paths.len()));
+    emit_status_detail(
+        "transcribing",
+        &transcription_segment_status(0, paths.len()),
+    );
 
     let mut transcripts = Vec::new();
     let mut alignment_tokens = Vec::new();
     let mut alignment_timestamps_ms = Vec::new();
     let mut alignment_durations_ms = Vec::new();
     for (index, path) in paths.iter().enumerate() {
-        dev_log(&format!("开始请求转写段落 {}", index + 1));
+        let segment_index = index + 1;
+        dev_log(&format!("开始请求转写段落 {}", segment_index));
+        emit_status_detail(
+            "transcribing",
+            &transcription_segment_status(segment_index, paths.len()),
+        );
         let transcription = match engine.transcribe(path) {
             Ok(value) => value,
             Err(err) => {
@@ -212,7 +221,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
             );
             alignment_durations_ms.extend(alignment.durations_ms);
         }
-        dev_log(&format!("转写结果 {}: {}", index + 1, text));
+        dev_log(&format!("转写结果 {}: {}", segment_index, text));
         transcripts.push(text);
     }
 
@@ -240,7 +249,10 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     };
 
     let logger = |message: &str| dev_log(message);
-    let result = match triggers::apply_triggers(&settings, &combined, &logger) {
+    let status_reporter = |title: &str| {
+        emit_status_detail("transcribing", &trigger_prompt_status(title));
+    };
+    let result = match triggers::apply_triggers(&settings, &combined, &logger, &status_reporter) {
         Ok(value) => value,
         Err(err) => {
             return post()
@@ -288,10 +300,26 @@ pub fn emit_status(status: &str) {
         "recording" => (StatusType::Recording, "正在录音"),
         "transcribing" => (StatusType::Transcribing, "正在转写"),
         "completed" => (StatusType::Completed, "已完成"),
-        "error" => (StatusType::Error, "已中断"),
+        "error" => (StatusType::Error, "操作失败"),
         _ => return,
     };
 
+    show_status(status_type, text);
+}
+
+pub fn emit_status_detail(status: &str, text: &str) {
+    let status_type = match status {
+        "recording" => StatusType::Recording,
+        "transcribing" => StatusType::Transcribing,
+        "completed" => StatusType::Completed,
+        "error" => StatusType::Error,
+        _ => return,
+    };
+
+    show_status(status_type, text);
+}
+
+fn show_status(status_type: StatusType, text: &str) {
     // Increment counter to invalidate any pending hide operations
     let current_count = STATUS_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -345,9 +373,32 @@ fn elapsed_since_ms(started: Instant) -> u64 {
     started.elapsed().as_millis() as u64
 }
 
+pub(crate) fn failure_status(error_text: &str) -> String {
+    let error_text = error_text.trim();
+    if error_text.is_empty() {
+        return "操作失败".to_string();
+    }
+    format!("操作失败: {error_text}")
+}
+
+fn transcription_segment_status(current: usize, total: usize) -> String {
+    format!("录音转写 {current}/{total}")
+}
+
+fn trigger_prompt_status(title: &str) -> String {
+    let title = title.trim();
+    if title.is_empty() {
+        return "触发提示词".to_string();
+    }
+    format!("触发提示词: {title}")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{calculate_recording_duration_ms, remove_line_breaks};
+    use super::{
+        calculate_recording_duration_ms, failure_status, remove_line_breaks,
+        transcription_segment_status, trigger_prompt_status,
+    };
     use crate::recorder::RecordedAudio;
 
     #[test]
@@ -393,5 +444,14 @@ mod tests {
             channels: 0,
         };
         assert_eq!(calculate_recording_duration_ms(&zero_channels), 0);
+    }
+
+    #[test]
+    fn status_labels_describe_segments_triggers_and_failures() {
+        assert_eq!(transcription_segment_status(1, 3), "录音转写 1/3");
+        assert_eq!(trigger_prompt_status("Translate"), "触发提示词: Translate");
+        assert_eq!(trigger_prompt_status("  "), "触发提示词");
+        assert_eq!(failure_status("网络超时"), "操作失败: 网络超时");
+        assert_eq!(failure_status("  "), "操作失败");
     }
 }

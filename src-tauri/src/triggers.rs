@@ -41,6 +41,7 @@ pub fn apply_triggers(
     settings: &Settings,
     input: &str,
     _log: &dyn Fn(&str),
+    status_reporter: &dyn Fn(&str),
 ) -> Result<TriggerResult, OpenAiError> {
     let sentences = split_sentences(input);
     let mut output = input.to_string();
@@ -59,6 +60,7 @@ pub fn apply_triggers(
         });
 
         if let Some((value, matched_by_keyword)) = matched {
+            status_reporter(&card.title);
             #[cfg(debug_assertions)]
             {
                 _log(&format!(

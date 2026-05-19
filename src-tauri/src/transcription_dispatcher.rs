@@ -44,7 +44,15 @@ impl TranscriptionDispatcher {
                                     eprintln!("录音处理失败: {error_message}");
                                 }
                             }
-                            processing::emit_status("error");
+                            let error_text = outcome
+                                .error_message
+                                .as_deref()
+                                .filter(|message| !message.trim().is_empty())
+                                .unwrap_or("");
+                            processing::emit_status_detail(
+                                "error",
+                                &processing::failure_status(error_text),
+                            );
                         }
 
                         if !outcome.history_enabled {

@@ -36,6 +36,11 @@ private struct OverlaySnapshot {
 }
 
 private final class StatusOverlayView: NSView {
+    private let dotSize: CGFloat = 8.0
+    private let horizontalPadding: CGFloat = 14.0
+    private let contentGap: CGFloat = 8.0
+    private let font = NSFont.systemFont(ofSize: 13.0, weight: .semibold)
+
     override var isOpaque: Bool {
         false
     }
@@ -58,9 +63,20 @@ private final class StatusOverlayView: NSView {
         backgroundPath.lineWidth = 1.0
         backgroundPath.stroke()
 
-        let dotSize: CGFloat = 8.0
+        let displayText = snapshot.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = displayText.isEmpty ? " " : displayText
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white,
+        ]
+        let textWidth = min(
+            ceil((text as NSString).size(withAttributes: attributes).width),
+            max(0.0, bounds.width - horizontalPadding * 2.0 - dotSize - contentGap)
+        )
+        let contentWidth = dotSize + contentGap + textWidth
+        let contentX = max(horizontalPadding, (bounds.width - contentWidth) / 2.0)
         let dotRect = NSRect(
-            x: 16.0,
+            x: contentX,
             y: (bounds.height - dotSize) / 2.0,
             width: dotSize,
             height: dotSize
@@ -68,22 +84,13 @@ private final class StatusOverlayView: NSView {
         snapshot.status.accentColor.setFill()
         NSBezierPath(ovalIn: dotRect).fill()
 
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .left
-        paragraphStyle.lineBreakMode = .byTruncatingTail
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13.0, weight: .semibold),
-            .foregroundColor: NSColor.white,
-            .paragraphStyle: paragraphStyle,
-        ]
         let textRect = NSRect(
-            x: 34.0,
+            x: dotRect.maxX + contentGap,
             y: (bounds.height - 18.0) / 2.0,
-            width: max(0.0, bounds.width - 50.0),
+            width: textWidth,
             height: 18.0
         )
-        snapshot.text.draw(in: textRect, withAttributes: attributes)
+        text.draw(in: textRect, withAttributes: attributes)
     }
 }
 
@@ -98,10 +105,13 @@ private final class StatusOverlayController {
     private var visible = false
     private var lastFrame = NSRect.zero
 
-    private let minWidth: CGFloat = 168.0
-    private let maxWidth: CGFloat = 320.0
+    private let maxWidth: CGFloat = 420.0
     private let height: CGFloat = 40.0
     private let bottomMargin: CGFloat = 48.0
+    private let dotSize: CGFloat = 8.0
+    private let horizontalPadding: CGFloat = 14.0
+    private let contentGap: CGFloat = 8.0
+    private let font = NSFont.systemFont(ofSize: 13.0, weight: .semibold)
 
     func initialize() -> Bool {
         if Thread.isMainThread {
@@ -220,12 +230,14 @@ private final class StatusOverlayController {
     }
 
     private func widthForCurrentText() -> CGFloat {
-        let text = snapshot().text as NSString
+        let rawText = snapshot().text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = (rawText.isEmpty ? " " : rawText) as NSString
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13.0, weight: .semibold),
+            .font: font,
         ]
         let textWidth = ceil(text.size(withAttributes: attributes).width)
-        return min(maxWidth, max(minWidth, textWidth + 68.0))
+        let idealWidth = horizontalPadding * 2.0 + dotSize + contentGap + textWidth
+        return min(maxWidth, ceil(idealWidth))
     }
 
     private func performOnMain(_ block: @escaping () -> Void) {
