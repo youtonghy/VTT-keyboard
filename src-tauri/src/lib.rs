@@ -447,6 +447,16 @@ fn get_app_info() -> serde_json::Value {
     })
 }
 
+fn request_microphone_permission_on_startup() {
+    #[cfg(target_os = "macos")]
+    std::thread::spawn(|| {
+        dev_eprintln!(
+            "startup microphone permission status: {}",
+            recorder::request_microphone_permission().status
+        );
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if !status_native::init() {
@@ -498,6 +508,8 @@ pub fn run() {
                 tray_state: Mutex::new(TrayState::default()),
                 updater_manager: Mutex::new(UpdateManager::new(current_version)),
             });
+
+            request_microphone_permission_on_startup();
 
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(not(target_os = "macos"))]

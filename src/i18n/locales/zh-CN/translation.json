@@ -78,9 +78,9 @@
                       "noInputSamplesWarning":  "麦克风测试没有收到任何音频样本。请确认当前设备可用，并检查打包版本是否包含 audio-input entitlement。",
                       "silentInputWarning":  "已收到音频样本，但音量始终为 0。请确认 macOS 麦克风权限、输入设备未静音，并使用带 audio-input entitlement 的已签名版本。",
                       "microphonePermission":  {
-                                                     "notDetermined":  "macOS 尚未授权麦克风。点击测试麦克风或开始录音后，请在系统弹窗中允许访问。",
-                                                     "restricted":  "macOS 当前限制了麦克风访问，请检查“系统设置 > 隐私与安全性 > 麦克风”。",
-                                                     "denied":  "macOS 已拒绝麦克风访问，请在“系统设置 > 隐私与安全性 > 麦克风”中为本应用开启权限。",
+                                                     "notDetermined":  "macOS 尚未完成麦克风授权。请重启应用并在启动时的系统弹窗中允许访问；若没有弹窗，请打开“系统设置 > 隐私与安全性 > 麦克风”为 VTT Keyboard 开启权限。",
+                                                     "restricted":  "macOS 当前限制了麦克风访问。请打开“系统设置 > 隐私与安全性 > 麦克风”，为 VTT Keyboard 开启权限，然后重启应用。",
+                                                     "denied":  "macOS 已拒绝麦克风访问。请打开“系统设置 > 隐私与安全性 > 麦克风”，为 VTT Keyboard 开启权限，然后重启应用。",
                                                      "unknown":  "无法读取 macOS 麦克风权限状态，请检查系统隐私设置。"
                                                  }
                   },

@@ -48,21 +48,12 @@ export function useAudioInputDevices(isActive: boolean) {
     }
   }, []);
 
-  const requestMicrophonePermission = useCallback(async () => {
-    const nextPermissionStatus = await invoke<MicrophonePermissionStatus>(
-      "request_microphone_permission"
-    );
-    setPermissionStatus(nextPermissionStatus);
-    return nextPermissionStatus;
-  }, []);
-
   const testDevice = useCallback(async (inputDeviceName: string, durationMs = 180) => {
-    await requestMicrophonePermission();
     return invoke<AudioInputTestResult>("test_audio_input_device", {
       inputDeviceName,
       durationMs,
     });
-  }, [requestMicrophonePermission]);
+  }, []);
 
   useEffect(() => {
     if (isActive) {
@@ -75,7 +66,6 @@ export function useAudioInputDevices(isActive: boolean) {
     error,
     loading,
     permissionStatus,
-    requestMicrophonePermission,
     refreshDevices,
     testDevice,
   };

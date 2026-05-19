@@ -78,9 +78,9 @@
     "noInputSamplesWarning": "The microphone test did not receive any audio samples. Check that the selected device is available and that the packaged build includes the audio-input entitlement.",
     "silentInputWarning": "Audio samples are arriving, but the level is always 0. Check macOS microphone access, muted input devices, and that the signed build includes the audio-input entitlement.",
     "microphonePermission": {
-      "notDetermined": "macOS has not granted microphone access yet. Start a mic test or recording, then allow access in the system prompt.",
-      "restricted": "macOS is restricting microphone access. Check System Settings > Privacy & Security > Microphone.",
-      "denied": "macOS has denied microphone access. Enable this app in System Settings > Privacy & Security > Microphone.",
+      "notDetermined": "macOS has not completed microphone authorization. Restart the app and allow access in the startup prompt. If no prompt appears, open System Settings > Privacy & Security > Microphone and enable VTT Keyboard.",
+      "restricted": "macOS is restricting microphone access. Open System Settings > Privacy & Security > Microphone, enable VTT Keyboard, then restart the app.",
+      "denied": "macOS has denied microphone access. Open System Settings > Privacy & Security > Microphone, enable VTT Keyboard, then restart the app.",
       "unknown": "Could not read the macOS microphone permission status. Check the system privacy settings."
     }
   },

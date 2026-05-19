@@ -136,7 +136,7 @@ impl Recorder {
     }
 
     pub fn start(&self, input_device_name: Option<&str>) -> Result<(), RecorderError> {
-        ensure_microphone_permission_authorized()?;
+        ensure_microphone_permission_already_authorized()?;
 
         let inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
         if inner.stream.is_some() {
@@ -295,7 +295,7 @@ pub fn test_input_device(
     input_device_name: Option<&str>,
     duration_ms: u64,
 ) -> Result<AudioInputTestResult, RecorderError> {
-    ensure_microphone_permission_authorized()?;
+    ensure_microphone_permission_already_authorized()?;
 
     let host = cpal::default_host();
     let device = resolve_input_device(&host, input_device_name)?;
@@ -411,14 +411,14 @@ fn permission_status_from_code(status: i32) -> &'static str {
     }
 }
 
-fn ensure_microphone_permission_authorized() -> Result<(), RecorderError> {
+fn ensure_microphone_permission_already_authorized() -> Result<(), RecorderError> {
     #[cfg(target_os = "macos")]
     {
-        let status = request_microphone_permission();
+        let status = microphone_permission_status();
         return match status.status.as_str() {
             "authorized" => Ok(()),
             "notDetermined" => Err(RecorderError::Permission(
-                "macOS 尚未完成麦克风授权".to_string(),
+                "macOS 尚未授权麦克风，请重启应用或在系统设置中允许本应用访问麦克风".to_string(),
             )),
             "restricted" => Err(RecorderError::Permission(
                 "macOS 当前限制了麦克风访问".to_string(),
