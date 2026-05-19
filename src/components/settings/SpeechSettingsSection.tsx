@@ -1,5 +1,7 @@
 import type { TFunction } from "i18next";
+import { Button } from "@heroui/react";
 import { CustomSelect } from "../CustomSelect";
+import { HeroCheckboxField, HeroField, HeroInputField } from "../HeroField";
 import { NumberWheelInput } from "../NumberWheelInput";
 import { SettingsCard } from "../SettingsCard";
 import type { SenseVoiceProgress, SenseVoiceStatus } from "../../hooks/useSenseVoice";
@@ -94,9 +96,7 @@ export function SpeechSettingsSection({
         title={t("speech.title")}
         description={t("speech.description")}
       >
-        <label className="field">
-          <span>{t("speech.provider")}</span>
-          <CustomSelect
+        <HeroField label={t("speech.provider")}><CustomSelect
             value={draft.provider}
             onChange={(value) =>
               updateDraft((prev) => ({
@@ -130,112 +130,97 @@ export function SpeechSettingsSection({
                 ],
               },
             ]}
-          />
-        </label>
+           /></HeroField>
       </SettingsCard>
 
       {draft.provider === "openai" ? (
         <SettingsCard title="OpenAI">
-          <label className="field">
-            <span>{t("openai.apiBase")}</span>
-            <input
-              value={draft.openai.apiBase}
-              onChange={(event) =>
+          <HeroInputField
+            label={t("openai.apiBase")}
+            value={draft.openai.apiBase}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
-                  openai: { ...prev.openai, apiBase: event.target.value },
+                  openai: { ...prev.openai, apiBase: value },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("openai.apiKey")}</span>
-            <input
-              type="password"
-              value={draft.openai.apiKey}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("openai.apiKey")}
+            value={draft.openai.apiKey}
+            type="password"
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
-                  openai: { ...prev.openai, apiKey: event.target.value },
+                  openai: { ...prev.openai, apiKey: value },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.model")}</span>
-            <input
-              value={draft.openai.speechToText.model}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.model")}
+            value={draft.openai.speechToText.model}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      model: event.target.value,
+                      model: value,
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.language")}</span>
-            <input
-              value={draft.openai.speechToText.language}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.language")}
+            value={draft.openai.speechToText.language}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      language: event.target.value,
+                      language: value,
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.prompt")}</span>
-            <input
-              value={draft.openai.speechToText.prompt}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.prompt")}
+            value={draft.openai.speechToText.prompt}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      prompt: event.target.value,
+                      prompt: value,
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.responseFormat")}</span>
-            <input
-              value={draft.openai.speechToText.responseFormat}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.responseFormat")}
+            value={draft.openai.speechToText.responseFormat}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      responseFormat: event.target.value,
+                      responseFormat: value,
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.temperature")}</span>
-            <NumberWheelInput
+            }
+          />
+          <HeroField label={t("speech.temperature")}><NumberWheelInput
               step={0.1}
               value={draft.openai.speechToText.temperature}
               onChange={(value) =>
@@ -250,150 +235,130 @@ export function SpeechSettingsSection({
                   },
                 }))
               }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.chunkingStrategy")}</span>
-            <input
-              value={draft.openai.speechToText.chunkingStrategy}
-              onChange={(event) =>
+             /></HeroField>
+          <HeroInputField
+            label={t("speech.chunkingStrategy")}
+            value={draft.openai.speechToText.chunkingStrategy}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      chunkingStrategy: event.target.value,
+                      chunkingStrategy: value,
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.timestampGranularities")}</span>
-            <input
-              value={listToString(draft.openai.speechToText.timestampGranularities)}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.timestampGranularities")}
+            value={listToString(draft.openai.speechToText.timestampGranularities)}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      timestampGranularities: parseList(event.target.value),
+                      timestampGranularities: parseList(value),
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.include")}</span>
-            <input
-              value={listToString(draft.openai.speechToText.include)}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.include")}
+            value={listToString(draft.openai.speechToText.include)}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      include: parseList(event.target.value),
+                      include: parseList(value),
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.knownSpeakerNames")}</span>
-            <input
-              value={listToString(draft.openai.speechToText.knownSpeakerNames)}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.knownSpeakerNames")}
+            value={listToString(draft.openai.speechToText.knownSpeakerNames)}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      knownSpeakerNames: parseList(event.target.value),
+                      knownSpeakerNames: parseList(value),
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("speech.knownSpeakerReferences")}</span>
-            <input
-              value={listToString(draft.openai.speechToText.knownSpeakerReferences)}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("speech.knownSpeakerReferences")}
+            value={listToString(draft.openai.speechToText.knownSpeakerReferences)}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      knownSpeakerReferences: parseList(event.target.value),
+                      knownSpeakerReferences: parseList(value),
                     },
                   },
                 }))
-              }
-            />
-          </label>
-          <label className="field checkbox">
-            <input
-              type="checkbox"
-              checked={draft.openai.speechToText.stream}
-              onChange={(event) =>
+            }
+          />
+          <HeroCheckboxField
+            label={t("speech.stream")}
+            isSelected={draft.openai.speechToText.stream}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
                   openai: {
                     ...prev.openai,
                     speechToText: {
                       ...prev.openai.speechToText,
-                      stream: event.target.checked,
+                      stream: value,
                     },
                   },
                 }))
-              }
-            />
-            <span>{t("speech.stream")}</span>
-          </label>
+            }
+          />
         </SettingsCard>
       ) : null}
 
       {draft.provider === "volcengine" ? (
         <SettingsCard title={t("speech.volcengine")}>
-          <label className="field">
-            <span>{t("volcengine.appId")}</span>
-            <input
-              value={draft.volcengine.appId}
-              onChange={(event) =>
+          <HeroInputField
+            label={t("volcengine.appId")}
+            value={draft.volcengine.appId}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
-                  volcengine: { ...prev.volcengine, appId: event.target.value },
+                  volcengine: { ...prev.volcengine, appId: value },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("volcengine.accessToken")}</span>
-            <input
-              type="password"
-              value={draft.volcengine.accessToken}
-              onChange={(event) =>
+            }
+          />
+          <HeroInputField
+            label={t("volcengine.accessToken")}
+            value={draft.volcengine.accessToken}
+            type="password"
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
-                  volcengine: { ...prev.volcengine, accessToken: event.target.value },
+                  volcengine: { ...prev.volcengine, accessToken: value },
                 }))
-              }
-            />
-          </label>
-          <label className="field">
-            <span>{t("volcengine.language")}</span>
-            <CustomSelect
+            }
+          />
+          <HeroField label={t("volcengine.language")}><CustomSelect
               value={draft.volcengine.language}
               onChange={(value) =>
                 updateDraft((prev) => ({
@@ -408,34 +373,27 @@ export function SpeechSettingsSection({
                 { value: "ja-JP", label: t("volcengine.langJaJP") },
                 { value: "ko-KR", label: t("volcengine.langKoKR") },
               ]}
-            />
-          </label>
-          <label className="field checkbox">
-            <input
-              type="checkbox"
-              checked={draft.volcengine.useStreaming}
-              onChange={(event) =>
+             /></HeroField>
+          <HeroCheckboxField
+            label={t("volcengine.useStreaming")}
+            isSelected={draft.volcengine.useStreaming}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
-                  volcengine: { ...prev.volcengine, useStreaming: event.target.checked },
+                  volcengine: { ...prev.volcengine, useStreaming: value },
                 }))
-              }
-            />
-            <span>{t("volcengine.useStreaming")}</span>
-          </label>
-          <label className="field checkbox">
-            <input
-              type="checkbox"
-              checked={draft.volcengine.useFast}
-              onChange={(event) =>
+            }
+          />
+          <HeroCheckboxField
+            label={t("volcengine.useFast")}
+            isSelected={draft.volcengine.useFast}
+            onChange={(value) =>
                 updateDraft((prev) => ({
                   ...prev,
-                  volcengine: { ...prev.volcengine, useFast: event.target.checked },
+                  volcengine: { ...prev.volcengine, useFast: value },
                 }))
-              }
-            />
-            <span>{t("volcengine.useFast")}</span>
-          </label>
+            }
+          />
         </SettingsCard>
       ) : null}
 
@@ -458,9 +416,7 @@ export function SpeechSettingsSection({
                 : draft.aliyun.apiKeys.beijing;
             return (
               <>
-                <label className="field">
-                  <span>{t("speech.region")}</span>
-                  <CustomSelect
+                <HeroField label={t("speech.region")}><CustomSelect
                     value={selectedRegion}
                     onChange={(value) =>
                       updateDraft((prev) => ({
@@ -478,17 +434,15 @@ export function SpeechSettingsSection({
                       { value: "beijing", label: t("aliyun.regionBeijing") },
                       { value: "singapore", label: t("aliyun.regionSingapore") },
                     ]}
-                  />
-                </label>
+                   /></HeroField>
                 {isParaformer ? (
                   <div className="sensevoice-hint">{t("aliyun.paraformerRegionHint")}</div>
                 ) : null}
-                <label className="field">
-                  <span>{t("aliyun.apiKey")}</span>
-                  <input
-                    type="password"
-                    value={regionApiKey}
-                    onChange={(event) =>
+                <HeroInputField
+            label={t("aliyun.apiKey")}
+            value={regionApiKey}
+            type="password"
+            onChange={(value) =>
                       updateDraft((prev) => {
                         const region = isParaformer
                           ? "beijing"
@@ -499,72 +453,65 @@ export function SpeechSettingsSection({
                             ...prev.aliyun,
                             apiKeys: {
                               ...prev.aliyun.apiKeys,
-                              [region]: event.target.value,
+                              [region]: value,
                             },
                           },
                         };
                       })
-                    }
-                  />
-                </label>
+            }
+          />
                 {isParaformer ? (
                   <>
-                    <label className="field">
-                      <span>{t("aliyun.languageHints")}</span>
-                      <input
-                        value={listToString(draft.aliyun.paraformer.languageHints)}
-                        onChange={(event) =>
+                    <HeroInputField
+            label={t("aliyun.languageHints")}
+            value={listToString(draft.aliyun.paraformer.languageHints)}
+            onChange={(value) =>
                           updateDraft((prev) => ({
                             ...prev,
                             aliyun: {
                               ...prev.aliyun,
                               paraformer: {
                                 ...prev.aliyun.paraformer,
-                                languageHints: parseList(event.target.value),
+                                languageHints: parseList(value),
                               },
                             },
                           }))
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>{t("aliyun.vocabularyId")}</span>
-                      <input
-                        value={draft.aliyun.paraformer.vocabularyId}
-                        onChange={(event) =>
+            }
+          />
+                    <HeroInputField
+            label={t("aliyun.vocabularyId")}
+            value={draft.aliyun.paraformer.vocabularyId}
+            onChange={(value) =>
                           updateDraft((prev) => ({
                             ...prev,
                             aliyun: {
                               ...prev.aliyun,
                               paraformer: {
                                 ...prev.aliyun.paraformer,
-                                vocabularyId: event.target.value,
+                                vocabularyId: value,
                               },
                             },
                           }))
-                        }
-                      />
-                    </label>
+            }
+          />
                   </>
                 ) : (
-                  <label className="field">
-                    <span>{t("aliyun.vocabularyId")}</span>
-                    <input
-                      value={draft.aliyun.asr.vocabularyId}
-                      onChange={(event) =>
+                  <HeroInputField
+            label={t("aliyun.vocabularyId")}
+            value={draft.aliyun.asr.vocabularyId}
+            onChange={(value) =>
                         updateDraft((prev) => ({
                           ...prev,
                           aliyun: {
                             ...prev.aliyun,
                             asr: {
                               ...prev.aliyun.asr,
-                              vocabularyId: event.target.value,
+                              vocabularyId: value,
                             },
                           },
                         }))
-                      }
-                    />
-                  </label>
+            }
+          />
                 )}
               </>
             );
@@ -669,9 +616,7 @@ export function SpeechSettingsSection({
                   </span>
                 </div>
 
-                <label className="field">
-                  <span>{t("sensevoice.localModel")}</span>
-                  <CustomSelect
+                <HeroField label={t("sensevoice.localModel")}><CustomSelect
                     value={selectedLocalModel}
                     onChange={(value) =>
                       updateDraft((prev) => {
@@ -694,8 +639,7 @@ export function SpeechSettingsSection({
                       })
                     }
                     options={localModelOptions}
-                  />
-                </label>
+                   /></HeroField>
 
                 {sherpaFallbackActive ? (
                   <div className="sensevoice-hint">
@@ -704,9 +648,7 @@ export function SpeechSettingsSection({
                 ) : null}
 
                 {isSherpaSelected ? (
-                  <label className="field">
-                    <span>{t("sensevoice.language")}</span>
-                    <CustomSelect
+                  <HeroField label={t("sensevoice.language")}><CustomSelect
                       value={normalizeSenseVoiceLanguage(draft.sensevoice.language)}
                       onChange={(value) =>
                         updateDraft((prev) => ({
@@ -718,14 +660,11 @@ export function SpeechSettingsSection({
                         }))
                       }
                       options={sherpaLanguageOptions}
-                    />
-                  </label>
+                     /></HeroField>
                 ) : null}
 
                 {isQwenSelected ? (
-                  <label className="field">
-                    <span>{t("sensevoice.qwenVariant")}</span>
-                    <CustomSelect
+                  <HeroField label={t("sensevoice.qwenVariant")}><CustomSelect
                       value={selectedQwenVariant}
                       onChange={(value) =>
                         updateDraft((prev) => ({
@@ -737,31 +676,26 @@ export function SpeechSettingsSection({
                         }))
                       }
                       options={qwenVariantOptions}
-                    />
-                  </label>
+                     /></HeroField>
                 ) : null}
 
                 {!isSherpaSelected ? (
-                  <label className="field">
-                    <span>{t("sensevoice.serviceUrl")}</span>
-                    <input
-                      value={draft.sensevoice.serviceUrl}
-                      onChange={(event) =>
+                  <HeroInputField
+            label={t("sensevoice.serviceUrl")}
+            value={draft.sensevoice.serviceUrl}
+            onChange={(value) =>
                         updateDraft((prev) => ({
                           ...prev,
                           sensevoice: {
                             ...prev.sensevoice,
-                            serviceUrl: event.target.value,
+                            serviceUrl: value,
                           },
                         }))
-                      }
-                    />
-                  </label>
+            }
+          />
                 ) : null}
 
-                <label className="field">
-                  <span>{t("sensevoice.device")}</span>
-                  <CustomSelect
+                <HeroField label={t("sensevoice.device")}><CustomSelect
                     value={currentDevice}
                     onChange={(value) =>
                       updateDraft((prev) => ({
@@ -778,8 +712,7 @@ export function SpeechSettingsSection({
                       { value: "cpu", label: t("sensevoice.deviceCpu") },
                       { value: "cuda", label: t("sensevoice.deviceCuda") },
                     ]}
-                  />
-                </label>
+                   /></HeroField>
 
                 {isVoxtralSelected ? (
                   <div className="sensevoice-hint">{t("sensevoice.voxtralCudaOnlyHint")}</div>
@@ -832,15 +765,16 @@ export function SpeechSettingsSection({
                   <div className="sensevoice-log">
                     <div className="sensevoice-log-header">
                       <div className="sensevoice-log-title">{t("sensevoice.logTitle")}</div>
-                      <button
+                      <Button
                         type="button"
                         className="sensevoice-log-toggle"
-                        onClick={() => setSensevoiceLogsExpanded((prev) => !prev)}
+                        variant="secondary"
+                        onPress={() => setSensevoiceLogsExpanded((prev) => !prev)}
                       >
                         {sensevoiceLogsExpanded
                           ? t("sensevoice.logCollapse")
                           : t("sensevoice.logExpand")}
-                      </button>
+                      </Button>
                     </div>
                     {sensevoiceLogsExpanded ? <pre>{sensevoiceLogLines.join("\n")}</pre> : null}
                   </div>
@@ -855,32 +789,34 @@ export function SpeechSettingsSection({
 
                 <div className="button-row">
                   {!installed ? (
-                    <button
+                    <Button
                       type="button"
-                      onClick={handleSenseVoicePrepare}
-                      disabled={prepareBusy}
+                      variant="primary"
+                      onPress={handleSenseVoicePrepare}
+                      isDisabled={prepareBusy}
                     >
                       {t("sensevoice.prepare")}
-                    </button>
+                    </Button>
                   ) : null}
                   {installed && !running ? (
-                    <button type="button" onClick={handleSenseVoiceStart} disabled={startBusy}>
+                    <Button type="button" variant="primary" onPress={handleSenseVoiceStart} isDisabled={startBusy}>
                       {isNativeRuntime ? t("sensevoice.load") : t("sensevoice.start")}
-                    </button>
+                    </Button>
                   ) : null}
                   {running ? (
-                    <button type="button" onClick={handleSenseVoiceStop} disabled={stopBusy}>
+                    <Button type="button" variant="secondary" onPress={handleSenseVoiceStop} isDisabled={stopBusy}>
                       {isNativeRuntime ? t("sensevoice.unload") : t("sensevoice.stop")}
-                    </button>
+                    </Button>
                   ) : null}
                   {installed && !running && !isNativeRuntime ? (
-                    <button
+                    <Button
                       type="button"
-                      onClick={handleUpdateRuntime}
-                      disabled={sensevoiceLoading}
+                      variant="secondary"
+                      onPress={handleUpdateRuntime}
+                      isDisabled={sensevoiceLoading}
                     >
                       {t("sensevoice.updateRuntime")}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               </>

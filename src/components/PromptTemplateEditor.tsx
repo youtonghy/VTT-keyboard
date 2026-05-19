@@ -1,4 +1,6 @@
 import { useRef } from "react";
+import { Button } from "@heroui/react";
+import { HeroTextAreaField } from "./HeroField";
 
 interface PromptTemplateEditorProps {
   value: string;
@@ -31,26 +33,27 @@ export function PromptTemplateEditor({
 
   return (
     <div className="prompt-template-container">
-      <textarea
-        ref={textareaRef}
-        className="prompt-template-editor"
+      <HeroTextAreaField
+        label=""
+        textareaRef={textareaRef}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
         rows={3}
         spellCheck={false}
       />
       <div className="prompt-variables-bar">
         <span className="prompt-variables-hint">插入占位符:</span>
         <div className="prompt-variables-list">
-          <button
+          <Button
             type="button"
             className="prompt-variable-btn"
+            variant="secondary"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insertVariable("value")}
-            title="点击插入 {value}"
+            onPress={() => insertVariable("value")}
+            aria-label="点击插入 {value}"
           >
             {"{value}"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

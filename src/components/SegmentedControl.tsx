@@ -1,4 +1,6 @@
 
+import { Button } from "@heroui/react";
+
 export interface SegmentedControlOption {
   value: string;
   label: string;
@@ -17,15 +19,16 @@ export function SegmentedControl({ value, options, onChange, disabled }: Segment
       {options.map((option) => {
         const isActive = option.value === value;
         return (
-          <button
+          <Button
             key={option.value}
             type="button"
             className={`segmented-control-button ${isActive ? "active" : ""}`}
-            onClick={() => !disabled && onChange(option.value)}
-            disabled={disabled}
+            variant={isActive ? "primary" : "ghost"}
+            onPress={() => !disabled && onChange(option.value)}
+            isDisabled={disabled}
           >
             {option.label}
-          </button>
+          </Button>
         );
       })}
     </div>

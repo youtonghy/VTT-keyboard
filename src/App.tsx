@@ -1,4 +1,5 @@
 import { Info } from "lucide-react";
+import { Button, Card, Input } from "@heroui/react";
 import { Tooltip } from "./components/Tooltip";
 import { PromptTemplateEditor } from "./components/PromptTemplateEditor";
 import { NumberWheelInput } from "./components/NumberWheelInput";
@@ -11,9 +12,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getName, getVersion } from "@tauri-apps/api/app";
-import { Sidebar } from "./components/Sidebar";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
+import { SettingsTabsNav } from "./components/SettingsTabsNav";
 import { SettingsCard } from "./components/SettingsCard";
+import { HeroCheckboxField, HeroField, HeroInputField } from "./components/HeroField";
 import { SpeechSettingsSection } from "./components/settings/SpeechSettingsSection";
 import { TextProcessingSettingsSection } from "./components/settings/TextProcessingSettingsSection";
 import { TagInput } from "./components/TagInput";
@@ -89,10 +91,6 @@ function App() {
   const { settings, setSettings, loading, saveSettings } = useSettings();
   const { syncAutostart } = useAutostart();
   const [activeSection, setActiveSection] = useState("general");
-  const [sidebarCollapsed, setSidebarCollapsed] = usePersistentBoolean(
-    "vtt.sidebar.collapsed",
-    false
-  );
   const [sensevoiceLogsExpanded, setSensevoiceLogsExpanded] = usePersistentBoolean(
     "vtt.sensevoice.logs.expanded",
     false
@@ -370,6 +368,21 @@ function App() {
             onDismissUpdateError={updater.dismissUpdateError}
           />
         ) : null}
+        <header className="settings-hero">
+          <div>
+            <p className="settings-hero-eyebrow">VTT Keyboard</p>
+            <h1>{t("app.title")}</h1>
+            <p>{t("app.subtitle")}</p>
+          </div>
+          {appInfo ? (
+            <Card className="settings-version-card">
+              <Card.Content>
+                <span>{appInfo.version}</span>
+                <strong>{appInfo.platform}</strong>
+              </Card.Content>
+            </Card>
+          ) : null}
+        </header>
         <div className="settings-layout">
           <Sidebar
             items={navItems}
@@ -549,267 +562,387 @@ function App() {
               </SettingsCard>
             ) : null}
 
-            {activeSection === "recording" ? (
-              <SettingsCard
-                title={t("recording.title")}
-                description={t("recording.description")}
+        <SettingsTabsNav
+          items={navItems}
+          activeKey={activeSection}
+          ariaLabel={t("nav.sectionsAria")}
+          onActiveKeyChange={setActiveSection}
+        />
+
+        <section className="settings-content" aria-live="polite">
+          {activeSection === "general" ? (
+            <>
+            <SettingsCard
+              title={t("general.title")}
+              description={t("general.description")}
+            >
+              <HeroField label={t("general.theme")}>
+                <SegmentedControl
+                  value={draft.appearance.theme}
+                  onChange={(value) =>
+                    updateDraft((prev) => ({
+                      ...prev,
+                      appearance: { ...prev.appearance, theme: value },
+                    }))
+                  }
+                  options={[
+                    { value: "system", label: t("general.themeSystem") },
+                    { value: "light", label: t("general.themeLight") },
+                    { value: "dark", label: t("general.themeDark") },
+                  ]}
+                />
+              </HeroField>
+              <HeroField label={t("general.language")}>
+                <LanguageSwitcher />
+              </HeroField>
+              <HeroCheckboxField
+                label={t("general.launchOnBoot")}
+                isSelected={draft.startup.launchOnBoot}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    startup: { ...prev.startup, launchOnBoot: value },
+                  }))
+                }
               >
-                <label className="field">
-                  <span>{t("recording.segmentSeconds")}</span>
-                  <NumberWheelInput
-  min={10}
-  value={draft.recording.segmentSeconds}
-  onChange={(value) =>
-    updateDraft((prev) => ({
-      ...prev,
-      recording: {
-        ...prev.recording,
-        segmentSeconds: value,
-      },
-    }))
-  }
-/>
-                </label>
-              </SettingsCard>
-            ) : null}
-
-            {activeSection === "speech" ? (
-              <SpeechSettingsSection
-                draft={draft}
-                t={t}
-                updateDraft={updateDraft}
-                supportsSherpaOnnxSenseVoice={supportsSherpaOnnxSenseVoice}
-                sherpaFallbackActive={sherpaFallbackActive}
-                sensevoiceStatus={sensevoiceStatus}
-                sensevoiceProgress={sensevoiceProgress}
-                sensevoiceLogLines={sensevoiceLogLines}
-                sensevoiceLogsExpanded={sensevoiceLogsExpanded}
-                setSensevoiceLogsExpanded={setSensevoiceLogsExpanded}
-                sensevoiceLoading={sensevoiceLoading}
-                handleSenseVoicePrepare={handleSenseVoicePrepare}
-                handleSenseVoiceStart={handleSenseVoiceStart}
-                handleSenseVoiceStop={handleSenseVoiceStop}
-                handleUpdateRuntime={handleUpdateRuntime}
-                normalizeLocalModel={normalizeLocalModel}
-                normalizeSenseVoiceLanguage={normalizeSenseVoiceLanguage}
-                normalizeSenseVoiceDevice={normalizeSenseVoiceDevice}
-                isCudaOnlyLocalModel={isCudaOnlyLocalModel}
-                getDefaultModelId={getDefaultModelId}
-                getQwenVariantByModelId={getQwenVariantByModelId}
-                formatBytes={formatBytes}
-                sherpaLanguageOptions={SHERPA_LANGUAGE_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: t(option.labelKey),
-                }))}
-                qwenVariantOptions={QWEN3_ASR_MODEL_VARIANTS.map((option) => ({
-                  value: option.value,
-                  label: t(option.labelKey),
-                }))}
-              />
-            ) : null}
-
-            {activeSection === "text" ? (
-              <TextProcessingSettingsSection
-                draft={draft}
-                t={t}
-                updateDraft={updateDraft}
-              />
-            ) : null}
-
-            {activeSection === "triggers" ? (
-              <SettingsCard
-                title={t("triggers.title")}
-                description={t("triggers.description")}
+                <Tooltip content={t("general.launchOnBootHint")}>
+                  <span className="hint-icon"><Info size={14} /></span>
+                </Tooltip>
+              </HeroCheckboxField>
+              <HeroCheckboxField
+                label={t("general.autoCheckUpdates")}
+                isSelected={draft.startup.autoCheckUpdates}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    startup: { ...prev.startup, autoCheckUpdates: value },
+                  }))
+                }
               >
-                <div className="trigger-list">
-                  {draft.triggers.map((card, index) => (
-                    <div key={card.id} className="trigger-card">
-                      <div className="trigger-card-header">
-                        <input
-                          value={card.title}
-                          onChange={(event) =>
+                <Tooltip content={t("general.autoCheckUpdatesHint")}>
+                  <span className="hint-icon"><Info size={14} /></span>
+                </Tooltip>
+              </HeroCheckboxField>
+              <HeroCheckboxField
+                label={t("general.autoInstallUpdatesOnQuit")}
+                isSelected={draft.startup.autoInstallUpdatesOnQuit}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    startup: { ...prev.startup, autoInstallUpdatesOnQuit: value },
+                  }))
+                }
+              >
+                <Tooltip content={t("general.autoInstallUpdatesOnQuitHint")}>
+                  <span className="hint-icon"><Info size={14} /></span>
+                </Tooltip>
+              </HeroCheckboxField>
+              <HeroCheckboxField
+                label={t("general.removeNewlines")}
+                isSelected={draft.output.removeNewlines}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    output: { ...prev.output, removeNewlines: value },
+                  }))
+                }
+              >
+                <Tooltip content={t("general.removeNewlinesHint")}>
+                  <span className="hint-icon"><Info size={14} /></span>
+                </Tooltip>
+              </HeroCheckboxField>
+            </SettingsCard>
+            <SettingsCard title={t("data.title")} description={t("data.description")}>
+              <div className="button-row">
+                <Button type="button" variant="secondary" onPress={handleImport}>
+                  {t("data.import")}
+                </Button>
+                <Button type="button" variant="secondary" onPress={handleExport}>
+                  {t("data.export")}
+                </Button>
+              </div>
+            </SettingsCard>
+            </>
+          ) : null}
+
+          {activeSection === "shortcut" ? (
+            <SettingsCard
+              title={t("shortcut.title")}
+              description={t("shortcut.description")}
+            >
+              <HeroInputField
+                label={t("shortcut.key")}
+                value={draft.shortcut.key}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    shortcut: { ...prev.shortcut, key: value },
+                  }))
+                }
+              />
+              <div className="shortcut-actions">
+                <Button
+                  type="button"
+                  variant="primary"
+                  onPress={() => setIsCapturing(true)}
+                  isDisabled={isCapturing}
+                >
+                  {isCapturing ? t("shortcut.capturing") : t("shortcut.capture")}
+                </Button>
+                <Tooltip content={t("shortcut.captureHint")}>
+                  <span className="hint-icon"><Info size={16} /></span>
+                </Tooltip>
+              </div>
+            </SettingsCard>
+          ) : null}
+
+          {activeSection === "recording" ? (
+            <SettingsCard
+              title={t("recording.title")}
+              description={t("recording.description")}
+            >
+              <HeroField label={t("recording.segmentSeconds")}>
+                <NumberWheelInput
+                  min={10}
+                  value={draft.recording.segmentSeconds}
+                  onChange={(value) =>
+                    updateDraft((prev) => ({
+                      ...prev,
+                      recording: { ...prev.recording, segmentSeconds: value },
+                    }))
+                  }
+                />
+              </HeroField>
+            </SettingsCard>
+          ) : null}
+
+          {activeSection === "speech" ? (
+            <SpeechSettingsSection
+              draft={draft}
+              t={t}
+              updateDraft={updateDraft}
+              supportsSherpaOnnxSenseVoice={supportsSherpaOnnxSenseVoice}
+              sherpaFallbackActive={sherpaFallbackActive}
+              sensevoiceStatus={sensevoiceStatus}
+              sensevoiceProgress={sensevoiceProgress}
+              sensevoiceLogLines={sensevoiceLogLines}
+              sensevoiceLogsExpanded={sensevoiceLogsExpanded}
+              setSensevoiceLogsExpanded={setSensevoiceLogsExpanded}
+              sensevoiceLoading={sensevoiceLoading}
+              handleSenseVoicePrepare={handleSenseVoicePrepare}
+              handleSenseVoiceStart={handleSenseVoiceStart}
+              handleSenseVoiceStop={handleSenseVoiceStop}
+              handleUpdateRuntime={handleUpdateRuntime}
+              normalizeLocalModel={normalizeLocalModel}
+              normalizeSenseVoiceLanguage={normalizeSenseVoiceLanguage}
+              normalizeSenseVoiceDevice={normalizeSenseVoiceDevice}
+              isCudaOnlyLocalModel={isCudaOnlyLocalModel}
+              getDefaultModelId={getDefaultModelId}
+              getQwenVariantByModelId={getQwenVariantByModelId}
+              formatBytes={formatBytes}
+              sherpaLanguageOptions={SHERPA_LANGUAGE_OPTIONS.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey),
+              }))}
+              qwenVariantOptions={QWEN3_ASR_MODEL_VARIANTS.map((option) => ({
+                value: option.value,
+                label: t(option.labelKey),
+              }))}
+            />
+          ) : null}
+
+          {activeSection === "text" ? (
+            <TextProcessingSettingsSection
+              draft={draft}
+              t={t}
+              updateDraft={updateDraft}
+            />
+          ) : null}
+
+          {activeSection === "triggers" ? (
+            <SettingsCard
+              title={t("triggers.title")}
+              description={t("triggers.description")}
+            >
+              <div className="trigger-list">
+                {draft.triggers.map((card, index) => (
+                  <Card key={card.id} className="trigger-card">
+                    <Card.Header className="trigger-card-header">
+                      <Input
+                        className="trigger-title-input"
+                        value={card.title}
+                        onChange={(event) =>
+                          updateTrigger(card.id, (prev) => ({
+                            ...prev,
+                            title: event.target.value,
+                          }))
+                        }
+                      />
+                      <div className="trigger-card-actions">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onPress={() => moveTrigger(index, index - 1)}
+                          isDisabled={index === 0}
+                        >
+                          {t("triggers.moveUp")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onPress={() => moveTrigger(index, index + 1)}
+                          isDisabled={index === draft.triggers.length - 1}
+                        >
+                          {t("triggers.moveDown")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          onPress={() => removeTrigger(card.id)}
+                          isDisabled={card.locked}
+                        >
+                          {t("triggers.remove")}
+                        </Button>
+                      </div>
+                    </Card.Header>
+                    <Card.Content className="trigger-card-body">
+                      <HeroCheckboxField
+                        label={t("triggers.enabled")}
+                        isSelected={card.enabled}
+                        onChange={(value) =>
+                          updateTrigger(card.id, (prev) => ({
+                            ...prev,
+                            enabled: value,
+                          }))
+                        }
+                      />
+                      <HeroCheckboxField
+                        label={t("triggers.autoApply")}
+                        isSelected={card.autoApply}
+                        onChange={(value) =>
+                          updateTrigger(card.id, (prev) => ({
+                            ...prev,
+                            autoApply: value,
+                          }))
+                        }
+                      />
+                      <HeroInputField
+                        label={t("triggers.keyword")}
+                        value={card.keyword}
+                        onChange={(value) =>
+                          updateTrigger(card.id, (prev) => ({
+                            ...prev,
+                            keyword: value,
+                          }))
+                        }
+                      />
+                      <HeroField label={t("triggers.variables")}>
+                        <TagInput
+                          values={card.variables}
+                          placeholder={t("triggers.variablesPlaceholder")}
+                          onCommit={(nextValues) =>
                             updateTrigger(card.id, (prev) => ({
                               ...prev,
-                              title: event.target.value,
+                              variables: nextValues,
                             }))
                           }
                         />
-                        <div className="trigger-card-actions">
-                          <button
-                            type="button"
-                            onClick={() => moveTrigger(index, index - 1)}
-                            disabled={index === 0}
-                          >
-                            {t("triggers.moveUp")}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveTrigger(index, index + 1)}
-                            disabled={index === draft.triggers.length - 1}
-                          >
-                            {t("triggers.moveDown")}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeTrigger(card.id)}
-                            disabled={card.locked}
-                          >
-                            {t("triggers.remove")}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="trigger-card-body">
-                        <label className="field checkbox">
-                          <input
-                            type="checkbox"
-                            checked={card.enabled}
-                            onChange={(event) =>
-                              updateTrigger(card.id, (prev) => ({
-                                ...prev,
-                                enabled: event.target.checked,
-                              }))
-                            }
-                          />
-                          <span>{t("triggers.enabled")}</span>
-                        </label>
-                        <label className="field checkbox">
-                          <input
-                            type="checkbox"
-                            checked={card.autoApply}
-                            onChange={(event) =>
-                              updateTrigger(card.id, (prev) => ({
-                                ...prev,
-                                autoApply: event.target.checked,
-                              }))
-                            }
-                          />
-                          <span>{t("triggers.autoApply")}</span>
-                        </label>
-                        <label className="field">
-                          <span>{t("triggers.keyword")}</span>
-                          <input
-                            value={card.keyword}
-                            onChange={(event) =>
-                              updateTrigger(card.id, (prev) => ({
-                                ...prev,
-                                keyword: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>{t("triggers.variables")}</span>
-                          <TagInput
-                            values={card.variables}
-                            placeholder={t("triggers.variablesPlaceholder")}
-                            onCommit={(nextValues) =>
-                              updateTrigger(card.id, (prev) => ({
-                                ...prev,
-                                variables: nextValues,
-                              }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>{t("triggers.promptTemplate")}</span>
-                          <PromptTemplateEditor
-  value={card.promptTemplate}
-  onChange={(value) =>
-    updateTrigger(card.id, (prev) => ({
-      ...prev,
-      promptTemplate: value,
-    }))
-  }
-/>
-                        </label>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button type="button" className="secondary" onClick={addTrigger}>
-                  {t("triggers.add")}
-                </button>
-              </SettingsCard>
-            ) : null}
+                      </HeroField>
+                      <HeroField label={t("triggers.promptTemplate")}>
+                        <PromptTemplateEditor
+                          value={card.promptTemplate}
+                          onChange={(value) =>
+                            updateTrigger(card.id, (prev) => ({
+                              ...prev,
+                              promptTemplate: value,
+                            }))
+                          }
+                        />
+                      </HeroField>
+                    </Card.Content>
+                  </Card>
+                ))}
+              </div>
+              <Button type="button" variant="secondary" onPress={addTrigger}>
+                {t("triggers.add")}
+              </Button>
+            </SettingsCard>
+          ) : null}
 
-            {activeSection === "history" ? (
-              <SettingsCard
-                title={t("history.title")}
-                description={t("history.description")}
-              >
-                <label className="field checkbox">
-                  <input
-                    type="checkbox"
-                    checked={draft.history.enabled}
-                    onChange={(event) =>
-                      updateDraft((prev) => ({
-                        ...prev,
-                        history: {
-                          ...prev.history,
-                          enabled: event.target.checked,
-                        },
-                      }))
-                    }
-                  />
-                  <span>{t("history.enabled")}</span>
-                </label>
+          {activeSection === "history" ? (
+            <SettingsCard
+              title={t("history.title")}
+              description={t("history.description")}
+            >
+              <HeroCheckboxField
+                label={t("history.enabled")}
+                isSelected={draft.history.enabled}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    history: { ...prev.history, enabled: value },
+                  }))
+                }
+              />
 
-                {historyLoading ? (
-                  <div className="history-empty">{t("history.loading")}</div>
-                ) : historyItems.length === 0 ? (
-                  <div className="history-empty">{t("history.empty")}</div>
-                ) : (
-                  <div className="history-list">
-                    {historyItems.map((item) => {
-                      const isFailed = item.status === "failed";
-                      const isKeywordTriggered = !isFailed && item.triggeredByKeyword;
-                      const mainText = isFailed
-                        ? t("history.failed")
-                        : isKeywordTriggered
-                          ? item.finalText || t("history.emptyText")
-                          : item.transcriptionText || t("history.emptyText");
-                      const { preview, truncated } = buildHistoryPreview(
-                        mainText,
-                        HISTORY_PREVIEW_MAX_CHARS,
-                        t("history.previewEllipsis")
-                      );
+              {historyLoading ? (
+                <div className="history-empty">{t("history.loading")}</div>
+              ) : historyItems.length === 0 ? (
+                <div className="history-empty">{t("history.empty")}</div>
+              ) : (
+                <div className="history-list">
+                  {historyItems.map((item) => {
+                    const isFailed = item.status === "failed";
+                    const isKeywordTriggered = !isFailed && item.triggeredByKeyword;
+                    const mainText = isFailed
+                      ? t("history.failed")
+                      : isKeywordTriggered
+                        ? item.finalText || t("history.emptyText")
+                        : item.transcriptionText || t("history.emptyText");
+                    const { preview, truncated } = buildHistoryPreview(
+                      mainText,
+                      HISTORY_PREVIEW_MAX_CHARS,
+                      t("history.previewEllipsis")
+                    );
 
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className={`history-item ${isFailed ? "failed" : ""} ${isKeywordTriggered ? "triggered" : ""}`}
-                          onClick={() => setSelectedHistoryItem(item)}
+                    return (
+                      <Button
+                        key={item.id}
+                        type="button"
+                        className={`history-item ${isFailed ? "failed" : ""} ${isKeywordTriggered ? "triggered" : ""}`}
+                        variant="secondary"
+                        onPress={() => setSelectedHistoryItem(item)}
+                      >
+                        <span
+                          className="history-item-content"
+                          title={truncated ? mainText : undefined}
                         >
-                          <span
-                            className="history-item-content"
-                            title={truncated ? mainText : undefined}
-                          >
-                            {preview}
-                          </span>
-                          <span className="history-item-time">
-                            {formatHistoryTime(item.timestampMs)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="history-actions">
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={handleClearHistory}
-                    disabled={historyItems.length === 0}
-                  >
-                    {t("history.clear")}
-                  </button>
+                          {preview}
+                        </span>
+                        <span className="history-item-time">
+                          {formatHistoryTime(item.timestampMs)}
+                        </span>
+                      </Button>
+                    );
+                  })}
                 </div>
-              </SettingsCard>
-            ) : null}
+              )}
 
-            {activeSection === "about" && appInfo ? (
+              <div className="history-actions">
+                <Button
+                  type="button"
+                  variant="danger"
+                  onPress={handleClearHistory}
+                  isDisabled={historyItems.length === 0}
+                >
+                  {t("history.clear")}
+                </Button>
+              </div>
+            </SettingsCard>
+          ) : null}
+
+          {activeSection === "about" ? (
+            appInfo ? (
               <SettingsCard
                 title={t("about.title")}
                 description={t("about.description")}
@@ -841,10 +974,9 @@ function App() {
                   </a>
                 </div>
               </SettingsCard>
-            ) : null}
-          </section>
-        </div>
-        
+            ) : null
+          ) : null}
+        </section>
       </main>
       <HistoryDetailDialog
         item={selectedHistoryItem}
