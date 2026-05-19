@@ -1,7 +1,7 @@
 import { readFile, rm, stat } from "node:fs/promises";
 import { arch } from "node:os";
 import { basename, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cleanTauriBundleArtifacts, rootDir } from "./clean-tauri-bundle-artifacts.mjs";
 
 const tauriConfig = JSON.parse(
@@ -27,6 +27,11 @@ const icon = resolve(dmgDir, "icon.icns");
 const appPath = resolve(macosDir, appName);
 
 await cleanTauriBundleArtifacts();
+detachMountedImage(outputDmg);
+if (await hasValidDmg(outputDmg)) {
+  console.warn(`DMG already exists after Tauri retry: ${outputDmg}`);
+  process.exit(0);
+}
 await rm(outputDmg, { force: true });
 
 const appSizeBytes = (await stat(appPath)).size;
@@ -58,4 +63,38 @@ console.warn(
 
 const child = spawn("bash", args, { cwd: rootDir, stdio: "inherit" });
 const code = await new Promise((resolveCode) => child.on("close", resolveCode));
-process.exit(code ?? 1);
+if (code !== 0) {
+  process.exit(code ?? 1);
+}
+
+if (!(await hasValidDmg(outputDmg))) {
+  console.error(`DMG retry finished without a valid output file: ${outputDmg}`);
+  process.exit(1);
+}
+
+console.warn(`DMG retry succeeded: ${outputDmg}`);
+process.exit(0);
+
+function detachMountedImage(imagePath) {
+  const info = spawnSync("hdiutil", ["info"], { encoding: "utf8" });
+  if (info.status !== 0 || !info.stdout.includes(imagePath)) {
+    return;
+  }
+
+  const entries = info.stdout.split("================================================");
+  for (const entry of entries) {
+    if (!entry.includes(`image-path      : ${imagePath}`)) {
+      continue;
+    }
+    const devices = [...entry.matchAll(/^\/dev\/(disk\d+)\b/gm)].map((match) => match[1]);
+    const rootDevice = devices.find((device) => !devices.some((other) => other !== device && other.startsWith(device)));
+    if (rootDevice) {
+      spawnSync("hdiutil", ["detach", `/dev/${rootDevice}`], { stdio: "inherit" });
+    }
+  }
+}
+
+async function hasValidDmg(imagePath) {
+  const outputStats = await stat(imagePath).catch(() => null);
+  return Boolean(outputStats?.isFile() && outputStats.size > 0);
+}

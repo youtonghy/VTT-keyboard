@@ -23,7 +23,11 @@ await cleanTauriBundleArtifacts();
 const code = await run(tauriBin, args);
 
 if (code !== 0 && isDmgBuild(args)) {
+  console.warn("Tauri DMG bundling failed; retrying with the project DMG fallback.");
   const retryCode = await run("bun", [resolve(rootDir, "scripts/retry-tauri-dmg.mjs")]);
+  if (retryCode === 0) {
+    console.warn("DMG fallback completed successfully.");
+  }
   process.exit(retryCode ?? 1);
 }
 
