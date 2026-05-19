@@ -1,3 +1,4 @@
+use crate::permissions;
 use arboard::Clipboard;
 #[cfg(not(target_os = "macos"))]
 use enigo::{Enigo, Key, KeyboardControllable};
@@ -32,6 +33,9 @@ pub fn write_text(text: &str) -> Result<(), PasteError> {
 
 pub fn write_and_paste(text: &str) -> Result<(), PasteError> {
     write_text(text)?;
+    if let Some(message) = permissions::missing_accessibility_permission_message() {
+        return Err(PasteError::Paste(message));
+    }
     thread::sleep(PASTEBOARD_SETTLE_DELAY);
     send_paste_shortcut().map_err(|err| PasteError::Paste(err.to_string()))?;
     Ok(())
@@ -40,7 +44,7 @@ pub fn write_and_paste(text: &str) -> Result<(), PasteError> {
 fn send_paste_shortcut() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        let status = unsafe { macos_send_paste_shortcut(1) };
+        let status = unsafe { macos_send_paste_shortcut(0) };
         if status == 0 {
             return Ok(());
         }

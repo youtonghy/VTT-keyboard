@@ -2,6 +2,7 @@ mod aliyun_realtime;
 mod audio_processing;
 mod openai;
 mod paste;
+mod permissions;
 mod processing;
 mod recorder;
 mod sensevoice;
@@ -17,6 +18,7 @@ mod volcengine;
 use recorder::{
     AudioInputDevice, AudioInputTestResult, MicrophonePermissionStatus, RecorderService,
 };
+use permissions::MacosPermissionStatus;
 use sensevoice::model::{
     resolve_vllm_model_id, spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind,
 };
@@ -235,6 +237,16 @@ fn request_microphone_permission() -> MicrophonePermissionStatus {
 }
 
 #[tauri::command]
+fn get_macos_permission_status() -> MacosPermissionStatus {
+    permissions::macos_permission_status()
+}
+
+#[tauri::command]
+fn request_macos_permission(permission_id: String) -> MacosPermissionStatus {
+    permissions::request_macos_permission(&permission_id)
+}
+
+#[tauri::command]
 fn test_audio_input_device(
     input_device_name: String,
     duration_ms: Option<u64>,
@@ -447,16 +459,6 @@ fn get_app_info() -> serde_json::Value {
     })
 }
 
-fn request_microphone_permission_on_startup() {
-    #[cfg(target_os = "macos")]
-    std::thread::spawn(|| {
-        dev_eprintln!(
-            "startup microphone permission status: {}",
-            recorder::request_microphone_permission().status
-        );
-    });
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if !status_native::init() {
@@ -508,8 +510,6 @@ pub fn run() {
                 tray_state: Mutex::new(TrayState::default()),
                 updater_manager: Mutex::new(UpdateManager::new(current_version)),
             });
-
-            request_microphone_permission_on_startup();
 
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(not(target_os = "macos"))]
@@ -600,6 +600,8 @@ pub fn run() {
             list_audio_input_devices,
             get_microphone_permission_status,
             request_microphone_permission,
+            get_macos_permission_status,
+            request_macos_permission,
             test_audio_input_device,
             get_transcription_history,
             clear_transcription_history,

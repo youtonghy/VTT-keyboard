@@ -18,6 +18,7 @@ import { HeroCheckboxField, HeroField, HeroInputField } from "./components/HeroF
 import { SpeechSettingsSection } from "./components/settings/SpeechSettingsSection";
 import { TextProcessingSettingsSection } from "./components/settings/TextProcessingSettingsSection";
 import { RecordingSettingsSection } from "./components/settings/RecordingSettingsSection";
+import { MacOSPermissionsSection } from "./components/settings/MacOSPermissionsSection";
 import { TagInput } from "./components/TagInput";
 import { TitleBar, UpdateStatusControl } from "./components/TitleBar";
 import { useAutostart } from "./hooks/useAutostart";
@@ -28,6 +29,11 @@ import { useShortcuts } from "./hooks/useShortcuts";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { useSenseVoiceManagement } from "./hooks/useSenseVoiceManagement";
 import { useAudioInputDevices, type AudioInputTestResult } from "./hooks/useAudioInputDevices";
+import {
+  isMacOSPermissionApproved,
+  useMacOSPermissions,
+  type MacOSPermissionId,
+} from "./hooks/useMacOSPermissions";
 import { HistoryDetailDialog } from "./components/HistoryDetailDialog";
 import type { TranscriptionHistoryItem } from "./types/history";
 import type { Settings } from "./types/settings";
@@ -126,6 +132,14 @@ function App() {
 
   const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
   const isRecordingSectionActive = activeSection === "recording";
+  const isPermissionsSectionActive = activeSection === "permissions";
+  const {
+    permissions: macOSPermissions,
+    loading: macOSPermissionsLoading,
+    error: macOSPermissionsError,
+    refreshPermissions,
+    requestPermission,
+  } = useMacOSPermissions(isMacOS);
   const {
     devices: audioInputDevices,
     error: audioInputDevicesError,
@@ -160,9 +174,31 @@ function App() {
     [updateDraft]
   );
 
+  const ensureMicrophonePermission = useCallback(async () => {
+    if (!isMacOS) {
+      return true;
+    }
+
+    const nextPermissions = await refreshPermissions();
+    if (isMacOSPermissionApproved(nextPermissions.microphone.status)) {
+      return true;
+    }
+
+    toast.error(
+      t("permissions.blocked.microphone", {
+        status: t(`permissions.status.${nextPermissions.microphone.status}`, {
+          defaultValue: t("permissions.status.unknown"),
+        }),
+      })
+    );
+    setActiveSection("permissions");
+    return false;
+  }, [isMacOS, refreshPermissions, t]);
+
   const { isCapturing, setIsCapturing } = useShortcuts(
     draft?.shortcut.key,
-    onShortcutCaptured
+    onShortcutCaptured,
+    ensureMicrophonePermission
   );
 
   const loadHistory = useCallback(async () => {
@@ -255,18 +291,37 @@ function App() {
   }, [activeSection, loadHistory, t]);
 
   const navItems = useMemo(
-    () => [
-      { id: "general", label: t("nav.general") },
-      { id: "shortcut", label: t("nav.shortcut") },
-      { id: "recording", label: t("nav.recording") },
-      { id: "speech", label: t("nav.speech") },
-      { id: "text", label: t("nav.text") },
-      { id: "triggers", label: t("nav.triggers") },
-      { id: "history", label: t("nav.history") },
-      { id: "about", label: t("nav.about") },
-    ],
-    [t]
+    () => {
+      const items = [
+        { id: "general", label: t("nav.general") },
+        { id: "shortcut", label: t("nav.shortcut") },
+        { id: "recording", label: t("nav.recording") },
+        { id: "speech", label: t("nav.speech") },
+        { id: "text", label: t("nav.text") },
+        { id: "triggers", label: t("nav.triggers") },
+        { id: "history", label: t("nav.history") },
+        { id: "about", label: t("nav.about") },
+      ];
+
+      if (!isMacOS) {
+        return items;
+      }
+
+      return [
+        items[0],
+        items[1],
+        { id: "permissions", label: t("nav.permissions") },
+        ...items.slice(2),
+      ];
+    },
+    [isMacOS, t]
   );
+
+  useEffect(() => {
+    if (!isMacOS && isPermissionsSectionActive) {
+      setActiveSection("general");
+    }
+  }, [isMacOS, isPermissionsSectionActive]);
 
   const createTriggerCard = () => ({
     id: createId(),
@@ -351,8 +406,44 @@ function App() {
   }, [activeSection]);
 
   const handleTestAudioInput = () => {
+    if (!inputTestActive) {
+      void ensureMicrophonePermission().then((allowed) => {
+        if (!allowed) {
+          return;
+        }
+        setInputTestResult(null);
+        setInputTestActive(true);
+      });
+      return;
+    }
+
     setInputTestResult(null);
-    setInputTestActive((active) => !active);
+    setInputTestActive(false);
+  };
+
+  const handleRefreshPermissions = () => {
+    void refreshPermissions().catch((error) => {
+      toast.error(t("permissions.refreshError", { error: toErrorMessage(error) }));
+    });
+  };
+
+  const handleRequestPermission = (permissionId: MacOSPermissionId) => {
+    void requestPermission(permissionId)
+      .then((nextPermissions) => {
+        const item = nextPermissions[permissionId];
+        if (isMacOSPermissionApproved(item.status)) {
+          toast.success(t("permissions.requestSuccess"));
+          return;
+        }
+        toast.error(
+          t("permissions.requestStillMissing", {
+            permission: t(`permissions.items.${permissionId}.title`),
+          })
+        );
+      })
+      .catch((error) => {
+        toast.error(t("permissions.requestError", { error: toErrorMessage(error) }));
+      });
   };
 
   const handleClearHistory = async () => {
@@ -563,6 +654,23 @@ function App() {
                   <span className="hint-icon"><Info size={16} /></span>
                 </Tooltip>
               </div>
+            </SettingsCard>
+          ) : null}
+
+          {isMacOS && activeSection === "permissions" ? (
+            <SettingsCard
+              title={t("permissions.title")}
+              description={t("permissions.description")}
+            >
+              <MacOSPermissionsSection
+                microphone={macOSPermissions.microphone}
+                accessibility={macOSPermissions.accessibility}
+                loading={macOSPermissionsLoading}
+                error={macOSPermissionsError}
+                t={t}
+                onRefresh={handleRefreshPermissions}
+                onRequestPermission={handleRequestPermission}
+              />
             </SettingsCard>
           ) : null}
 

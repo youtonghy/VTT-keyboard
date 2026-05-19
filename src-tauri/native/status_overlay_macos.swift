@@ -279,6 +279,16 @@ public func macos_request_microphone_permission_code() -> Int32 {
     return requestMicrophonePermissionBlocking()
 }
 
+@_cdecl("macos_accessibility_permission_status_code")
+public func macos_accessibility_permission_status_code() -> Int32 {
+    accessibilityPermissionStatusCode(prompt: false)
+}
+
+@_cdecl("macos_request_accessibility_permission_code")
+public func macos_request_accessibility_permission_code() -> Int32 {
+    accessibilityPermissionStatusCode(prompt: true)
+}
+
 @_cdecl("macos_send_paste_shortcut")
 public func macos_send_paste_shortcut(_ promptForAccessibility: Int32) -> Int32 {
     guard ensureAccessibilityPermission(prompt: promptForAccessibility != 0) else {
@@ -312,6 +322,20 @@ private func ensureAccessibilityPermission(prompt: Bool) -> Bool {
         kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
     ] as CFDictionary
     return AXIsProcessTrustedWithOptions(options)
+}
+
+private func accessibilityPermissionStatusCode(prompt: Bool) -> Int32 {
+    if prompt {
+        _ = ensureAccessibilityPermission(prompt: true)
+        for _ in 0..<12 {
+            if AXIsProcessTrusted() {
+                return 1
+            }
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+    }
+
+    return AXIsProcessTrusted() ? 1 : 0
 }
 
 private func requestMicrophonePermissionBlocking() -> Int32 {

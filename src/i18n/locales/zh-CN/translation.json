@@ -7,6 +7,7 @@
     "nav":  {
                 "general":  "通用",
                 "shortcut":  "快捷键",
+                "permissions":  "权限",
                 "recording":  "录音",
                 "speech":  "转写",
                 "text":  "文本处理",
@@ -78,12 +79,50 @@
                       "noInputSamplesWarning":  "麦克风测试没有收到任何音频样本。请确认当前设备可用，并检查打包版本是否包含 audio-input entitlement。",
                       "silentInputWarning":  "已收到音频样本，但音量始终为 0。请确认 macOS 麦克风权限、输入设备未静音，并使用带 audio-input entitlement 的已签名版本。",
                       "microphonePermission":  {
-                                                     "notDetermined":  "macOS 尚未完成麦克风授权。请重启应用并在启动时的系统弹窗中允许访问；若没有弹窗，请打开“系统设置 > 隐私与安全性 > 麦克风”为 VTT Keyboard 开启权限。",
-                                                     "restricted":  "macOS 当前限制了麦克风访问。请打开“系统设置 > 隐私与安全性 > 麦克风”，为 VTT Keyboard 开启权限，然后重启应用。",
-                                                     "denied":  "macOS 已拒绝麦克风访问。请打开“系统设置 > 隐私与安全性 > 麦克风”，为 VTT Keyboard 开启权限，然后重启应用。",
+                                                     "notDetermined":  "macOS 尚未完成麦克风授权。请先打开权限页面并允许麦克风访问，再开始录音。",
+                                                     "restricted":  "macOS 当前限制了麦克风访问。请打开“系统设置 > 隐私与安全性 > 麦克风”，为 VTT Keyboard 开启权限。",
+                                                     "denied":  "macOS 已拒绝麦克风访问。请打开“系统设置 > 隐私与安全性 > 麦克风”，为 VTT Keyboard 开启权限。",
                                                      "unknown":  "无法读取 macOS 麦克风权限状态，请检查系统隐私设置。"
                                                  }
                   },
+    "permissions":  {
+                        "title":  "macOS 权限",
+                        "description":  "查看录音与自动粘贴所需的系统权限。",
+                        "readyTitle":  "所需权限已就绪",
+                        "readyDescription":  "录音与自动粘贴可以正常运行。",
+                        "missingTitle":  "仍有权限未批准",
+                        "missingDescription":  "缺少权限时，对应功能会被阻止，并提示你先完成授权。",
+                        "refresh":  "刷新状态",
+                        "allow":  "去授权",
+                        "checkAgain":  "重新检查",
+                        "requestSuccess":  "权限已批准",
+                        "requestStillMissing":  "{{permission}} 仍未批准",
+                        "requestError":  "权限请求失败：{{error}}",
+                        "refreshErrorTitle":  "无法读取权限",
+                        "refreshError":  "刷新权限失败：{{error}}",
+                        "blocked":  {
+                                        "microphone":  "麦克风权限当前为“{{status}}”。请先打开权限页面完成授权，再开始录音。"
+                                    },
+                        "status":  {
+                                       "approved":  "已批准",
+                                       "authorized":  "已批准",
+                                       "notDetermined":  "未请求",
+                                       "restricted":  "受限制",
+                                       "denied":  "未批准",
+                                       "unknown":  "未知",
+                                       "unsupported":  "不支持"
+                                   },
+                        "items":  {
+                                      "microphone":  {
+                                                         "title":  "麦克风",
+                                                         "description":  "开始录音或测试麦克风前必须批准。"
+                                                     },
+                                      "accessibility":  {
+                                                            "title":  "辅助功能",
+                                                            "description":  "用于将转写结果自动粘贴到当前应用。"
+                                                        }
+                                  }
+                    },
     "openai":  {
                    "apiBase":  "API 基础地址",
                    "apiKey":  "API Key"

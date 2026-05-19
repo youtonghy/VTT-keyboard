@@ -7,6 +7,7 @@
   "nav": {
     "general": "General",
     "shortcut": "Shortcut",
+    "permissions": "Permissions",
     "recording": "Recording",
     "speech": "Transcription",
     "text": "Text",
@@ -78,10 +79,48 @@
     "noInputSamplesWarning": "The microphone test did not receive any audio samples. Check that the selected device is available and that the packaged build includes the audio-input entitlement.",
     "silentInputWarning": "Audio samples are arriving, but the level is always 0. Check macOS microphone access, muted input devices, and that the signed build includes the audio-input entitlement.",
     "microphonePermission": {
-      "notDetermined": "macOS has not completed microphone authorization. Restart the app and allow access in the startup prompt. If no prompt appears, open System Settings > Privacy & Security > Microphone and enable VTT Keyboard.",
-      "restricted": "macOS is restricting microphone access. Open System Settings > Privacy & Security > Microphone, enable VTT Keyboard, then restart the app.",
-      "denied": "macOS has denied microphone access. Open System Settings > Privacy & Security > Microphone, enable VTT Keyboard, then restart the app.",
+      "notDetermined": "macOS has not completed microphone authorization. Open Permissions and allow microphone access before recording.",
+      "restricted": "macOS is restricting microphone access. Open System Settings > Privacy & Security > Microphone and enable VTT Keyboard.",
+      "denied": "macOS has denied microphone access. Open System Settings > Privacy & Security > Microphone and enable VTT Keyboard.",
       "unknown": "Could not read the macOS microphone permission status. Check the system privacy settings."
+    }
+  },
+  "permissions": {
+    "title": "macOS Permissions",
+    "description": "Check the system permissions required for recording and automatic paste.",
+    "readyTitle": "Required permissions are ready",
+    "readyDescription": "Recording and automatic paste can run normally.",
+    "missingTitle": "Some permissions are missing",
+    "missingDescription": "Actions that need missing permissions will be blocked until you approve them here.",
+    "refresh": "Refresh",
+    "allow": "Allow",
+    "checkAgain": "Check again",
+    "requestSuccess": "Permission approved",
+    "requestStillMissing": "{{permission}} is still not approved",
+    "requestError": "Permission request failed: {{error}}",
+    "refreshErrorTitle": "Unable to read permissions",
+    "refreshError": "Failed to refresh permissions: {{error}}",
+    "blocked": {
+      "microphone": "Microphone permission is {{status}}. Open Permissions before recording."
+    },
+    "status": {
+      "approved": "Approved",
+      "authorized": "Approved",
+      "notDetermined": "Not requested",
+      "restricted": "Restricted",
+      "denied": "Not approved",
+      "unknown": "Unknown",
+      "unsupported": "Unsupported"
+    },
+    "items": {
+      "microphone": {
+        "title": "Microphone",
+        "description": "Required before recording or microphone testing."
+      },
+      "accessibility": {
+        "title": "Accessibility",
+        "description": "Required to paste the transcription into the active app automatically."
+      }
     }
   },
   "openai": {

@@ -49,13 +49,20 @@ const buildShortcut = (event: KeyboardEvent) => {
   return parts.join("+");
 };
 
+type BeforeStartRecording = () => boolean | Promise<boolean>;
+
 export function useShortcuts(
   shortcutKey: string | undefined,
-  onShortcutCaptured: (key: string) => void
+  onShortcutCaptured: (key: string) => void,
+  beforeStartRecording?: BeforeStartRecording
 ) {
   const { t } = useTranslation();
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
+  const beforeStartRecordingRef = useRef(beforeStartRecording);
+  useEffect(() => {
+    beforeStartRecordingRef.current = beforeStartRecording;
+  }, [beforeStartRecording]);
 
   const [isCapturing, setIsCapturing] = useState(false);
 
@@ -71,23 +78,30 @@ export function useShortcuts(
     let keyDown = false;
     let inFlight = false;
 
-    const doStart = () => {
+    const doStart = async () => {
       if (inFlight) return;
       inFlight = true;
-      invoke("start_recording")
-        .then(() => {
-          logDebug("start_recording ok");
-          isRecording = true;
-          pressStartTime = Date.now();
-        })
-        .catch((error) => {
+      try {
+        const canStart = await (beforeStartRecordingRef.current?.() ?? true);
+        if (!canStart) {
           isRecording = false;
           pressStartTime = null;
-          const message = toErrorMessage(error);
-          logError("start_recording failed", message);
-          toast.error(tRef.current("shortcut.startError", { error: message }));
-        })
-        .finally(() => { inFlight = false; });
+          return;
+        }
+
+        await invoke("start_recording");
+        logDebug("start_recording ok");
+        isRecording = true;
+        pressStartTime = Date.now();
+      } catch (error) {
+        isRecording = false;
+        pressStartTime = null;
+        const message = toErrorMessage(error);
+        logError("start_recording failed", message);
+        toast.error(tRef.current("shortcut.startError", { error: message }));
+      } finally {
+        inFlight = false;
+      }
     };
 
     const doStop = (silent = false) => {
@@ -128,7 +142,7 @@ export function useShortcuts(
             keyDown = true;
 
             if (!isRecording) {
-              doStart();
+              void doStart();
             } else {
               doStop();
             }

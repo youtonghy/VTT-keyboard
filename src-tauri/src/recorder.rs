@@ -5,6 +5,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
 
+use crate::permissions;
+
 #[cfg(target_os = "macos")]
 #[link(name = "AVFoundation", kind = "framework")]
 extern "C" {}
@@ -414,21 +416,9 @@ fn permission_status_from_code(status: i32) -> &'static str {
 fn ensure_microphone_permission_already_authorized() -> Result<(), RecorderError> {
     #[cfg(target_os = "macos")]
     {
-        let status = microphone_permission_status();
-        return match status.status.as_str() {
-            "authorized" => Ok(()),
-            "notDetermined" => Err(RecorderError::Permission(
-                "macOS 尚未授权麦克风，请重启应用或在系统设置中允许本应用访问麦克风".to_string(),
-            )),
-            "restricted" => Err(RecorderError::Permission(
-                "macOS 当前限制了麦克风访问".to_string(),
-            )),
-            "denied" => Err(RecorderError::Permission(
-                "macOS 已拒绝麦克风访问，请在系统设置中开启本应用的麦克风权限".to_string(),
-            )),
-            _ => Err(RecorderError::Permission(
-                "无法确认 macOS 麦克风权限状态".to_string(),
-            )),
+        return match permissions::missing_recording_permission_message() {
+            Some(message) => Err(RecorderError::Permission(message)),
+            None => Ok(()),
         };
     }
 

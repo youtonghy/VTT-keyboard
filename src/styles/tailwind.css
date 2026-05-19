@@ -486,6 +486,53 @@
     @apply min-w-0;
   }
 
+  .macos-permissions-panel {
+    @apply grid gap-4;
+  }
+
+  .macos-permissions-alert {
+    @apply rounded-lg;
+  }
+
+  .macos-permissions-list {
+    @apply grid gap-3;
+  }
+
+  .macos-permission-row {
+    @apply grid min-w-0 gap-3 rounded-lg border p-3 md:grid-cols-[auto_minmax(0,1fr)_auto_auto] md:items-center;
+    border-color: var(--color-border);
+    background-color: color-mix(in oklab, var(--color-surface) 78%, transparent);
+  }
+
+  .macos-permission-icon {
+    @apply flex h-9 w-9 items-center justify-center rounded-lg;
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 12%, transparent);
+  }
+
+  .macos-permission-copy {
+    @apply min-w-0;
+  }
+
+  .macos-permission-copy h4 {
+    @apply m-0 text-sm font-semibold;
+    color: var(--color-text-primary);
+  }
+
+  .macos-permission-copy p {
+    @apply m-0 mt-1 text-sm leading-5;
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .macos-permission-chip {
+    @apply justify-self-start md:justify-self-end;
+  }
+
+  .macos-permissions-actions {
+    @apply flex flex-wrap gap-3;
+  }
+
   .button-row {
     @apply flex flex-wrap gap-3;
   }

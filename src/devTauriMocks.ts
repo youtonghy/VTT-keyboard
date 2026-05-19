@@ -146,6 +146,19 @@ const clone = <T,>(value: T): T =>
 
 let mockSettings = createDefaultSettings();
 let mockAutostartEnabled = false;
+let mockMacOSPermissions = {
+  supported: true,
+  microphone: {
+    id: "microphone",
+    status: "authorized",
+    required: true,
+  },
+  accessibility: {
+    id: "accessibility",
+    status: "denied",
+    required: true,
+  },
+};
 
 const getSenseVoiceStatus = () => ({
   installed: mockSettings.sensevoice.installed,
@@ -221,6 +234,30 @@ export async function setupDevTauriMocks() {
             status: "authorized",
             supported: true,
           };
+        case "get_macos_permission_status":
+          return clone(mockMacOSPermissions);
+        case "request_macos_permission": {
+          const permissionId = (payload as { permissionId?: string } | undefined)?.permissionId;
+          if (permissionId === "microphone") {
+            mockMacOSPermissions = {
+              ...mockMacOSPermissions,
+              microphone: {
+                ...mockMacOSPermissions.microphone,
+                status: "authorized",
+              },
+            };
+          }
+          if (permissionId === "accessibility") {
+            mockMacOSPermissions = {
+              ...mockMacOSPermissions,
+              accessibility: {
+                ...mockMacOSPermissions.accessibility,
+                status: "approved",
+              },
+            };
+          }
+          return clone(mockMacOSPermissions);
+        }
         case "test_audio_input_device":
           return {
             peakLevel: 0.2 + Math.random() * 0.55,
