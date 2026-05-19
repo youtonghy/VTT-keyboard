@@ -92,6 +92,8 @@
                         "readyDescription":  "录音与自动粘贴可以正常运行。",
                         "missingTitle":  "仍有权限未批准",
                         "missingDescription":  "缺少权限时，对应功能会被阻止，并提示你先完成授权。",
+                        "accessibilityHelpTitle":  "已经授权但仍显示未批准？",
+                        "accessibilityHelpDescription":  "macOS 辅助功能权限绑定的是具体应用包。如果你已经开启权限但刷新后仍显示未批准，请在“系统设置 > 隐私与安全性 > 辅助功能”中移除旧的 VTT Keyboard 条目，再回到这里为当前正在运行的应用重新授权。",
                         "refresh":  "刷新状态",
                         "allow":  "去授权",
                         "checkAgain":  "重新检查",

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type MacOSPermissionId = "microphone" | "accessibility";
 
@@ -106,6 +107,22 @@ export function useMacOSPermissions(enabled: boolean) {
 
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
+  }, [enabled, refreshPermissions]);
+
+  useEffect(() => {
+    if (!enabled || typeof window.__TAURI_INTERNALS__?.invoke !== "function") {
+      return;
+    }
+
+    const unlisten = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) {
+        void refreshPermissions();
+      }
+    });
+
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
   }, [enabled, refreshPermissions]);
 
   return {

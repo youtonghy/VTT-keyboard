@@ -45,6 +45,8 @@ export function MacOSPermissionsSection({
     const item = permissions[id];
     return item.required && !isMacOSPermissionApproved(item.status);
   });
+  const accessibilityMissing =
+    accessibility.required && !isMacOSPermissionApproved(accessibility.status);
 
   return (
     <div className="macos-permissions-panel">
@@ -72,6 +74,16 @@ export function MacOSPermissionsSection({
           <Alert.Content>
             <Alert.Title>{t("permissions.refreshErrorTitle")}</Alert.Title>
             <Alert.Description>{error}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      ) : null}
+
+      {accessibilityMissing ? (
+        <Alert status="default" className="macos-permissions-alert">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{t("permissions.accessibilityHelpTitle")}</Alert.Title>
+            <Alert.Description>{t("permissions.accessibilityHelpDescription")}</Alert.Description>
           </Alert.Content>
         </Alert>
       ) : null}

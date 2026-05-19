@@ -92,6 +92,8 @@
     "readyDescription": "Recording and automatic paste can run normally.",
     "missingTitle": "Some permissions are missing",
     "missingDescription": "Actions that need missing permissions will be blocked until you approve them here.",
+    "accessibilityHelpTitle": "Still showing as not approved?",
+    "accessibilityHelpDescription": "macOS Accessibility permission is tied to the exact app bundle. If you already enabled it but this page still shows not approved after refreshing, remove old VTT Keyboard entries in System Settings > Privacy & Security > Accessibility, then use Allow here for the currently running app.",
     "refresh": "Refresh",
     "allow": "Allow",
     "checkAgain": "Check again",
