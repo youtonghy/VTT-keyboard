@@ -1,9 +1,7 @@
 use crate::processing;
 use crate::recorder::RecordedAudio;
 use crate::sensevoice::ensure_service_ready_blocking;
-use crate::settings::{
-    SettingsStore, TranscriptionHistoryItem, TranscriptionHistoryStatus, TranscriptionProvider,
-};
+use crate::settings::{SettingsStore, TranscriptionHistoryItem, TranscriptionHistoryStatus};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -133,7 +131,7 @@ impl Drop for TranscriptionDispatcher {
 /// - 其他转写提供方（云端 API）不做任何处理。
 fn ensure_sensevoice_runtime_ready(app: &AppHandle, store: &SettingsStore) -> Result<(), String> {
     let settings = store.load().map_err(|err| err.to_string())?;
-    if settings.provider != TranscriptionProvider::Sensevoice {
+    if !settings.provider.is_local() {
         return Ok(());
     }
     ensure_service_ready_blocking(app, store, SENSEVOICE_READY_TIMEOUT)

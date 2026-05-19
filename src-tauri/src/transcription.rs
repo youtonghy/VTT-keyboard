@@ -8,6 +8,7 @@ use crate::openai::{self, OpenAiError};
 use crate::sensevoice::{self, SenseVoiceError};
 use crate::settings::{Settings, TranscriptionAlignment, TranscriptionProvider};
 use crate::volcengine::{self, VolcengineError};
+use std::fmt;
 use std::path::Path;
 use thiserror::Error;
 
@@ -55,6 +56,24 @@ pub enum LocalRuntime {
     Docker,
     /// 原生二进制（Sherpa-ONNX）
     Native,
+}
+
+impl fmt::Display for EngineEnvironment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Cloud => write!(f, "cloud"),
+            Self::Local { runtime } => write!(f, "local/{runtime}"),
+        }
+    }
+}
+
+impl fmt::Display for LocalRuntime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Docker => write!(f, "docker"),
+            Self::Native => write!(f, "native"),
+        }
+    }
 }
 
 // ── 引擎 trait ────────────────────────────────────────────────

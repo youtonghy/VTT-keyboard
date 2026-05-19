@@ -396,11 +396,6 @@ impl TranscriptionProvider {
     pub fn is_local(&self) -> bool {
         self.category() == ProviderCategory::Local
     }
-
-    /// 判断是否为云端提供商
-    pub fn is_cloud(&self) -> bool {
-        self.category() == ProviderCategory::Cloud
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -562,10 +557,8 @@ mod tests {
 
     #[test]
     fn provider_is_local_and_is_cloud() {
-        assert!(TranscriptionProvider::Openai.is_cloud());
         assert!(!TranscriptionProvider::Openai.is_local());
         assert!(TranscriptionProvider::Sensevoice.is_local());
-        assert!(!TranscriptionProvider::Sensevoice.is_cloud());
     }
 
     #[test]

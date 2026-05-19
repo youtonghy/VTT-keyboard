@@ -146,6 +146,10 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     let remove_newlines = settings.output.remove_newlines;
     let engine = transcription::create_engine(&settings);
     let model_group = engine.model_group();
+    dev_log(&format!(
+        "转写引擎: {model_group} ({})",
+        engine.environment()
+    ));
     let recording_duration_ms = calculate_recording_duration_ms(&recording);
 
     // Common builder with shared context
