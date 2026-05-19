@@ -213,7 +213,7 @@ impl Recorder {
             (stream, buffer, config)
         };
 
-        drop(stream);
+        release_input_stream(stream);
         let mut guard = buffer.lock().map_err(|_| RecorderError::LockPoisoned)?;
         let samples = guard.clone();
         guard.clear();
@@ -234,7 +234,7 @@ impl Recorder {
             (stream, buffer, was_recording)
         };
 
-        drop(stream);
+        release_input_stream(stream);
         if let Ok(mut guard) = buffer.lock() {
             guard.clear();
         }
@@ -369,7 +369,7 @@ pub fn test_input_device(
         .play()
         .map_err(|err| RecorderError::Stream(err.to_string()))?;
     std::thread::sleep(Duration::from_millis(duration_ms.clamp(80, 3000)));
-    drop(stream);
+    release_input_stream(Some(stream));
 
     let samples = buffer.lock().map_err(|_| RecorderError::LockPoisoned)?;
     let peak_level = calculate_peak_level(&samples);
@@ -410,6 +410,21 @@ fn resolve_input_device(
         }
     }
     Err(RecorderError::DeviceNotFound(requested_name.to_string()))
+}
+
+fn release_input_stream(stream: Option<Stream>) {
+    let Some(stream) = stream else {
+        return;
+    };
+
+    if let Err(_err) = stream.pause() {
+        #[cfg(debug_assertions)]
+        eprintln!("停止输入流失败，将继续释放资源: {_err}");
+    }
+    drop(stream);
+
+    #[cfg(target_os = "macos")]
+    std::thread::sleep(Duration::from_millis(30));
 }
 
 fn calculate_peak_level(samples: &[i16]) -> f32 {
@@ -467,6 +482,7 @@ mod tests {
         calculate_average_level, calculate_peak_level, permission_status_from_code, Recorder,
         RecorderError,
     };
+    use cpal::{BufferSize, SampleRate, StreamConfig};
 
     #[test]
     fn input_level_calculation_handles_empty_and_signal_samples() {
@@ -499,5 +515,51 @@ mod tests {
             .abort()
             .expect("repeated idle abort should succeed"));
         assert!(matches!(recorder.stop(), Err(RecorderError::NotRecording)));
+    }
+
+    #[test]
+    fn stop_clears_recording_state_and_returns_samples() {
+        let recorder = Recorder::new();
+        {
+            let mut inner = recorder.inner.lock().expect("recorder lock");
+            inner.buffer = std::sync::Arc::new(std::sync::Mutex::new(vec![1, -2, 3]));
+            inner.config = Some(test_stream_config());
+        }
+
+        let audio = recorder.stop().expect("recording should stop");
+
+        assert_eq!(audio.samples, vec![1, -2, 3]);
+        assert_eq!(audio.sample_rate, 16_000);
+        assert_eq!(audio.channels, 1);
+
+        let inner = recorder.inner.lock().expect("recorder lock");
+        assert!(inner.stream.is_none());
+        assert!(inner.config.is_none());
+        assert!(inner.buffer.lock().expect("buffer lock").is_empty());
+    }
+
+    #[test]
+    fn abort_clears_recording_state_and_buffer() {
+        let recorder = Recorder::new();
+        {
+            let mut inner = recorder.inner.lock().expect("recorder lock");
+            inner.buffer = std::sync::Arc::new(std::sync::Mutex::new(vec![10, 20]));
+            inner.config = Some(test_stream_config());
+        }
+
+        assert!(recorder.abort().expect("recording should abort"));
+
+        let inner = recorder.inner.lock().expect("recorder lock");
+        assert!(inner.stream.is_none());
+        assert!(inner.config.is_none());
+        assert!(inner.buffer.lock().expect("buffer lock").is_empty());
+    }
+
+    fn test_stream_config() -> StreamConfig {
+        StreamConfig {
+            channels: 1,
+            sample_rate: SampleRate(16_000),
+            buffer_size: BufferSize::Default,
+        }
     }
 }
