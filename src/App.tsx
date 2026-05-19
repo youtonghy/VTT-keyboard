@@ -408,6 +408,22 @@ function App() {
               <HeroField label={t("general.language")}>
                 <LanguageSwitcher />
               </HeroField>
+              {isMacOS ? (
+                <HeroCheckboxField
+                  label={t("general.hideDockIcon")}
+                  isSelected={draft.startup.hideDockIcon}
+                  onChange={(value) =>
+                    updateDraft((prev) => ({
+                      ...prev,
+                      startup: { ...prev.startup, hideDockIcon: value },
+                    }))
+                  }
+                >
+                  <Tooltip content={t("general.hideDockIconHint")}>
+                    <span className="hint-icon"><Info size={14} /></span>
+                  </Tooltip>
+                </HeroCheckboxField>
+              ) : null}
               <HeroCheckboxField
                 label={t("general.launchOnBoot")}
                 isSelected={draft.startup.launchOnBoot}
