@@ -374,14 +374,6 @@ function App() {
             <h1>{t("app.title")}</h1>
             <p>{t("app.subtitle")}</p>
           </div>
-          {appInfo ? (
-            <Card className="settings-version-card">
-              <Card.Content>
-                <span>{appInfo.version}</span>
-                <strong>{appInfo.platform}</strong>
-              </Card.Content>
-            </Card>
-          ) : null}
         </header>
         <SettingsTabsNav
           items={navItems}
