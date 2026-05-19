@@ -1,5 +1,6 @@
 use crate::settings::{OpenAiSettings, Settings, TextSettings};
 use reqwest::blocking::{multipart, Client};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -30,6 +31,39 @@ struct ResponseRequest<'a> {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
+}
+
+#[derive(Serialize)]
+struct ChatCompletionRequest<'a> {
+    model: &'a str,
+    messages: Vec<ChatMessage<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f32>,
+}
+
+#[derive(Serialize)]
+struct ChatMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
+#[derive(Clone, Copy)]
+enum TextEndpoint {
+    Responses,
+    ChatCompletions,
+}
+
+impl TextEndpoint {
+    fn path(self) -> &'static str {
+        match self {
+            TextEndpoint::Responses => "responses",
+            TextEndpoint::ChatCompletions => "chat/completions",
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -84,26 +118,43 @@ pub fn generate_text(
     instructions: &str,
 ) -> Result<String, OpenAiError> {
     ensure_text_auth(settings)?;
-    let request = ResponseRequest {
-        model: &settings.model,
-        input,
-        instructions: if instructions.is_empty() {
-            None
-        } else {
-            Some(instructions)
-        },
-        max_output_tokens: Some(settings.max_output_tokens),
-        temperature: Some(settings.temperature),
-        top_p: Some(settings.top_p),
-    };
     let client = Client::new();
-    let url = format!("{}/responses", settings.api_base.trim_end_matches('/'));
-    let response = client
-        .post(url)
-        .bearer_auth(settings.api_key.trim())
-        .json(&request)
-        .send()
-        .map_err(|err| OpenAiError::Request(err.to_string()))?;
+
+    if prefers_chat_completions(&settings.api_base) {
+        return generate_text_with_chat_completions(&client, settings, input, instructions);
+    }
+
+    let request = build_response_request(settings, input, instructions);
+    let url = text_endpoint_url(&settings.api_base, TextEndpoint::Responses);
+    let response = post_json(&client, &url, settings.api_key.trim(), &request)?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        if should_retry_with_chat_completions(status, &body) {
+            return generate_text_with_chat_completions(&client, settings, input, instructions)
+                .map_err(|err| {
+                    OpenAiError::Request(format!(
+                        "{status}: {body}; Chat Completions fallback failed: {err}"
+                    ))
+                });
+        }
+        return Err(OpenAiError::Request(format!("{status}: {body}")));
+    }
+    let value: Value = response
+        .json()
+        .map_err(|err| OpenAiError::Parse(err.to_string()))?;
+    extract_output_text(&value)
+}
+
+fn generate_text_with_chat_completions(
+    client: &Client,
+    settings: &TextSettings,
+    input: &str,
+    instructions: &str,
+) -> Result<String, OpenAiError> {
+    let request = build_chat_completion_request(settings, input, instructions);
+    let url = text_endpoint_url(&settings.api_base, TextEndpoint::ChatCompletions);
+    let response = post_json(client, &url, settings.api_key.trim(), &request)?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
@@ -112,7 +163,7 @@ pub fn generate_text(
     let value: Value = response
         .json()
         .map_err(|err| OpenAiError::Parse(err.to_string()))?;
-    extract_output_text(&value)
+    extract_chat_completion_text(&value)
 }
 
 fn ensure_auth(settings: &OpenAiSettings) -> Result<(), OpenAiError> {
@@ -127,6 +178,97 @@ fn ensure_text_auth(settings: &TextSettings) -> Result<(), OpenAiError> {
         return Err(OpenAiError::Config("文本处理 API Key 不能为空".to_string()));
     }
     Ok(())
+}
+
+fn build_response_request<'a>(
+    settings: &'a TextSettings,
+    input: &'a str,
+    instructions: &'a str,
+) -> ResponseRequest<'a> {
+    let instructions = instructions.trim();
+    ResponseRequest {
+        model: &settings.model,
+        input,
+        instructions: if instructions.is_empty() {
+            None
+        } else {
+            Some(instructions)
+        },
+        max_output_tokens: Some(settings.max_output_tokens),
+        temperature: Some(settings.temperature),
+        top_p: Some(settings.top_p),
+    }
+}
+
+fn build_chat_completion_request<'a>(
+    settings: &'a TextSettings,
+    input: &'a str,
+    instructions: &'a str,
+) -> ChatCompletionRequest<'a> {
+    let instructions = instructions.trim();
+    let mut messages = Vec::new();
+    if !instructions.is_empty() {
+        messages.push(ChatMessage {
+            role: "system",
+            content: instructions,
+        });
+    }
+    messages.push(ChatMessage {
+        role: "user",
+        content: input,
+    });
+
+    ChatCompletionRequest {
+        model: &settings.model,
+        messages,
+        max_tokens: Some(settings.max_output_tokens),
+        temperature: Some(settings.temperature),
+        top_p: Some(settings.top_p),
+    }
+}
+
+fn post_json<T: Serialize + ?Sized>(
+    client: &Client,
+    url: &str,
+    api_key: &str,
+    request: &T,
+) -> Result<reqwest::blocking::Response, OpenAiError> {
+    client
+        .post(url)
+        .bearer_auth(api_key)
+        .json(request)
+        .send()
+        .map_err(|err| OpenAiError::Request(err.to_string()))
+}
+
+fn prefers_chat_completions(api_base: &str) -> bool {
+    api_base
+        .trim()
+        .trim_end_matches('/')
+        .ends_with("/chat/completions")
+}
+
+fn should_retry_with_chat_completions(status: StatusCode, body: &str) -> bool {
+    let body = body.to_ascii_lowercase();
+    let expects_messages = body.contains("missing field") && body.contains("messages");
+    let responses_unsupported =
+        matches!(
+            status,
+            StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+        ) && (body.is_empty() || body.contains("responses") || body.contains("not found"));
+
+    (status == StatusCode::BAD_REQUEST && expects_messages) || responses_unsupported
+}
+
+fn text_endpoint_url(api_base: &str, endpoint: TextEndpoint) -> String {
+    let base = api_base.trim().trim_end_matches('/');
+    let root = base
+        .strip_suffix("/chat/completions")
+        .or_else(|| base.strip_suffix("/responses"))
+        .unwrap_or(base)
+        .trim_end_matches('/');
+
+    format!("{}/{}", root, endpoint.path())
 }
 
 fn build_transcription_form(
@@ -196,6 +338,23 @@ fn extract_output_text(value: &Value) -> Result<String, OpenAiError> {
     Err(OpenAiError::Parse("响应中未找到文本输出".to_string()))
 }
 
+fn extract_chat_completion_text(value: &Value) -> Result<String, OpenAiError> {
+    let content = value.pointer("/choices/0/message/content");
+    if let Some(text) = content.and_then(|val| val.as_str()) {
+        return Ok(text.to_string());
+    }
+    if let Some(parts) = content.and_then(|val| val.as_array()) {
+        let output = parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(|val| val.as_str()))
+            .collect::<String>();
+        if !output.is_empty() {
+            return Ok(output);
+        }
+    }
+    Err(OpenAiError::Parse("响应中未找到文本输出".to_string()))
+}
+
 fn parse_streamed_text(body: &str) -> Result<String, OpenAiError> {
     let mut output = String::new();
     for line in body.lines() {
@@ -216,4 +375,133 @@ fn parse_streamed_text(body: &str) -> Result<String, OpenAiError> {
         }
     }
     Ok(output.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn text_settings() -> TextSettings {
+        TextSettings {
+            api_base: "https://api.openai.com/v1".to_string(),
+            api_key: "test-key".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            temperature: 0.5,
+            max_output_tokens: 800,
+            top_p: 1.0,
+            instructions: String::new(),
+        }
+    }
+
+    #[test]
+    fn response_request_uses_input_and_instructions() {
+        let settings = text_settings();
+        let request = build_response_request(&settings, "hello", "Be concise.");
+        let value = serde_json::to_value(request).expect("serialize response request");
+
+        assert_eq!(
+            value,
+            json!({
+                "model": "gpt-4o-mini",
+                "input": "hello",
+                "instructions": "Be concise.",
+                "max_output_tokens": 800,
+                "temperature": 0.5,
+                "top_p": 1.0
+            })
+        );
+    }
+
+    #[test]
+    fn response_request_omits_blank_instructions() {
+        let settings = text_settings();
+        let request = build_response_request(&settings, "hello", "  ");
+        let value = serde_json::to_value(request).expect("serialize response request");
+
+        assert!(value.get("instructions").is_none());
+    }
+
+    #[test]
+    fn chat_completion_request_uses_messages() {
+        let settings = text_settings();
+        let request = build_chat_completion_request(&settings, "hello", "Be concise.");
+        let value = serde_json::to_value(request).expect("serialize chat request");
+
+        assert_eq!(
+            value,
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [
+                    { "role": "system", "content": "Be concise." },
+                    { "role": "user", "content": "hello" }
+                ],
+                "max_tokens": 800,
+                "temperature": 0.5,
+                "top_p": 1.0
+            })
+        );
+    }
+
+    #[test]
+    fn text_endpoint_url_normalizes_explicit_endpoint_paths() {
+        assert_eq!(
+            text_endpoint_url(
+                "https://api.example.com/v1/chat/completions",
+                TextEndpoint::Responses
+            ),
+            "https://api.example.com/v1/responses"
+        );
+        assert_eq!(
+            text_endpoint_url(
+                "https://api.example.com/v1/responses",
+                TextEndpoint::ChatCompletions
+            ),
+            "https://api.example.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn bad_request_missing_messages_retries_with_chat_completions() {
+        let body = r#"{"error":{"message":"missing field `messages`"}}"#;
+        assert!(should_retry_with_chat_completions(
+            StatusCode::BAD_REQUEST,
+            body
+        ));
+    }
+
+    #[test]
+    fn chat_completion_text_extracts_string_content() {
+        let value = json!({
+            "choices": [
+                { "message": { "content": "polished text" } }
+            ]
+        });
+
+        assert_eq!(
+            extract_chat_completion_text(&value).expect("chat text"),
+            "polished text"
+        );
+    }
+
+    #[test]
+    fn chat_completion_text_extracts_text_parts() {
+        let value = json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            { "type": "text", "text": "polished " },
+                            { "type": "text", "text": "text" }
+                        ]
+                    }
+                }
+            ]
+        });
+
+        assert_eq!(
+            extract_chat_completion_text(&value).expect("chat text"),
+            "polished text"
+        );
+    }
 }
