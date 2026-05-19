@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "bun test",
+    "check:app-identity": "bun scripts/validate-app-identity.mjs",
     "preview": "vite preview",
     "tauri": "bun scripts/run-tauri.mjs",
     "clean:tauri-bundle": "bun scripts/clean-tauri-bundle-artifacts.mjs"

@@ -33,6 +33,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
+      "bundleName": "VTT Keyboard",
       "entitlements": "./Entitlements.plist"
     }
   },

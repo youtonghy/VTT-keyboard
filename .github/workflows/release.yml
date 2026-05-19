@@ -142,6 +142,9 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
 
+      - name: Validate app identity
+        run: bun run check:app-identity
+
       - name: Validate updater signing key
         shell: bash
         env:
