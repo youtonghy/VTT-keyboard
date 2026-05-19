@@ -248,29 +248,35 @@ fn read_ws_events(
 fn wait_for_task_started(socket: &mut WsStream) -> Result<(), AliyunRealtimeError> {
     let mut segments = Vec::new();
     let mut sequence = 0u64;
-    read_ws_events(&mut *socket, &mut segments, &mut sequence, |action| {
-        match action {
+    read_ws_events(
+        &mut *socket,
+        &mut segments,
+        &mut sequence,
+        |action| match action {
             ServerEventAction::TaskStarted => Ok(WsLoopAction::Done),
             ServerEventAction::TaskFinished => Err(AliyunRealtimeError::Request(
                 "服务端在任务启动前结束了任务".to_string(),
             )),
             ServerEventAction::Continue => Ok(WsLoopAction::Continue),
-        }
-    })
+        },
+    )
 }
 
 fn collect_transcription_result(socket: &mut WsStream) -> Result<String, AliyunRealtimeError> {
     let mut segments = Vec::<Segment>::new();
     let mut sequence = 0u64;
 
-    read_ws_events(&mut *socket, &mut segments, &mut sequence, |action| {
-        match action {
+    read_ws_events(
+        &mut *socket,
+        &mut segments,
+        &mut sequence,
+        |action| match action {
             ServerEventAction::TaskFinished => Ok(WsLoopAction::Done),
             ServerEventAction::Continue | ServerEventAction::TaskStarted => {
                 Ok(WsLoopAction::Continue)
             }
-        }
-    })?;
+        },
+    )?;
 
     if segments.is_empty() {
         return Ok(String::new());

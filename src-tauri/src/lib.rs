@@ -73,10 +73,7 @@ fn update_settings(
     state: State<AppState>,
     settings: Settings,
 ) -> Result<Settings, String> {
-    let previous = state
-        .settings_store
-        .load()
-        .map_err(|err| err.to_string())?;
+    let previous = state.settings_store.load().map_err(|err| err.to_string())?;
     let previous_local_model = previous.sensevoice.local_model.clone();
     let previous_model_id = previous.sensevoice.model_id.clone();
 
@@ -85,6 +82,7 @@ fn update_settings(
         .save_user_settings(&settings)
         .map_err(|err| err.to_string())?;
 
+    apply_macos_dock_visibility(&app, persisted.startup.hide_dock_icon)?;
     updater::handle_settings_changed(app.clone(), state.settings_store.clone());
 
     maybe_restart_local_runtime_if_switched(
@@ -97,6 +95,20 @@ fn update_settings(
     )?;
 
     Ok(persisted)
+}
+
+#[cfg(target_os = "macos")]
+fn apply_macos_dock_visibility(app: &tauri::AppHandle, hide_dock_icon: bool) -> Result<(), String> {
+    app.set_dock_visibility(!hide_dock_icon)
+        .map_err(|err| err.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_macos_dock_visibility(
+    _app: &tauri::AppHandle,
+    _hide_dock_icon: bool,
+) -> Result<(), String> {
+    Ok(())
 }
 
 #[tauri::command]
@@ -423,6 +435,14 @@ pub fn run() {
 
             let app_handle = app.handle();
             let store = SettingsStore::new(app_handle.clone());
+            let startup_settings = store.load().ok();
+            if let Some(settings) = startup_settings.as_ref() {
+                if let Err(_err) =
+                    apply_macos_dock_visibility(&app_handle, settings.startup.hide_dock_icon)
+                {
+                    dev_eprintln!("failed to apply macOS Dock visibility: {_err}");
+                }
+            }
             let startup_store = store.clone();
             let startup_app = app_handle.clone();
             let is_autostart_launch = std::env::args().any(|arg| arg == "--autostart");

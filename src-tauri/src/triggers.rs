@@ -83,10 +83,18 @@ pub fn apply_triggers(
                 .replace("{value}", &value)
                 .replace("{language}", &value)
                 .replace("{style}", &value);
-            let instructions =
-                merge_instructions(&settings.text_processing.openai.instructions, &prompt);
-            output =
-                openai::generate_text(&settings.text_processing.openai, &cleaned, &instructions)?;
+            let instructions = settings
+                .text_processing
+                .openai
+                .instructions
+                .trim()
+                .to_string();
+            let generation_input = build_trigger_generation_input(&prompt, &cleaned);
+            output = openai::generate_text(
+                &settings.text_processing.openai,
+                &generation_input,
+                &instructions,
+            )?;
             #[cfg(debug_assertions)]
             {
                 _log(&format!("触发卡片 {} 结果: {}", card.id, output));
@@ -290,14 +298,18 @@ fn normalize_match_char(ch: char) -> Option<char> {
     }
 }
 
-fn merge_instructions(base: &str, extra: &str) -> String {
-    if base.trim().is_empty() {
-        return extra.to_string();
+fn build_trigger_generation_input(prompt: &str, source_text: &str) -> String {
+    let prompt = prompt.trim();
+    let source_text = source_text.trim();
+
+    if prompt.is_empty() {
+        return source_text.to_string();
     }
-    if extra.trim().is_empty() {
-        return base.to_string();
+    if source_text.is_empty() {
+        return prompt.to_string();
     }
-    format!("{}\n{}", base.trim(), extra.trim())
+
+    format!("{prompt}\n\nSource text:\n{source_text}")
 }
 
 #[cfg(test)]
@@ -358,5 +370,17 @@ mod tests {
         let mut cache = RegexCache::new();
         let matched = match_card(&card, &sentences, &mut cache);
         assert_eq!(matched, Some(("日文".to_string(), true)));
+    }
+
+    #[test]
+    fn trigger_generation_input_keeps_prompt_and_source_together() {
+        let input = build_trigger_generation_input("整理为书面话", "我今天要确认一下方案");
+        assert_eq!(input, "整理为书面话\n\nSource text:\n我今天要确认一下方案");
+    }
+
+    #[test]
+    fn trigger_generation_input_uses_source_when_prompt_is_empty() {
+        let input = build_trigger_generation_input("  ", "我今天要确认一下方案");
+        assert_eq!(input, "我今天要确认一下方案");
     }
 }

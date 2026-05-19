@@ -97,10 +97,7 @@ pub fn generate_text(
         top_p: Some(settings.top_p),
     };
     let client = Client::new();
-    let url = format!(
-        "{}/responses",
-        settings.api_base.trim_end_matches('/')
-    );
+    let url = format!("{}/responses", settings.api_base.trim_end_matches('/'));
     let response = client
         .post(url)
         .bearer_auth(settings.api_key.trim())

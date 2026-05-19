@@ -263,6 +263,8 @@ pub struct AppearanceSettings {
 #[serde(rename_all = "camelCase")]
 pub struct StartupSettings {
     pub launch_on_boot: bool,
+    #[serde(default)]
+    pub hide_dock_icon: bool,
     #[serde(default = "default_auto_check_updates")]
     pub auto_check_updates: bool,
     #[serde(default = "default_auto_install_updates_on_quit")]
@@ -273,6 +275,7 @@ impl Default for StartupSettings {
     fn default() -> Self {
         Self {
             launch_on_boot: false,
+            hide_dock_icon: false,
             auto_check_updates: default_auto_check_updates(),
             auto_install_updates_on_quit: default_auto_install_updates_on_quit(),
         }
@@ -382,10 +385,9 @@ impl TranscriptionProvider {
     pub fn category(&self) -> ProviderCategory {
         match self {
             Self::Sensevoice => ProviderCategory::Local,
-            Self::Openai
-            | Self::Volcengine
-            | Self::AliyunAsr
-            | Self::AliyunParaformer => ProviderCategory::Cloud,
+            Self::Openai | Self::Volcengine | Self::AliyunAsr | Self::AliyunParaformer => {
+                ProviderCategory::Cloud
+            }
         }
     }
 
@@ -542,11 +544,26 @@ mod tests {
 
     #[test]
     fn provider_category_classification() {
-        assert_eq!(TranscriptionProvider::Openai.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::Volcengine.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::AliyunAsr.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::AliyunParaformer.category(), ProviderCategory::Cloud);
-        assert_eq!(TranscriptionProvider::Sensevoice.category(), ProviderCategory::Local);
+        assert_eq!(
+            TranscriptionProvider::Openai.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::Volcengine.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::AliyunAsr.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::AliyunParaformer.category(),
+            ProviderCategory::Cloud
+        );
+        assert_eq!(
+            TranscriptionProvider::Sensevoice.category(),
+            ProviderCategory::Local
+        );
     }
 
     #[test]
