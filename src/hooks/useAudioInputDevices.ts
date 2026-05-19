@@ -34,9 +34,10 @@ export function useAudioInputDevices(isActive: boolean) {
     }
   }, []);
 
-  const testDevice = useCallback(async (inputDeviceName: string) => {
+  const testDevice = useCallback(async (inputDeviceName: string, durationMs = 180) => {
     return invoke<AudioInputTestResult>("test_audio_input_device", {
       inputDeviceName,
+      durationMs,
     });
   }, []);
 

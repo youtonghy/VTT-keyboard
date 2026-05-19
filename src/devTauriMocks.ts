@@ -217,8 +217,8 @@ export async function setupDevTauriMocks() {
           ];
         case "test_audio_input_device":
           return {
-            peakLevel: 0.52,
-            averageLevel: 0.18,
+            peakLevel: 0.2 + Math.random() * 0.55,
+            averageLevel: 0.08 + Math.random() * 0.18,
             sampleCount: 24000,
             sampleRate: 48000,
             channels: 1,

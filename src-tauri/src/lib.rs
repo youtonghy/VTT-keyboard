@@ -223,13 +223,16 @@ fn list_audio_input_devices() -> Result<Vec<AudioInputDevice>, String> {
 }
 
 #[tauri::command]
-fn test_audio_input_device(input_device_name: String) -> Result<AudioInputTestResult, String> {
+fn test_audio_input_device(
+    input_device_name: String,
+    duration_ms: Option<u64>,
+) -> Result<AudioInputTestResult, String> {
     let selected = input_device_name
         .trim()
         .is_empty()
         .then_some(None)
         .unwrap_or(Some(input_device_name.as_str()));
-    recorder::test_input_device(selected, 900).map_err(|err| err.to_string())
+    recorder::test_input_device(selected, duration_ms.unwrap_or(200)).map_err(|err| err.to_string())
 }
 
 #[tauri::command]

@@ -71,10 +71,9 @@
     "systemDeviceHint": "Using the system's automatic input: {{device}}.",
     "systemDeviceFallbackHint": "Using the system's automatic input device.",
     "selectedDeviceHint": "Pinned to {{device}}.",
-    "testInput": "Test Mic",
-    "testingInput": "Testing...",
+    "testInput": "Start Mic Test",
+    "stopTestingInput": "Stop Test",
     "inputLevel": "Input level",
-    "testSuccess": "Microphone test completed",
     "testError": "Microphone test failed: {{error}}"
   },
   "openai": {

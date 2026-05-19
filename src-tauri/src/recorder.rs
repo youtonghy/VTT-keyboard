@@ -218,7 +218,10 @@ pub fn list_input_devices() -> Result<Vec<AudioInputDevice>, RecorderError> {
         let name = device
             .name()
             .map_err(|err| RecorderError::DeviceQuery(err.to_string()))?;
-        if result.iter().any(|item: &AudioInputDevice| item.name == name) {
+        if result
+            .iter()
+            .any(|item: &AudioInputDevice| item.name == name)
+        {
             continue;
         }
         result.push(AudioInputDevice {
@@ -269,7 +272,7 @@ pub fn test_input_device(
     stream
         .play()
         .map_err(|err| RecorderError::Stream(err.to_string()))?;
-    std::thread::sleep(Duration::from_millis(duration_ms.clamp(200, 3000)));
+    std::thread::sleep(Duration::from_millis(duration_ms.clamp(80, 3000)));
     drop(stream);
 
     let samples = buffer.lock().map_err(|_| RecorderError::LockPoisoned)?;
@@ -286,7 +289,9 @@ fn resolve_input_device(
     host: &cpal::Host,
     input_device_name: Option<&str>,
 ) -> Result<Device, RecorderError> {
-    let requested = input_device_name.map(str::trim).filter(|value| !value.is_empty());
+    let requested = input_device_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let Some(requested_name) = requested else {
         return host
             .default_input_device()

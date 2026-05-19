@@ -1,5 +1,5 @@
 import { Button, Label, ListBox, ProgressBar, Select } from "@heroui/react";
-import { Check, RefreshCw, Volume2 } from "lucide-react";
+import { Check, RefreshCw, Square, Volume2 } from "lucide-react";
 import type { TFunction } from "i18next";
 import type { Settings } from "../../types/settings";
 import type {
@@ -15,7 +15,7 @@ interface RecordingSettingsSectionProps {
   devicesError: string;
   devicesLoading: boolean;
   inputTestResult: AudioInputTestResult | null;
-  inputTesting: boolean;
+  inputTestActive: boolean;
   t: TFunction;
   onRefreshDevices: () => void;
   onTestInput: () => void;
@@ -30,7 +30,7 @@ export function RecordingSettingsSection({
   devicesError,
   devicesLoading,
   inputTestResult,
-  inputTesting,
+  inputTestActive,
   t,
   onRefreshDevices,
   onTestInput,
@@ -133,12 +133,11 @@ export function RecordingSettingsSection({
         <div className="recording-test-row">
           <Button
             type="button"
-            variant="secondary"
-            isPending={inputTesting}
+            variant={inputTestActive ? "danger-soft" : "secondary"}
             onPress={onTestInput}
           >
-            <Volume2 size={16} />
-            {inputTesting ? t("recording.testingInput") : t("recording.testInput")}
+            {inputTestActive ? <Square size={16} /> : <Volume2 size={16} />}
+            {inputTestActive ? t("recording.stopTestingInput") : t("recording.testInput")}
           </Button>
           <ProgressBar
             aria-label={t("recording.inputLevel")}

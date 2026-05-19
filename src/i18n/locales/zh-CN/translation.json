@@ -71,10 +71,9 @@
                       "systemDeviceHint":  "正在使用系统自动选择：{{device}}。",
                       "systemDeviceFallbackHint":  "正在使用系统自动选择的输入设备。",
                       "selectedDeviceHint":  "已固定使用 {{device}}。",
-                      "testInput":  "测试麦克风",
-                      "testingInput":  "测试中...",
+                      "testInput":  "开始测试麦克风",
+                      "stopTestingInput":  "停止测试",
                       "inputLevel":  "输入音量",
-                      "testSuccess":  "麦克风测试完成",
                       "testError":  "麦克风测试失败：{{error}}"
                   },
     "openai":  {

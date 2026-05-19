@@ -346,7 +346,10 @@ mod tests {
         let normalized = normalize_settings(&settings);
 
         assert_eq!(normalized.recording.segment_seconds, 60);
-        assert_eq!(normalized.recording.input_device_name, "USB Audio Interface");
+        assert_eq!(
+            normalized.recording.input_device_name,
+            "USB Audio Interface"
+        );
     }
 
     #[test]

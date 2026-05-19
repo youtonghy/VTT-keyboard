@@ -104,7 +104,7 @@ function App() {
   const [historyItems, setHistoryItems] = useState<TranscriptionHistoryItem[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] =
     useState<TranscriptionHistoryItem | null>(null);
-  const [inputTesting, setInputTesting] = useState(false);
+  const [inputTestActive, setInputTestActive] = useState(false);
   const [inputTestResult, setInputTestResult] = useState<AudioInputTestResult | null>(null);
   const supportsSherpaOnnxSenseVoice =
     appInfo?.supportsSherpaOnnxSenseVoice ?? true;
@@ -311,20 +311,47 @@ function App() {
     }));
   };
 
-  const handleTestAudioInput = async () => {
-    if (!draft || inputTesting) {
+  useEffect(() => {
+    if (!inputTestActive || !draft || activeSection !== "recording") {
       return;
     }
-    setInputTesting(true);
-    try {
-      const result = await testDevice(draft.recording.inputDeviceName ?? "");
-      setInputTestResult(result);
-      toast.success(t("recording.testSuccess"));
-    } catch (error) {
-      toast.error(t("recording.testError", { error: toErrorMessage(error) }));
-    } finally {
-      setInputTesting(false);
+
+    let cancelled = false;
+    const inputDeviceName = draft.recording.inputDeviceName ?? "";
+
+    const runTestLoop = async () => {
+      try {
+        while (!cancelled) {
+          const result = await testDevice(inputDeviceName, 180);
+          if (cancelled) {
+            return;
+          }
+          setInputTestResult(result);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(t("recording.testError", { error: toErrorMessage(error) }));
+          setInputTestActive(false);
+        }
+      }
+    };
+
+    void runTestLoop();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, draft, inputTestActive, t, testDevice]);
+
+  useEffect(() => {
+    if (activeSection !== "recording") {
+      setInputTestActive(false);
     }
+  }, [activeSection]);
+
+  const handleTestAudioInput = () => {
+    setInputTestResult(null);
+    setInputTestActive((active) => !active);
   };
 
   const handleClearHistory = async () => {
@@ -549,7 +576,7 @@ function App() {
                 devicesError={audioInputDevicesError}
                 devicesLoading={audioInputDevicesLoading}
                 inputTestResult={inputTestResult}
-                inputTesting={inputTesting}
+                inputTestActive={inputTestActive}
                 t={t}
                 onRefreshDevices={refreshDevices}
                 onTestInput={handleTestAudioInput}
