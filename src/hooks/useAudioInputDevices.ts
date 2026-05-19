@@ -14,8 +14,17 @@ export interface AudioInputTestResult {
   channels: number;
 }
 
+export interface MicrophonePermissionStatus {
+  status: string;
+  supported: boolean;
+}
+
 export function useAudioInputDevices(isActive: boolean) {
   const [devices, setDevices] = useState<AudioInputDevice[]>([]);
+  const [permissionStatus, setPermissionStatus] = useState<MicrophonePermissionStatus>({
+    status: "unknown",
+    supported: false,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,7 +32,11 @@ export function useAudioInputDevices(isActive: boolean) {
     setLoading(true);
     setError("");
     try {
-      const nextDevices = await invoke<AudioInputDevice[]>("list_audio_input_devices");
+      const [nextPermissionStatus, nextDevices] = await Promise.all([
+        invoke<MicrophonePermissionStatus>("get_microphone_permission_status"),
+        invoke<AudioInputDevice[]>("list_audio_input_devices"),
+      ]);
+      setPermissionStatus(nextPermissionStatus);
       setDevices(nextDevices);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -51,6 +64,7 @@ export function useAudioInputDevices(isActive: boolean) {
     devices,
     error,
     loading,
+    permissionStatus,
     refreshDevices,
     testDevice,
   };

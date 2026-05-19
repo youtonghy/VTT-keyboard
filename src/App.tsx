@@ -130,6 +130,7 @@ function App() {
     devices: audioInputDevices,
     error: audioInputDevicesError,
     loading: audioInputDevicesLoading,
+    permissionStatus: microphonePermissionStatus,
     refreshDevices,
     testDevice,
   } = useAudioInputDevices(isRecordingSectionActive);
@@ -575,6 +576,7 @@ function App() {
                 devices={audioInputDevices}
                 devicesError={audioInputDevicesError}
                 devicesLoading={audioInputDevicesLoading}
+                microphonePermissionStatus={microphonePermissionStatus}
                 inputTestResult={inputTestResult}
                 inputTestActive={inputTestActive}
                 t={t}

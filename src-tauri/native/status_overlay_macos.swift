@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 
 private enum DictationStatus: Int32 {
@@ -251,4 +252,20 @@ public func status_overlay_hide() {
 @_cdecl("status_overlay_cleanup")
 public func status_overlay_cleanup() {
     StatusOverlayController.shared.cleanup()
+}
+
+@_cdecl("macos_microphone_permission_status_code")
+public func macos_microphone_permission_status_code() -> Int32 {
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .notDetermined:
+        return 0
+    case .restricted:
+        return 1
+    case .denied:
+        return 2
+    case .authorized:
+        return 3
+    @unknown default:
+        return -1
+    }
 }

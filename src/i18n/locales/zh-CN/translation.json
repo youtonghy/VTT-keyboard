@@ -74,7 +74,13 @@
                       "testInput":  "开始测试麦克风",
                       "stopTestingInput":  "停止测试",
                       "inputLevel":  "输入音量",
-                      "testError":  "麦克风测试失败：{{error}}"
+                      "testError":  "麦克风测试失败：{{error}}",
+                      "microphonePermission":  {
+                                                     "notDetermined":  "macOS 尚未授权麦克风。点击测试麦克风或开始录音后，请在系统弹窗中允许访问。",
+                                                     "restricted":  "macOS 当前限制了麦克风访问，请检查“系统设置 > 隐私与安全性 > 麦克风”。",
+                                                     "denied":  "macOS 已拒绝麦克风访问，请在“系统设置 > 隐私与安全性 > 麦克风”中为本应用开启权限。",
+                                                     "unknown":  "无法读取 macOS 麦克风权限状态，请检查系统隐私设置。"
+                                                 }
                   },
     "openai":  {
                    "apiBase":  "API 基础地址",

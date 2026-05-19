@@ -470,6 +470,14 @@
     overflow-wrap: anywhere;
   }
 
+  .recording-permission-status {
+    @apply m-0 rounded-lg border px-3 py-2 text-sm;
+    border-color: #b57614;
+    color: #8a560f;
+    background-color: color-mix(in oklab, #f5b84b 16%, transparent);
+    overflow-wrap: anywhere;
+  }
+
   .recording-test-row {
     @apply grid gap-3 md:grid-cols-[auto_minmax(12rem,1fr)] md:items-center;
   }

@@ -5,6 +5,15 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
 
+#[cfg(target_os = "macos")]
+#[link(name = "AVFoundation", kind = "framework")]
+extern "C" {}
+
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn macos_microphone_permission_status_code() -> i32;
+}
+
 #[derive(Debug, Error)]
 pub enum RecorderError {
     #[error("无法获取默认输入设备")]
@@ -38,6 +47,13 @@ pub struct AudioInputTestResult {
     pub sample_count: usize,
     pub sample_rate: u32,
     pub channels: u16,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MicrophonePermissionStatus {
+    pub status: String,
+    pub supported: bool,
 }
 
 #[derive(Clone)]
@@ -232,6 +248,24 @@ pub fn list_input_devices() -> Result<Vec<AudioInputDevice>, RecorderError> {
     Ok(result)
 }
 
+pub fn microphone_permission_status() -> MicrophonePermissionStatus {
+    #[cfg(target_os = "macos")]
+    {
+        return MicrophonePermissionStatus {
+            status: macos_microphone_permission_status(),
+            supported: true,
+        };
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        MicrophonePermissionStatus {
+            status: "unsupported".to_string(),
+            supported: false,
+        }
+    }
+}
+
 pub fn test_input_device(
     input_device_name: Option<&str>,
     duration_ms: u64,
@@ -329,6 +363,19 @@ fn calculate_average_level(samples: &[i16]) -> f32 {
         .map(|sample| sample.unsigned_abs() as f64 / i16::MAX as f64)
         .sum::<f64>();
     (sum / samples.len() as f64).clamp(0.0, 1.0) as f32
+}
+
+#[cfg(target_os = "macos")]
+fn macos_microphone_permission_status() -> String {
+    let status = unsafe { macos_microphone_permission_status_code() };
+    match status {
+        0 => "notDetermined",
+        1 => "restricted",
+        2 => "denied",
+        3 => "authorized",
+        _ => "unknown",
+    }
+    .to_string()
 }
 
 #[cfg(test)]

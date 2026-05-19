@@ -215,6 +215,11 @@ export async function setupDevTauriMocks() {
             { name: "MacBook Pro Microphone", isDefault: true },
             { name: "USB Audio Interface", isDefault: false },
           ];
+        case "get_microphone_permission_status":
+          return {
+            status: "authorized",
+            supported: true,
+          };
         case "test_audio_input_device":
           return {
             peakLevel: 0.2 + Math.random() * 0.55,

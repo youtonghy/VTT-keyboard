@@ -5,6 +5,7 @@ import type { Settings } from "../../types/settings";
 import type {
   AudioInputDevice,
   AudioInputTestResult,
+  MicrophonePermissionStatus,
 } from "../../hooks/useAudioInputDevices";
 import { HeroField } from "../HeroField";
 import { NumberWheelInput } from "../NumberWheelInput";
@@ -14,6 +15,7 @@ interface RecordingSettingsSectionProps {
   devices: AudioInputDevice[];
   devicesError: string;
   devicesLoading: boolean;
+  microphonePermissionStatus: MicrophonePermissionStatus;
   inputTestResult: AudioInputTestResult | null;
   inputTestActive: boolean;
   t: TFunction;
@@ -29,6 +31,7 @@ export function RecordingSettingsSection({
   devices,
   devicesError,
   devicesLoading,
+  microphonePermissionStatus,
   inputTestResult,
   inputTestActive,
   t,
@@ -40,6 +43,11 @@ export function RecordingSettingsSection({
   const selectedDevice = devices.find((device) => device.name === selectedInputDeviceName);
   const defaultDevice = devices.find((device) => device.isDefault);
   const level = Math.round((inputTestResult?.peakLevel ?? 0) * 100);
+  const permissionTranslationKey =
+    microphonePermissionStatus.supported &&
+    microphonePermissionStatus.status !== "authorized"
+      ? `recording.microphonePermission.${microphonePermissionStatus.status}`
+      : "";
 
   return (
     <>
@@ -129,6 +137,9 @@ export function RecordingSettingsSection({
         </Select>
 
         {devicesError ? <p className="recording-device-error">{devicesError}</p> : null}
+        {permissionTranslationKey ? (
+          <p className="recording-permission-status">{t(permissionTranslationKey)}</p>
+        ) : null}
 
         <div className="recording-test-row">
           <Button

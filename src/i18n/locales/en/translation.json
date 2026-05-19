@@ -74,7 +74,13 @@
     "testInput": "Start Mic Test",
     "stopTestingInput": "Stop Test",
     "inputLevel": "Input level",
-    "testError": "Microphone test failed: {{error}}"
+    "testError": "Microphone test failed: {{error}}",
+    "microphonePermission": {
+      "notDetermined": "macOS has not granted microphone access yet. Start a mic test or recording, then allow access in the system prompt.",
+      "restricted": "macOS is restricting microphone access. Check System Settings > Privacy & Security > Microphone.",
+      "denied": "macOS has denied microphone access. Enable this app in System Settings > Privacy & Security > Microphone.",
+      "unknown": "Could not read the macOS microphone permission status. Check the system privacy settings."
+    }
   },
   "openai": {
     "apiBase": "API Base URL",

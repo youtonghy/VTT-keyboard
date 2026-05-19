@@ -14,7 +14,9 @@ mod updater;
 mod util;
 mod volcengine;
 
-use recorder::{AudioInputDevice, AudioInputTestResult, RecorderService};
+use recorder::{
+    AudioInputDevice, AudioInputTestResult, MicrophonePermissionStatus, RecorderService,
+};
 use sensevoice::model::{
     resolve_vllm_model_id, spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind,
 };
@@ -220,6 +222,11 @@ fn start_recording(state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 fn list_audio_input_devices() -> Result<Vec<AudioInputDevice>, String> {
     recorder::list_input_devices().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn get_microphone_permission_status() -> MicrophonePermissionStatus {
+    recorder::microphone_permission_status()
 }
 
 #[tauri::command]
@@ -574,6 +581,7 @@ pub fn run() {
             start_recording,
             stop_recording,
             list_audio_input_devices,
+            get_microphone_permission_status,
             test_audio_input_device,
             get_transcription_history,
             clear_transcription_history,
