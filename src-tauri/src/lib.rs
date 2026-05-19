@@ -15,10 +15,10 @@ mod updater;
 mod util;
 mod volcengine;
 
+use permissions::MacosPermissionStatus;
 use recorder::{
     AudioInputDevice, AudioInputTestResult, MicrophonePermissionStatus, RecorderService,
 };
-use permissions::MacosPermissionStatus;
 use sensevoice::model::{
     resolve_vllm_model_id, spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind,
 };
@@ -265,6 +265,15 @@ fn stop_recording(state: State<AppState>) -> Result<(), String> {
     processing::emit_status("transcribing");
     state.transcription_dispatcher.enqueue(audio)?;
     Ok(())
+}
+
+#[tauri::command]
+fn abort_recording(state: State<AppState>) -> Result<bool, String> {
+    let was_recording = state.recorder.abort().map_err(|err| err.to_string())?;
+    if was_recording {
+        status_native::hide();
+    }
+    Ok(was_recording)
 }
 
 #[tauri::command]
@@ -525,6 +534,14 @@ pub fn run() {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         dev_eprintln!("close requested, hiding window to tray instead");
+                        let state = window_clone.app_handle().state::<AppState>();
+                        match state.recorder.abort() {
+                            Ok(true) => status_native::hide(),
+                            Ok(false) => {}
+                            Err(_err) => {
+                                dev_eprintln!("failed to abort recording on window close: {_err}");
+                            }
+                        }
                         let _ = window_clone.hide();
                     }
                 });
@@ -597,6 +614,7 @@ pub fn run() {
             import_settings,
             start_recording,
             stop_recording,
+            abort_recording,
             list_audio_input_devices,
             get_microphone_permission_status,
             request_microphone_permission,

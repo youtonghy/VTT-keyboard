@@ -83,6 +83,7 @@ enum RecorderCommand {
         reply: mpsc::Sender<Result<(), RecorderError>>,
     },
     Stop(mpsc::Sender<Result<RecordedAudio, RecorderError>>),
+    Abort(mpsc::Sender<Result<bool, RecorderError>>),
 }
 
 impl RecorderService {
@@ -101,6 +102,10 @@ impl RecorderService {
                     }
                     Ok(RecorderCommand::Stop(reply)) => {
                         let result = recorder.stop();
+                        let _ = reply.send(result);
+                    }
+                    Ok(RecorderCommand::Abort(reply)) => {
+                        let result = recorder.abort();
                         let _ = reply.send(result);
                     }
                     Err(_) => break,
@@ -122,6 +127,12 @@ impl RecorderService {
     pub fn stop(&self) -> Result<RecordedAudio, RecorderError> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let _ = self.sender.send(RecorderCommand::Stop(reply_tx));
+        reply_rx.recv().unwrap_or(Err(RecorderError::NotRecording))
+    }
+
+    pub fn abort(&self) -> Result<bool, RecorderError> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let _ = self.sender.send(RecorderCommand::Abort(reply_tx));
         reply_rx.recv().unwrap_or(Err(RecorderError::NotRecording))
     }
 }
@@ -192,22 +203,42 @@ impl Recorder {
     }
 
     pub fn stop(&self) -> Result<RecordedAudio, RecorderError> {
-        let mut inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
-        let Some(config) = inner.config.clone() else {
-            return Err(RecorderError::NotRecording);
+        let (stream, buffer, config) = {
+            let mut inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
+            let Some(config) = inner.config.take() else {
+                return Err(RecorderError::NotRecording);
+            };
+            let stream = inner.stream.take();
+            let buffer = inner.buffer.clone();
+            (stream, buffer, config)
         };
-        let buffer = inner
-            .buffer
-            .lock()
-            .map_err(|_| RecorderError::LockPoisoned)?
-            .clone();
-        inner.stream.take();
-        inner.config = None;
+
+        drop(stream);
+        let mut guard = buffer.lock().map_err(|_| RecorderError::LockPoisoned)?;
+        let samples = guard.clone();
+        guard.clear();
         Ok(RecordedAudio {
-            samples: buffer,
+            samples,
             sample_rate: config.sample_rate.0,
             channels: config.channels,
         })
+    }
+
+    pub fn abort(&self) -> Result<bool, RecorderError> {
+        let (stream, buffer, was_recording) = {
+            let mut inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
+            let stream = inner.stream.take();
+            let was_recording = stream.is_some() || inner.config.is_some();
+            inner.config = None;
+            let buffer = inner.buffer.clone();
+            (stream, buffer, was_recording)
+        };
+
+        drop(stream);
+        if let Ok(mut guard) = buffer.lock() {
+            guard.clear();
+        }
+        Ok(was_recording)
     }
 }
 
@@ -278,8 +309,10 @@ pub fn request_microphone_permission() -> MicrophonePermissionStatus {
     #[cfg(target_os = "macos")]
     {
         return MicrophonePermissionStatus {
-            status: permission_status_from_code(unsafe { macos_request_microphone_permission_code() })
-                .to_string(),
+            status: permission_status_from_code(unsafe {
+                macos_request_microphone_permission_code()
+            })
+            .to_string(),
             supported: true,
         };
     }
@@ -430,7 +463,10 @@ fn ensure_microphone_permission_already_authorized() -> Result<(), RecorderError
 
 #[cfg(test)]
 mod tests {
-    use super::{calculate_average_level, calculate_peak_level, permission_status_from_code};
+    use super::{
+        calculate_average_level, calculate_peak_level, permission_status_from_code, Recorder,
+        RecorderError,
+    };
 
     #[test]
     fn input_level_calculation_handles_empty_and_signal_samples() {
@@ -452,5 +488,16 @@ mod tests {
         assert_eq!(permission_status_from_code(2), "denied");
         assert_eq!(permission_status_from_code(3), "authorized");
         assert_eq!(permission_status_from_code(-1), "unknown");
+    }
+
+    #[test]
+    fn abort_is_idempotent_when_recorder_is_idle() {
+        let recorder = Recorder::new();
+
+        assert!(!recorder.abort().expect("idle abort should succeed"));
+        assert!(!recorder
+            .abort()
+            .expect("repeated idle abort should succeed"));
+        assert!(matches!(recorder.stop(), Err(RecorderError::NotRecording)));
     }
 }

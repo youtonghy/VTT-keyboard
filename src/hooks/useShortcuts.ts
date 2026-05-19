@@ -77,10 +77,47 @@ export function useShortcuts(
     let pressStartTime: number | null = null;
     let keyDown = false;
     let inFlight = false;
+    let startInFlight = false;
+    let stopPending = false;
+
+    const stopRecording = (silent = false) => {
+      isRecording = false;
+      pressStartTime = null;
+      return invoke("stop_recording")
+        .then(() => {
+          stopPending = false;
+          logDebug("stop_recording ok");
+        })
+        .catch((error) => {
+          const message = toErrorMessage(error);
+          logError("stop_recording failed", message);
+          if (!silent) {
+            toast.error(tRef.current("shortcut.stopError", { error: message }));
+          }
+          return releaseMicrophoneCapture();
+        });
+    };
+
+    const releaseMicrophoneCapture = (silent = true) => {
+      isRecording = false;
+      pressStartTime = null;
+      return invoke("abort_recording")
+        .then(() => logDebug("abort_recording ok"))
+        .catch((error) => {
+          const message = toErrorMessage(error);
+          logError("abort_recording failed", message);
+          if (!silent) {
+            toast.error(tRef.current("shortcut.stopError", { error: message }));
+          }
+        });
+    };
 
     const doStart = async () => {
       if (inFlight) return;
       inFlight = true;
+      startInFlight = true;
+      stopPending = false;
+      pressStartTime = Date.now();
       try {
         const canStart = await (beforeStartRecordingRef.current?.() ?? true);
         if (!canStart) {
@@ -93,6 +130,9 @@ export function useShortcuts(
         logDebug("start_recording ok");
         isRecording = true;
         pressStartTime = Date.now();
+        if (stopPending) {
+          await stopRecording();
+        }
       } catch (error) {
         isRecording = false;
         pressStartTime = null;
@@ -100,25 +140,16 @@ export function useShortcuts(
         logError("start_recording failed", message);
         toast.error(tRef.current("shortcut.startError", { error: message }));
       } finally {
+        startInFlight = false;
         inFlight = false;
       }
     };
 
     const doStop = (silent = false) => {
+      stopPending = true;
       if (inFlight) return;
       inFlight = true;
-      isRecording = false;
-      pressStartTime = null;
-      invoke("stop_recording")
-        .then(() => logDebug("stop_recording ok"))
-        .catch((error) => {
-          const message = toErrorMessage(error);
-          logError("stop_recording failed", message);
-          if (!silent) {
-            toast.error(tRef.current("shortcut.stopError", { error: message }));
-          }
-        })
-        .finally(() => { inFlight = false; });
+      stopRecording(silent).finally(() => { inFlight = false; });
     };
 
     const registerShortcut = async () => {
@@ -151,7 +182,7 @@ export function useShortcuts(
           if (event.state === "Released") {
             keyDown = false;
 
-            if (isRecording && pressStartTime != null) {
+            if ((isRecording || startInFlight) && pressStartTime != null) {
               const duration = Date.now() - pressStartTime;
               if (duration >= LONG_PRESS_THRESHOLD_MS) {
                 doStop();
@@ -175,9 +206,7 @@ export function useShortcuts(
 
     return () => {
       active = false;
-      if (isRecording) {
-        invoke("stop_recording").catch(() => {});
-      }
+      void releaseMicrophoneCapture();
       unregisterAll()
         .then(() => logDebug("unregister all cleanup"))
         .catch((error) => logError("unregister cleanup failed", error));

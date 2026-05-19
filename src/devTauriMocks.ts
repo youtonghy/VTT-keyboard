@@ -212,6 +212,7 @@ export async function setupDevTauriMocks() {
         case "set_tray_menu":
         case "start_recording":
         case "stop_recording":
+        case "abort_recording":
         case "install_downloaded_update":
         case "retry_update_check":
         case "dismiss_update_error":
