@@ -50,6 +50,10 @@ import {
   SHERPA_LANGUAGE_OPTIONS,
   QWEN3_ASR_MODEL_VARIANTS,
 } from "./utils/sensevoice";
+import {
+  canStartMicrophoneTest,
+  unsupportedMacOSPermissionStatus,
+} from "./utils/permissions";
 
 const MAX_HISTORY_ITEMS = 200;
 const HISTORY_PREVIEW_MAX_CHARS = 50;
@@ -407,13 +411,30 @@ function App() {
 
   const handleTestAudioInput = () => {
     if (!inputTestActive) {
-      void ensureMicrophonePermission().then((allowed) => {
-        if (!allowed) {
-          return;
-        }
-        setInputTestResult(null);
-        setInputTestActive(true);
-      });
+      void refreshPermissions()
+        .then((nextPermissions) => {
+          const microphoneStatus =
+            nextPermissions.microphone?.status ??
+            unsupportedMacOSPermissionStatus.microphone.status;
+          if (!canStartMicrophoneTest(isMacOS, microphoneStatus)) {
+            toast.error(
+              t("permissions.blocked.microphone", {
+                status: t(`permissions.status.${microphoneStatus}`, {
+                  defaultValue: t("permissions.status.unknown"),
+                }),
+              })
+            );
+            setActiveSection("permissions");
+            return;
+          }
+
+          setInputTestResult(null);
+          setInputTestActive(true);
+        })
+        .catch((error) => {
+          toast.error(t("permissions.refreshError", { error: toErrorMessage(error) }));
+          setActiveSection("permissions");
+        });
       return;
     }
 

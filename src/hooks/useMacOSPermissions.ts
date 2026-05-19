@@ -1,49 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  unsupportedMacOSPermissionStatus,
+  type MacOSPermissionId,
+  type MacOSPermissionStatus,
+} from "../utils/permissions";
 
-export type MacOSPermissionId = "microphone" | "accessibility";
-
-export interface MacOSPermissionItem {
-  id: MacOSPermissionId;
-  status: string;
-  required: boolean;
-}
-
-export interface MacOSPermissionStatus {
-  supported: boolean;
-  microphone: MacOSPermissionItem;
-  accessibility: MacOSPermissionItem;
-}
-
-const unsupportedPermissionStatus: MacOSPermissionStatus = {
-  supported: false,
-  microphone: {
-    id: "microphone",
-    status: "unsupported",
-    required: false,
-  },
-  accessibility: {
-    id: "accessibility",
-    status: "unsupported",
-    required: false,
-  },
-};
-
-export const isMacOSPermissionApproved = (status: string) =>
-  status === "authorized" || status === "approved";
+export {
+  isMacOSPermissionApproved,
+  type MacOSPermissionId,
+  type MacOSPermissionItem,
+  type MacOSPermissionStatus,
+} from "../utils/permissions";
 
 export function useMacOSPermissions(enabled: boolean) {
   const [permissions, setPermissions] = useState<MacOSPermissionStatus>(
-    unsupportedPermissionStatus
+    unsupportedMacOSPermissionStatus
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const refreshPermissions = useCallback(async () => {
     if (!enabled) {
-      setPermissions(unsupportedPermissionStatus);
-      return unsupportedPermissionStatus;
+      setPermissions(unsupportedMacOSPermissionStatus);
+      return unsupportedMacOSPermissionStatus;
     }
 
     setLoading(true);
@@ -64,8 +45,8 @@ export function useMacOSPermissions(enabled: boolean) {
   const requestPermission = useCallback(
     async (permissionId: MacOSPermissionId) => {
       if (!enabled) {
-        setPermissions(unsupportedPermissionStatus);
-        return unsupportedPermissionStatus;
+        setPermissions(unsupportedMacOSPermissionStatus);
+        return unsupportedMacOSPermissionStatus;
       }
 
       setLoading(true);
@@ -89,7 +70,7 @@ export function useMacOSPermissions(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) {
-      setPermissions(unsupportedPermissionStatus);
+      setPermissions(unsupportedMacOSPermissionStatus);
       return;
     }
 

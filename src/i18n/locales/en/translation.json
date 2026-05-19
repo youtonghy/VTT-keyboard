@@ -76,8 +76,6 @@
     "stopTestingInput": "Stop Test",
     "inputLevel": "Input level",
     "testError": "Microphone test failed: {{error}}",
-    "noInputSamplesWarning": "The microphone test did not receive any audio samples. Check that the selected device is available and that the packaged build includes the audio-input entitlement.",
-    "silentInputWarning": "Audio samples are arriving, but the level is always 0. Check macOS microphone access, muted input devices, and that the signed build includes the audio-input entitlement.",
     "microphonePermission": {
       "notDetermined": "macOS has not completed microphone authorization. Open Permissions and allow microphone access before recording.",
       "restricted": "macOS is restricting microphone access. Open System Settings > Privacy & Security > Microphone and enable VTT Keyboard.",
