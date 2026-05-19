@@ -216,6 +216,7 @@ export async function setupDevTauriMocks() {
             { name: "USB Audio Interface", isDefault: false },
           ];
         case "get_microphone_permission_status":
+        case "request_microphone_permission":
           return {
             status: "authorized",
             supported: true,
@@ -227,6 +228,7 @@ export async function setupDevTauriMocks() {
             sampleCount: 24000,
             sampleRate: 48000,
             channels: 1,
+            isSilent: false,
           };
         case "plugin:app|name":
           return "VTT Keyboard";

@@ -12,6 +12,7 @@ extern "C" {}
 #[cfg(target_os = "macos")]
 extern "C" {
     fn macos_microphone_permission_status_code() -> i32;
+    fn macos_request_microphone_permission_code() -> i32;
 }
 
 #[derive(Debug, Error)]
@@ -26,6 +27,8 @@ pub enum RecorderError {
     Config(String),
     #[error("无法启动录音: {0}")]
     Stream(String),
+    #[error("麦克风权限未授权: {0}")]
+    Permission(String),
     #[error("录音尚未开始")]
     NotRecording,
     #[error("录音状态锁异常")]
@@ -47,6 +50,7 @@ pub struct AudioInputTestResult {
     pub sample_count: usize,
     pub sample_rate: u32,
     pub channels: u16,
+    pub is_silent: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -132,6 +136,8 @@ impl Recorder {
     }
 
     pub fn start(&self, input_device_name: Option<&str>) -> Result<(), RecorderError> {
+        ensure_microphone_permission_authorized()?;
+
         let inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
         if inner.stream.is_some() {
             return Ok(());
@@ -266,10 +272,31 @@ pub fn microphone_permission_status() -> MicrophonePermissionStatus {
     }
 }
 
+pub fn request_microphone_permission() -> MicrophonePermissionStatus {
+    #[cfg(target_os = "macos")]
+    {
+        return MicrophonePermissionStatus {
+            status: permission_status_from_code(unsafe { macos_request_microphone_permission_code() })
+                .to_string(),
+            supported: true,
+        };
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        MicrophonePermissionStatus {
+            status: "unsupported".to_string(),
+            supported: false,
+        }
+    }
+}
+
 pub fn test_input_device(
     input_device_name: Option<&str>,
     duration_ms: u64,
 ) -> Result<AudioInputTestResult, RecorderError> {
+    ensure_microphone_permission_authorized()?;
+
     let host = cpal::default_host();
     let device = resolve_input_device(&host, input_device_name)?;
     let input_config = device
@@ -310,12 +337,16 @@ pub fn test_input_device(
     drop(stream);
 
     let samples = buffer.lock().map_err(|_| RecorderError::LockPoisoned)?;
+    let peak_level = calculate_peak_level(&samples);
+    let average_level = calculate_average_level(&samples);
+    let sample_count = samples.len();
     Ok(AudioInputTestResult {
-        peak_level: calculate_peak_level(&samples),
-        average_level: calculate_average_level(&samples),
-        sample_count: samples.len(),
+        peak_level,
+        average_level,
+        sample_count,
         sample_rate: config.sample_rate.0,
         channels: config.channels,
+        is_silent: sample_count > 0 && peak_level <= f32::EPSILON && average_level <= f32::EPSILON,
     })
 }
 
@@ -367,7 +398,10 @@ fn calculate_average_level(samples: &[i16]) -> f32 {
 
 #[cfg(target_os = "macos")]
 fn macos_microphone_permission_status() -> String {
-    let status = unsafe { macos_microphone_permission_status_code() };
+    permission_status_from_code(unsafe { macos_microphone_permission_status_code() }).to_string()
+}
+
+fn permission_status_from_code(status: i32) -> &'static str {
     match status {
         0 => "notDetermined",
         1 => "restricted",
@@ -375,12 +409,38 @@ fn macos_microphone_permission_status() -> String {
         3 => "authorized",
         _ => "unknown",
     }
-    .to_string()
+}
+
+fn ensure_microphone_permission_authorized() -> Result<(), RecorderError> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = request_microphone_permission();
+        return match status.status.as_str() {
+            "authorized" => Ok(()),
+            "notDetermined" => Err(RecorderError::Permission(
+                "macOS 尚未完成麦克风授权".to_string(),
+            )),
+            "restricted" => Err(RecorderError::Permission(
+                "macOS 当前限制了麦克风访问".to_string(),
+            )),
+            "denied" => Err(RecorderError::Permission(
+                "macOS 已拒绝麦克风访问，请在系统设置中开启本应用的麦克风权限".to_string(),
+            )),
+            _ => Err(RecorderError::Permission(
+                "无法确认 macOS 麦克风权限状态".to_string(),
+            )),
+        };
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{calculate_average_level, calculate_peak_level};
+    use super::{calculate_average_level, calculate_peak_level, permission_status_from_code};
 
     #[test]
     fn input_level_calculation_handles_empty_and_signal_samples() {
@@ -393,5 +453,14 @@ mod tests {
 
         assert!((peak - 1.0).abs() < f32::EPSILON);
         assert!(average > 0.49 && average < 0.51);
+    }
+
+    #[test]
+    fn microphone_permission_status_code_maps_expected_values() {
+        assert_eq!(permission_status_from_code(0), "notDetermined");
+        assert_eq!(permission_status_from_code(1), "restricted");
+        assert_eq!(permission_status_from_code(2), "denied");
+        assert_eq!(permission_status_from_code(3), "authorized");
+        assert_eq!(permission_status_from_code(-1), "unknown");
     }
 }

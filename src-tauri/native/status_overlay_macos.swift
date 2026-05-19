@@ -256,6 +256,50 @@ public func status_overlay_cleanup() {
 
 @_cdecl("macos_microphone_permission_status_code")
 public func macos_microphone_permission_status_code() -> Int32 {
+    microphoneAuthorizationStatusCode()
+}
+
+@_cdecl("macos_request_microphone_permission_code")
+public func macos_request_microphone_permission_code() -> Int32 {
+    if Thread.isMainThread {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: Int32 = -1
+        DispatchQueue.global(qos: .userInitiated).async {
+            result = requestMicrophonePermissionBlocking()
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return result
+    }
+
+    return requestMicrophonePermissionBlocking()
+}
+
+private func requestMicrophonePermissionBlocking() -> Int32 {
+    guard #available(macOS 10.14, *) else {
+        return 3
+    }
+
+    let currentStatus = microphoneAuthorizationStatusCode()
+    guard currentStatus == 0 else {
+        return currentStatus
+    }
+
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Int32 = -1
+    AVCaptureDevice.requestAccess(for: .audio) { granted in
+        result = granted ? 3 : 2
+        semaphore.signal()
+    }
+    semaphore.wait()
+    return result
+}
+
+private func microphoneAuthorizationStatusCode() -> Int32 {
+    guard #available(macOS 10.14, *) else {
+        return 3
+    }
+
     switch AVCaptureDevice.authorizationStatus(for: .audio) {
     case .notDetermined:
         return 0

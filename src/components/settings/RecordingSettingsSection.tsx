@@ -140,6 +140,12 @@ export function RecordingSettingsSection({
         {permissionTranslationKey ? (
           <p className="recording-permission-status">{t(permissionTranslationKey)}</p>
         ) : null}
+        {inputTestResult && inputTestResult.sampleCount === 0 ? (
+          <p className="recording-device-error">{t("recording.noInputSamplesWarning")}</p>
+        ) : null}
+        {inputTestResult?.isSilent ? (
+          <p className="recording-device-error">{t("recording.silentInputWarning")}</p>
+        ) : null}
 
         <div className="recording-test-row">
           <Button

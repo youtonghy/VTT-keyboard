@@ -230,6 +230,11 @@ fn get_microphone_permission_status() -> MicrophonePermissionStatus {
 }
 
 #[tauri::command]
+fn request_microphone_permission() -> MicrophonePermissionStatus {
+    recorder::request_microphone_permission()
+}
+
+#[tauri::command]
 fn test_audio_input_device(
     input_device_name: String,
     duration_ms: Option<u64>,
@@ -582,6 +587,7 @@ pub fn run() {
             stop_recording,
             list_audio_input_devices,
             get_microphone_permission_status,
+            request_microphone_permission,
             test_audio_input_device,
             get_transcription_history,
             clear_transcription_history,
