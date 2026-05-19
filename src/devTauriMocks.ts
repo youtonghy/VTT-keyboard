@@ -95,6 +95,7 @@ const createDefaultSettings = (): Settings => ({
   appearance: { theme: "system" },
   startup: {
     launchOnBoot: false,
+    hideDockIcon: false,
     autoCheckUpdates: true,
     autoInstallUpdatesOnQuit: true,
   },
