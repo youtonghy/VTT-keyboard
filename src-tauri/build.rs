@@ -31,6 +31,7 @@ fn main() {
     {
         compile_macos_swift_overlay();
 
+        println!("cargo:rustc-link-lib=framework=ApplicationServices");
         println!("cargo:rustc-link-lib=framework=AppKit");
         println!("cargo:rustc-link-lib=framework=Foundation");
     }

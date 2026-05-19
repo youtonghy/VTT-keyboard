@@ -1,6 +1,10 @@
+import ApplicationServices
 import AppKit
 import AVFoundation
 import Foundation
+
+private let commandKeyMask = CGEventFlags.maskCommand
+private let virtualKeyCodeV: CGKeyCode = 0x09
 
 private enum DictationStatus: Int32 {
     case recording = 0
@@ -273,6 +277,41 @@ public func macos_request_microphone_permission_code() -> Int32 {
     }
 
     return requestMicrophonePermissionBlocking()
+}
+
+@_cdecl("macos_send_paste_shortcut")
+public func macos_send_paste_shortcut(_ promptForAccessibility: Int32) -> Int32 {
+    guard ensureAccessibilityPermission(prompt: promptForAccessibility != 0) else {
+        return 1
+    }
+    guard let keyDown = CGEvent(
+        keyboardEventSource: nil,
+        virtualKey: virtualKeyCodeV,
+        keyDown: true
+    ), let keyUp = CGEvent(
+        keyboardEventSource: nil,
+        virtualKey: virtualKeyCodeV,
+        keyDown: false
+    ) else {
+        return -1
+    }
+
+    keyDown.flags = commandKeyMask
+    keyUp.flags = commandKeyMask
+    keyDown.post(tap: .cghidEventTap)
+    keyUp.post(tap: .cghidEventTap)
+    return 0
+}
+
+private func ensureAccessibilityPermission(prompt: Bool) -> Bool {
+    guard prompt else {
+        return AXIsProcessTrusted()
+    }
+
+    let options = [
+        kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+    ] as CFDictionary
+    return AXIsProcessTrustedWithOptions(options)
 }
 
 private func requestMicrophonePermissionBlocking() -> Int32 {
