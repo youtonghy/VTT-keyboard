@@ -108,6 +108,13 @@ private final class StatusOverlayController {
     private let maxWidth: CGFloat = 420.0
     private let height: CGFloat = 40.0
     private let bottomMargin: CGFloat = 48.0
+    private let windowLevel = NSWindow.Level.statusBar
+    private let collectionBehavior: NSWindow.CollectionBehavior = [
+        .canJoinAllSpaces,
+        .fullScreenAuxiliary,
+        .stationary,
+        .ignoresCycle,
+    ]
     private let dotSize: CGFloat = 8.0
     private let horizontalPadding: CGFloat = 14.0
     private let contentGap: CGFloat = 8.0
@@ -138,11 +145,14 @@ private final class StatusOverlayController {
         lock.unlock()
 
         performOnMain {
+            guard self.createPanelIfNeeded() else {
+                return
+            }
             self.updatePanelFrame(display: changed)
             if changed {
                 self.overlayView?.needsDisplay = true
             }
-            self.panel?.orderFrontRegardless()
+            self.presentPanel()
             self.visible = true
         }
     }
@@ -193,8 +203,8 @@ private final class StatusOverlayController {
         newPanel.ignoresMouseEvents = true
         newPanel.hidesOnDeactivate = false
         newPanel.isReleasedWhenClosed = false
-        newPanel.level = .floating
-        newPanel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        newPanel.level = windowLevel
+        newPanel.collectionBehavior = collectionBehavior
 
         let view = StatusOverlayView(frame: NSRect(origin: .zero, size: frame.size))
         view.wantsLayer = true
@@ -205,6 +215,28 @@ private final class StatusOverlayController {
         overlayView = view
         lastFrame = frame
         return true
+    }
+
+    private func presentPanel() {
+        guard let panel else {
+            return
+        }
+
+        panel.level = windowLevel
+        panel.collectionBehavior = collectionBehavior
+        panel.orderFrontRegardless()
+        panel.displayIfNeeded()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self, self.visible, let panel = self.panel else {
+                return
+            }
+            self.updatePanelFrame(display: true)
+            panel.level = self.windowLevel
+            panel.collectionBehavior = self.collectionBehavior
+            panel.orderFrontRegardless()
+            panel.displayIfNeeded()
+        }
     }
 
     private func updatePanelFrame(display: Bool) {
