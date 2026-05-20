@@ -652,3 +652,54 @@ pub fn run_sensevoice_worker(job_file: Option<&str>) -> i32 {
     };
     sensevoice::worker::run_worker(path)
 }
+
+#[cfg(test)]
+mod native_status_overlay_tests {
+    const MACOS_OVERLAY: &str = include_str!("../native/status_overlay_macos.swift");
+    const WINDOWS_OVERLAY: &str = include_str!("../native/status_overlay_win.cpp");
+    const LINUX_OVERLAY: &str = include_str!("../native/status_overlay_linux.c");
+
+    #[test]
+    fn native_overlay_platforms_use_expected_language_stacks() {
+        assert!(WINDOWS_OVERLAY.contains("#include <windows.h>"));
+        assert!(WINDOWS_OVERLAY.contains("#include <gdiplus.h>"));
+        assert!(WINDOWS_OVERLAY.contains("CreateWindowExW"));
+        assert!(!WINDOWS_OVERLAY.contains("using System"));
+
+        assert!(LINUX_OVERLAY.contains("#include <gtk/gtk.h>"));
+        assert!(LINUX_OVERLAY.contains("#include <cairo.h>"));
+        assert!(LINUX_OVERLAY.contains("gtk_window_new"));
+        assert!(!LINUX_OVERLAY.contains("class "));
+    }
+
+    #[test]
+    fn native_overlay_visual_tokens_are_aligned() {
+        for source in [MACOS_OVERLAY, WINDOWS_OVERLAY, LINUX_OVERLAY] {
+            assert!(source.contains("420"));
+            assert!(source.contains("40"));
+            assert!(source.contains("48"));
+            assert!(source.contains("8"));
+            assert!(source.contains("14"));
+            assert!(source.contains("0.08") || source.contains("20, 20, 20"));
+            assert!(source.contains("0.88") || source.contains("224, 20, 20, 20"));
+            assert!(source.contains("0.12") || source.contains("31, 255, 255, 255"));
+        }
+    }
+
+    #[test]
+    fn native_overlay_topmost_behavior_is_reapplied_on_show() {
+        assert!(MACOS_OVERLAY.contains("NSWindow.Level.statusBar"));
+        assert!(MACOS_OVERLAY.contains(".fullScreenAuxiliary"));
+        assert!(MACOS_OVERLAY.contains("panel.orderFrontRegardless()"));
+        assert!(MACOS_OVERLAY.contains("asyncAfter"));
+
+        assert!(WINDOWS_OVERLAY.contains("WS_EX_TOPMOST"));
+        assert!(WINDOWS_OVERLAY.contains("HWND_TOPMOST"));
+        assert!(WINDOWS_OVERLAY.contains("SWP_NOACTIVATE | SWP_SHOWWINDOW"));
+        assert!(WINDOWS_OVERLAY.contains("ShowWindow(g_hwnd, SW_SHOWNOACTIVATE)"));
+
+        assert!(LINUX_OVERLAY.contains("gtk_window_set_keep_above(GTK_WINDOW(g_window), TRUE)"));
+        assert!(LINUX_OVERLAY.contains("gtk_window_present(GTK_WINDOW(g_window))"));
+        assert!(LINUX_OVERLAY.contains("g_idle_add(show_window_callback, NULL)"));
+    }
+}

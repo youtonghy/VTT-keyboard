@@ -11,6 +11,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <cmath>
 
 #pragma comment(lib, "gdiplus.lib")
 
@@ -18,20 +19,26 @@
 
 namespace {
 
-// Window configuration
-constexpr int WINDOW_WIDTH = 200;
-constexpr int WINDOW_HEIGHT = 36;
-constexpr int CORNER_RADIUS = 18;
+// Window configuration, kept visually aligned with the macOS Swift overlay.
+constexpr int MAX_WINDOW_WIDTH = 420;
+constexpr int WINDOW_HEIGHT = 40;
+constexpr int CORNER_RADIUS = 20;
 constexpr int BOTTOM_MARGIN = 48;
-constexpr BYTE WINDOW_ALPHA = 230;
+constexpr int DOT_SIZE = 8;
+constexpr int HORIZONTAL_PADDING = 14;
+constexpr int CONTENT_GAP = 8;
+constexpr BYTE WINDOW_ALPHA = 255;
 
-// Colors for different status types (ARGB)
+// Colors for different status types (ARGB), matching the Swift status dot.
 const Gdiplus::Color STATUS_COLORS[] = {
     Gdiplus::Color(255, 239, 68, 68),   // Recording - Red
     Gdiplus::Color(255, 59, 130, 246),  // Transcribing - Blue
     Gdiplus::Color(255, 16, 185, 129),  // Completed - Green
     Gdiplus::Color(255, 245, 158, 11),  // Error - Orange
 };
+const Gdiplus::Color BACKGROUND_COLOR(224, 20, 20, 20);
+const Gdiplus::Color BORDER_COLOR(31, 255, 255, 255);
+const Gdiplus::Color TEXT_COLOR(255, 255, 255, 255);
 
 // Global state
 HWND g_hwnd = nullptr;
@@ -65,11 +72,30 @@ RECT GetWorkArea() {
     return workArea;
 }
 
+int CalculateWindowWidth(HDC hdc) {
+    std::wstring text;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        text = g_currentText.empty() ? L" " : g_currentText;
+    }
+
+    Gdiplus::Graphics graphics(hdc);
+    Gdiplus::FontFamily fontFamily(L"Segoe UI");
+    Gdiplus::Font font(&fontFamily, 13, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::RectF layoutRect(0.0f, 0.0f, static_cast<Gdiplus::REAL>(MAX_WINDOW_WIDTH), static_cast<Gdiplus::REAL>(WINDOW_HEIGHT));
+    Gdiplus::RectF bounds;
+    graphics.MeasureString(text.c_str(), -1, &font, layoutRect, &bounds);
+
+    int textWidth = static_cast<int>(std::ceil(bounds.Width));
+    int idealWidth = HORIZONTAL_PADDING * 2 + DOT_SIZE + CONTENT_GAP + textWidth;
+    return min(MAX_WINDOW_WIDTH, max(1, idealWidth));
+}
+
 // Calculate window position (bottom center)
-POINT CalculateWindowPosition() {
+POINT CalculateWindowPosition(int windowWidth) {
     RECT workArea = GetWorkArea();
     int screenWidth = workArea.right - workArea.left;
-    int x = workArea.left + (screenWidth - WINDOW_WIDTH) / 2;
+    int x = workArea.left + (screenWidth - windowWidth) / 2;
     int y = workArea.bottom - WINDOW_HEIGHT - BOTTOM_MARGIN;
     return {x, y};
 }
@@ -92,23 +118,48 @@ void PaintWindow(HDC hdc, int width, int height) {
     path.AddArc(0, height - r * 2, r * 2, r * 2, 90, 90);
     path.CloseFigure();
 
-    Gdiplus::Color bgColor = STATUS_COLORS[g_currentStatus];
-    Gdiplus::SolidBrush bgBrush(bgColor);
+    StatusType status = STATUS_RECORDING;
+    std::wstring text;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        status = g_currentStatus;
+        text = g_currentText.empty() ? L" " : g_currentText;
+    }
+
+    Gdiplus::SolidBrush bgBrush(BACKGROUND_COLOR);
     graphics.FillPath(&bgBrush, &path);
+
+    Gdiplus::Pen borderPen(BORDER_COLOR, 1.0f);
+    graphics.DrawPath(&borderPen, &path);
+
+    Gdiplus::SolidBrush dotBrush(STATUS_COLORS[status]);
+    Gdiplus::RectF dotRect(
+        static_cast<Gdiplus::REAL>(HORIZONTAL_PADDING),
+        static_cast<Gdiplus::REAL>((height - DOT_SIZE) / 2.0f),
+        static_cast<Gdiplus::REAL>(DOT_SIZE),
+        static_cast<Gdiplus::REAL>(DOT_SIZE)
+    );
+    graphics.FillEllipse(&dotBrush, dotRect);
 
     // Draw text
     Gdiplus::FontFamily fontFamily(L"Segoe UI");
     Gdiplus::Font font(&fontFamily, 13, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-    Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::SolidBrush textBrush(TEXT_COLOR);
 
     Gdiplus::StringFormat format;
-    format.SetAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetAlignment(Gdiplus::StringAlignmentNear);
     format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+    format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
 
-    Gdiplus::RectF layoutRect(0, 0, (float)width, (float)height);
-    
-    std::lock_guard<std::mutex> lock(g_mutex);
-    graphics.DrawString(g_currentText.c_str(), -1, &font, layoutRect, &format, &textBrush);
+    Gdiplus::RectF layoutRect(
+        static_cast<Gdiplus::REAL>(HORIZONTAL_PADDING + DOT_SIZE + CONTENT_GAP),
+        0.0f,
+        static_cast<Gdiplus::REAL>(max(0, width - HORIZONTAL_PADDING * 2 - DOT_SIZE - CONTENT_GAP)),
+        static_cast<Gdiplus::REAL>(height)
+    );
+
+    graphics.DrawString(text.c_str(), -1, &font, layoutRect, &format, &textBrush);
 }
 
 // Window procedure
@@ -120,16 +171,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             
             // Create memory DC for double buffering
             HDC memDC = CreateCompatibleDC(hdc);
-            HBITMAP memBitmap = CreateCompatibleBitmap(hdc, WINDOW_WIDTH, WINDOW_HEIGHT);
+            int windowWidth = CalculateWindowWidth(hdc);
+            HBITMAP memBitmap = CreateCompatibleBitmap(hdc, windowWidth, WINDOW_HEIGHT);
             HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, memBitmap);
             
-            PaintWindow(memDC, WINDOW_WIDTH, WINDOW_HEIGHT);
+            PaintWindow(memDC, windowWidth, WINDOW_HEIGHT);
             
             // Use UpdateLayeredWindow for proper transparency
             BLENDFUNCTION blend = {AC_SRC_OVER, 0, WINDOW_ALPHA, AC_SRC_ALPHA};
             POINT ptSrc = {0, 0};
-            SIZE sizeWnd = {WINDOW_WIDTH, WINDOW_HEIGHT};
-            POINT ptDst = CalculateWindowPosition();
+            SIZE sizeWnd = {windowWidth, WINDOW_HEIGHT};
+            POINT ptDst = CalculateWindowPosition(windowWidth);
             UpdateLayeredWindow(hwnd, hdc, &ptDst, &sizeWnd, memDC, &ptSrc, 0, &blend, ULW_ALPHA);
             
             SelectObject(memDC, oldBitmap);
@@ -154,10 +206,11 @@ void UpdateWindow() {
     // Create DC for layered window update
     HDC screenDC = GetDC(nullptr);
     HDC memDC = CreateCompatibleDC(screenDC);
+    int windowWidth = CalculateWindowWidth(screenDC);
     
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = WINDOW_WIDTH;
+    bmi.bmiHeader.biWidth = windowWidth;
     bmi.bmiHeader.biHeight = -WINDOW_HEIGHT; // Top-down
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
@@ -168,15 +221,24 @@ void UpdateWindow() {
     HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, memBitmap);
     
     // Clear to transparent
-    memset(bits, 0, WINDOW_WIDTH * WINDOW_HEIGHT * 4);
+    memset(bits, 0, windowWidth * WINDOW_HEIGHT * 4);
     
-    PaintWindow(memDC, WINDOW_WIDTH, WINDOW_HEIGHT);
+    PaintWindow(memDC, windowWidth, WINDOW_HEIGHT);
     
     BLENDFUNCTION blend = {AC_SRC_OVER, 0, WINDOW_ALPHA, AC_SRC_ALPHA};
     POINT ptSrc = {0, 0};
-    SIZE sizeWnd = {WINDOW_WIDTH, WINDOW_HEIGHT};
-    POINT ptDst = CalculateWindowPosition();
+    SIZE sizeWnd = {windowWidth, WINDOW_HEIGHT};
+    POINT ptDst = CalculateWindowPosition(windowWidth);
     UpdateLayeredWindow(g_hwnd, screenDC, &ptDst, &sizeWnd, memDC, &ptSrc, 0, &blend, ULW_ALPHA);
+    SetWindowPos(
+        g_hwnd,
+        HWND_TOPMOST,
+        ptDst.x,
+        ptDst.y,
+        windowWidth,
+        WINDOW_HEIGHT,
+        SWP_NOACTIVATE | SWP_SHOWWINDOW
+    );
     
     SelectObject(memDC, oldBitmap);
     DeleteObject(memBitmap);
@@ -200,14 +262,14 @@ void MessageThreadProc() {
     RegisterClassExW(&wc);
     
     // Create layered window
-    POINT pos = CalculateWindowPosition();
+    POINT pos = CalculateWindowPosition(MAX_WINDOW_WIDTH);
     g_hwnd = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
         WINDOW_CLASS_NAME,
         L"Status",
         WS_POPUP,
         pos.x, pos.y,
-        WINDOW_WIDTH, WINDOW_HEIGHT,
+        MAX_WINDOW_WIDTH, WINDOW_HEIGHT,
         nullptr, nullptr,
         GetModuleHandle(nullptr),
         nullptr
@@ -275,11 +337,8 @@ void status_overlay_show(StatusType status, const char* text) {
     }
     
     UpdateWindow();
-    
-    if (!g_visible) {
-        ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
-        g_visible = true;
-    }
+    ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
+    g_visible = true;
 }
 
 void status_overlay_hide(void) {
