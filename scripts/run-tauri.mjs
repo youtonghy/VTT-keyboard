@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { cleanTauriBundleArtifacts, rootDir } from "./clean-tauri-bundle-artifacts.mjs";
+import {
+  cleanTauriBundleArtifacts,
+  rootDir,
+  tauriBundleDirsForArgs,
+} from "./clean-tauri-bundle-artifacts.mjs";
 
 const args = process.argv.slice(2);
 const tauriBin = resolve(rootDir, "node_modules/.bin/tauri");
@@ -18,7 +22,7 @@ function isDmgBuild(commandArgs) {
   return commandArgs[0] === "build" && (explicitDmgBundle || !commandArgs.includes("--bundles"));
 }
 
-await cleanTauriBundleArtifacts();
+await cleanTauriBundleArtifacts(tauriBundleDirsForArgs(args));
 
 const code = await run(tauriBin, args);
 
