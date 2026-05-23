@@ -1,14 +1,21 @@
-import { X } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { TranscriptionHistoryItem } from "../types/history";
 
 interface HistoryDetailDialogProps {
   item: TranscriptionHistoryItem | null;
+  isRetrying?: boolean;
   onClose: () => void;
+  onRetry?: (item: TranscriptionHistoryItem) => void;
 }
 
-export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps) {
+export function HistoryDetailDialog({
+  item,
+  isRetrying = false,
+  onClose,
+  onRetry,
+}: HistoryDetailDialogProps) {
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -61,6 +68,17 @@ export function HistoryDetailDialog({ item, onClose }: HistoryDetailDialogProps)
                 {t("history.failed")}
               </span>
             )}
+            {isFailed && onRetry ? (
+              <button
+                type="button"
+                className="history-dialog-retry"
+                disabled={isRetrying}
+                onClick={() => onRetry(item)}
+              >
+                <RotateCcw size={14} />
+                {isRetrying ? t("history.retrying") : t("history.retry")}
+              </button>
+            ) : null}
             <button type="button" className="history-dialog-close" onClick={onClose}>
               <X size={16} />
             </button>

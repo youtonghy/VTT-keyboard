@@ -30,19 +30,49 @@ private enum DictationStatus: Int32 {
     }
 }
 
+private enum OverlayActions: Int32 {
+    case none = 0
+    case retry = 1
+    case retryCancel = 2
+
+    init(rawActions: Int32) {
+        self = OverlayActions(rawValue: rawActions) ?? .none
+    }
+}
+
+private enum OverlayAction: Int32 {
+    case retry = 0
+    case cancel = 1
+}
+
+public typealias StatusOverlayActionCallback = @convention(c) (Int32) -> Void
+private var statusOverlayActionCallback: StatusOverlayActionCallback?
+
 private struct OverlaySnapshot {
     let status: DictationStatus
     let text: String
+    let actions: OverlayActions
 }
 
 private final class StatusOverlayView: NSView {
     private let dotSize: CGFloat = 8.0
     private let horizontalPadding: CGFloat = 14.0
     private let contentGap: CGFloat = 8.0
+    private let actionGap: CGFloat = 10.0
+    private let buttonGap: CGFloat = 6.0
+    private let buttonHeight: CGFloat = 26.0
+    private let buttonHorizontalPadding: CGFloat = 12.0
     private let font = NSFont.systemFont(ofSize: 13.0, weight: .semibold)
+    private let buttonFont = NSFont.systemFont(ofSize: 12.0, weight: .semibold)
+    private let retryLabel = "重试"
+    private let cancelLabel = "取消"
 
     override var isOpaque: Bool {
         false
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -69,12 +99,17 @@ private final class StatusOverlayView: NSView {
             .font: font,
             .foregroundColor: NSColor.white,
         ]
-        let textWidth = min(
-            ceil((text as NSString).size(withAttributes: attributes).width),
-            max(0.0, bounds.width - horizontalPadding * 2.0 - dotSize - contentGap)
-        )
+        let buttonRects = actionButtonRects(in: bounds, snapshot: snapshot)
+        let buttonStartX = buttonRects.first?.rect.minX ?? bounds.maxX
+        let hasButtons = !buttonRects.isEmpty
+        let textLimit = hasButtons
+            ? max(0.0, buttonStartX - actionGap - horizontalPadding - dotSize - contentGap)
+            : max(0.0, bounds.width - horizontalPadding * 2.0 - dotSize - contentGap)
+        let textWidth = min(ceil((text as NSString).size(withAttributes: attributes).width), textLimit)
         let contentWidth = dotSize + contentGap + textWidth
-        let contentX = max(horizontalPadding, (bounds.width - contentWidth) / 2.0)
+        let contentX = hasButtons
+            ? horizontalPadding
+            : max(horizontalPadding, (bounds.width - contentWidth) / 2.0)
         let dotRect = NSRect(
             x: contentX,
             y: (bounds.height - dotSize) / 2.0,
@@ -91,6 +126,91 @@ private final class StatusOverlayView: NSView {
             height: 18.0
         )
         text.draw(in: textRect, withAttributes: attributes)
+
+        for item in buttonRects {
+            drawButton(label: item.label, rect: item.rect)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let snapshot = StatusOverlayController.shared.snapshot()
+        guard snapshot.actions != .none else {
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        for item in actionButtonRects(in: bounds, snapshot: snapshot) {
+            if item.rect.contains(point) {
+                StatusOverlayController.shared.perform(action: item.action)
+                return
+            }
+        }
+    }
+
+    private func drawButton(label: String, rect: NSRect) {
+        let path = NSBezierPath(roundedRect: rect, xRadius: 13.0, yRadius: 13.0)
+        NSColor.white.withAlphaComponent(0.16).setFill()
+        path.fill()
+        NSColor.white.withAlphaComponent(0.22).setStroke()
+        path.lineWidth = 1.0
+        path.stroke()
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: buttonFont,
+            .foregroundColor: NSColor.white,
+        ]
+        let textSize = (label as NSString).size(withAttributes: attributes)
+        let textRect = NSRect(
+            x: rect.midX - textSize.width / 2.0,
+            y: rect.midY - textSize.height / 2.0,
+            width: textSize.width,
+            height: textSize.height
+        )
+        label.draw(in: textRect, withAttributes: attributes)
+    }
+
+    private func actionButtonRects(
+        in bounds: NSRect,
+        snapshot: OverlaySnapshot
+    ) -> [(action: OverlayAction, label: String, rect: NSRect)] {
+        let items = actionItems(snapshot.actions)
+        guard !items.isEmpty else {
+            return []
+        }
+
+        var reversed: [(action: OverlayAction, label: String, rect: NSRect)] = []
+        var cursorX = bounds.width - horizontalPadding
+        for item in items.reversed() {
+            let width = buttonWidth(label: item.label)
+            let rect = NSRect(
+                x: cursorX - width,
+                y: (bounds.height - buttonHeight) / 2.0,
+                width: width,
+                height: buttonHeight
+            )
+            reversed.append((action: item.action, label: item.label, rect: rect))
+            cursorX = rect.minX - buttonGap
+        }
+        return Array(reversed.reversed())
+    }
+
+    private func actionItems(_ actions: OverlayActions) -> [(action: OverlayAction, label: String)] {
+        switch actions {
+        case .none:
+            return []
+        case .retry:
+            return [(action: .retry, label: retryLabel)]
+        case .retryCancel:
+            return [
+                (action: .retry, label: retryLabel),
+                (action: .cancel, label: cancelLabel),
+            ]
+        }
+    }
+
+    private func buttonWidth(label: String) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [.font: buttonFont]
+        let textWidth = ceil((label as NSString).size(withAttributes: attributes).width)
+        return max(46.0, textWidth + buttonHorizontalPadding * 2.0)
     }
 }
 
@@ -100,12 +220,14 @@ private final class StatusOverlayController {
     private let lock = NSLock()
     private var currentStatus = DictationStatus.recording
     private var currentText = ""
+    private var currentActions = OverlayActions.none
     private var panel: NSPanel?
     private var overlayView: StatusOverlayView?
     private var visible = false
     private var lastFrame = NSRect.zero
 
     private let maxWidth: CGFloat = 420.0
+    private let maxActionWidth: CGFloat = 560.0
     private let height: CGFloat = 40.0
     private let bottomMargin: CGFloat = 48.0
     private let windowLevel = NSWindow.Level.statusBar
@@ -118,7 +240,13 @@ private final class StatusOverlayController {
     private let dotSize: CGFloat = 8.0
     private let horizontalPadding: CGFloat = 14.0
     private let contentGap: CGFloat = 8.0
+    private let actionGap: CGFloat = 10.0
+    private let buttonGap: CGFloat = 6.0
+    private let buttonHorizontalPadding: CGFloat = 12.0
     private let font = NSFont.systemFont(ofSize: 13.0, weight: .semibold)
+    private let buttonFont = NSFont.systemFont(ofSize: 12.0, weight: .semibold)
+    private let retryLabel = "重试"
+    private let cancelLabel = "取消"
 
     func initialize() -> Bool {
         if Thread.isMainThread {
@@ -132,14 +260,16 @@ private final class StatusOverlayController {
         return initialized
     }
 
-    func show(status: Int32, text: String) {
+    func show(status: Int32, text: String, actions: Int32 = 0) {
         let nextStatus = DictationStatus(rawStatus: status)
+        let nextActions = OverlayActions(rawActions: actions)
         var changed = false
 
         lock.lock()
-        if currentStatus != nextStatus || currentText != text {
+        if currentStatus != nextStatus || currentText != text || currentActions != nextActions {
             currentStatus = nextStatus
             currentText = text
+            currentActions = nextActions
             changed = true
         }
         lock.unlock()
@@ -148,6 +278,7 @@ private final class StatusOverlayController {
             guard self.createPanelIfNeeded() else {
                 return
             }
+            self.panel?.ignoresMouseEvents = nextActions == .none
             self.updatePanelFrame(display: changed)
             if changed {
                 self.overlayView?.needsDisplay = true
@@ -178,9 +309,17 @@ private final class StatusOverlayController {
 
     func snapshot() -> OverlaySnapshot {
         lock.lock()
-        let snapshot = OverlaySnapshot(status: currentStatus, text: currentText)
+        let snapshot = OverlaySnapshot(
+            status: currentStatus,
+            text: currentText,
+            actions: currentActions
+        )
         lock.unlock()
         return snapshot
+    }
+
+    func perform(action: OverlayAction) {
+        statusOverlayActionCallback?(action.rawValue)
     }
 
     private func createPanelIfNeeded() -> Bool {
@@ -200,7 +339,7 @@ private final class StatusOverlayController {
         newPanel.backgroundColor = .clear
         newPanel.isOpaque = false
         newPanel.hasShadow = true
-        newPanel.ignoresMouseEvents = true
+        newPanel.ignoresMouseEvents = currentActions == .none
         newPanel.hidesOnDeactivate = false
         newPanel.isReleasedWhenClosed = false
         newPanel.level = windowLevel
@@ -262,14 +401,40 @@ private final class StatusOverlayController {
     }
 
     private func widthForCurrentText() -> CGFloat {
-        let rawText = snapshot().text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let snapshot = snapshot()
+        let rawText = snapshot.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = (rawText.isEmpty ? " " : rawText) as NSString
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
         ]
         let textWidth = ceil(text.size(withAttributes: attributes).width)
-        let idealWidth = horizontalPadding * 2.0 + dotSize + contentGap + textWidth
-        return min(maxWidth, ceil(idealWidth))
+        let buttonGroupWidth = actionButtonGroupWidth(snapshot.actions)
+        let actionWidth = buttonGroupWidth > 0.0 ? actionGap + buttonGroupWidth : 0.0
+        let idealWidth = horizontalPadding * 2.0 + dotSize + contentGap + textWidth + actionWidth
+        return min(snapshot.actions == .none ? maxWidth : maxActionWidth, ceil(idealWidth))
+    }
+
+    private func actionButtonGroupWidth(_ actions: OverlayActions) -> CGFloat {
+        let labels: [String]
+        switch actions {
+        case .none:
+            labels = []
+        case .retry:
+            labels = [retryLabel]
+        case .retryCancel:
+            labels = [retryLabel, cancelLabel]
+        }
+        guard !labels.isEmpty else {
+            return 0.0
+        }
+        let widths = labels.map { buttonWidth(label: $0) }.reduce(0.0, +)
+        return widths + buttonGap * CGFloat(labels.count - 1)
+    }
+
+    private func buttonWidth(label: String) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [.font: buttonFont]
+        let textWidth = ceil((label as NSString).size(withAttributes: attributes).width)
+        return max(46.0, textWidth + buttonHorizontalPadding * 2.0)
     }
 
     private func performOnMain(_ block: @escaping () -> Void) {
@@ -290,6 +455,21 @@ public func status_overlay_init() -> Int32 {
 public func status_overlay_show(_ status: Int32, _ textPointer: UnsafePointer<CChar>?) {
     let text = textPointer.map { String(cString: $0) } ?? ""
     StatusOverlayController.shared.show(status: status, text: text)
+}
+
+@_cdecl("status_overlay_show_actions")
+public func status_overlay_show_actions(
+    _ status: Int32,
+    _ textPointer: UnsafePointer<CChar>?,
+    _ actions: Int32
+) {
+    let text = textPointer.map { String(cString: $0) } ?? ""
+    StatusOverlayController.shared.show(status: status, text: text, actions: actions)
+}
+
+@_cdecl("status_overlay_set_action_callback")
+public func status_overlay_set_action_callback(_ callback: StatusOverlayActionCallback?) {
+    statusOverlayActionCallback = callback
 }
 
 @_cdecl("status_overlay_hide")

@@ -114,6 +114,7 @@ function App() {
   const [historyItems, setHistoryItems] = useState<TranscriptionHistoryItem[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] =
     useState<TranscriptionHistoryItem | null>(null);
+  const [historyRetryingId, setHistoryRetryingId] = useState<string | null>(null);
   const [inputTestActive, setInputTestActive] = useState(false);
   const [inputTestResult, setInputTestResult] = useState<AudioInputTestResult | null>(null);
   const supportsSherpaOnnxSenseVoice =
@@ -263,6 +264,23 @@ function App() {
           }
           return [event.payload, ...prev].slice(0, MAX_HISTORY_ITEMS);
         });
+      }
+    );
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<TranscriptionHistoryItem>(
+      "transcription-history-updated",
+      (event) => {
+        setHistoryItems((prev) =>
+          prev.map((item) => (item.id === event.payload.id ? event.payload : item))
+        );
+        setSelectedHistoryItem((prev) =>
+          prev?.id === event.payload.id ? event.payload : prev
+        );
       }
     );
     return () => {
@@ -479,6 +497,27 @@ function App() {
       toast.success(t("history.clearSuccess"));
     } catch (error) {
       toast.error(t("history.clearError", { error: toErrorMessage(error) }));
+    }
+  };
+
+  const handleRetryHistoryItem = async (item: TranscriptionHistoryItem) => {
+    if (historyRetryingId) {
+      return;
+    }
+    setHistoryRetryingId(item.id);
+    try {
+      const updated = await invoke<TranscriptionHistoryItem>(
+        "retry_transcription_history_item",
+        { historyId: item.id }
+      );
+      setHistoryItems((prev) =>
+        prev.map((value) => (value.id === updated.id ? updated : value))
+      );
+      setSelectedHistoryItem((prev) => (prev?.id === updated.id ? updated : prev));
+    } catch (error) {
+      toast.error(t("history.retryError", { error: toErrorMessage(error) }));
+    } finally {
+      setHistoryRetryingId(null);
     }
   };
 
@@ -980,7 +1019,9 @@ function App() {
       </main>
       <HistoryDetailDialog
         item={selectedHistoryItem}
+        isRetrying={Boolean(selectedHistoryItem && historyRetryingId === selectedHistoryItem.id)}
         onClose={() => setSelectedHistoryItem(null)}
+        onRetry={handleRetryHistoryItem}
       />
     </>
   );

@@ -9,6 +9,7 @@ export interface TriggerMatch {
 }
 
 export type TranscriptionHistoryStatus = "success" | "failed";
+export type ProcessingFailureStage = "setup" | "transcription" | "trigger" | "output";
 
 export interface TranscriptionAlignment {
   tokens: string[];
@@ -29,5 +30,6 @@ export interface TranscriptionHistoryItem {
   triggeredByKeyword: boolean;
   triggerMatches: TriggerMatch[];
   alignment?: TranscriptionAlignment;
+  failureStage?: ProcessingFailureStage;
   errorMessage?: string;
 }

@@ -320,11 +320,20 @@ pub enum TriggerMatchMode {
     Auto,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TranscriptionHistoryStatus {
     Success,
     Failed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProcessingFailureStage {
+    Setup,
+    Transcription,
+    Trigger,
+    Output,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -346,6 +355,8 @@ pub struct TranscriptionHistoryItem {
     pub trigger_matches: Vec<TriggerMatch>,
     #[serde(default)]
     pub alignment: Option<TranscriptionAlignment>,
+    #[serde(default)]
+    pub failure_stage: Option<ProcessingFailureStage>,
     pub error_message: Option<String>,
 }
 

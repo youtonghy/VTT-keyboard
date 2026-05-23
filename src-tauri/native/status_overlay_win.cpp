@@ -27,6 +27,11 @@ constexpr int BOTTOM_MARGIN = 48;
 constexpr int DOT_SIZE = 8;
 constexpr int HORIZONTAL_PADDING = 14;
 constexpr int CONTENT_GAP = 8;
+constexpr int ACTION_WINDOW_WIDTH = 560;
+constexpr int ACTION_GAP = 10;
+constexpr int BUTTON_GAP = 6;
+constexpr int BUTTON_HEIGHT = 26;
+constexpr int BUTTON_HORIZONTAL_PADDING = 12;
 constexpr BYTE WINDOW_ALPHA = 255;
 
 // Colors for different status types (ARGB), matching the Swift status dot.
@@ -51,9 +56,25 @@ std::atomic<bool> g_shouldExit{false};
 std::atomic<bool> g_visible{false};
 
 StatusType g_currentStatus = STATUS_RECORDING;
+StatusActionSet g_currentActions = STATUS_ACTIONS_NONE;
 std::wstring g_currentText;
+StatusOverlayActionCallback g_actionCallback = nullptr;
 
 const wchar_t* WINDOW_CLASS_NAME = L"VTTStatusOverlay";
+
+struct ActionButton {
+    StatusOverlayAction action;
+    const wchar_t* label;
+    Gdiplus::RectF rect;
+};
+
+int BuildActionButtons(
+    Gdiplus::Graphics& graphics,
+    const Gdiplus::Font& font,
+    StatusActionSet actions,
+    int windowWidth,
+    ActionButton buttons[2]
+);
 
 // Convert UTF-8 to wide string
 std::wstring Utf8ToWide(const char* utf8) {
@@ -74,21 +95,35 @@ RECT GetWorkArea() {
 
 int CalculateWindowWidth(HDC hdc) {
     std::wstring text;
+    StatusActionSet actions = STATUS_ACTIONS_NONE;
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         text = g_currentText.empty() ? L" " : g_currentText;
+        actions = g_currentActions;
     }
 
     Gdiplus::Graphics graphics(hdc);
     Gdiplus::FontFamily fontFamily(L"Segoe UI");
     Gdiplus::Font font(&fontFamily, 13, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::Font buttonFont(&fontFamily, 12, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::RectF layoutRect(0.0f, 0.0f, static_cast<Gdiplus::REAL>(MAX_WINDOW_WIDTH), static_cast<Gdiplus::REAL>(WINDOW_HEIGHT));
     Gdiplus::RectF bounds;
     graphics.MeasureString(text.c_str(), -1, &font, layoutRect, &bounds);
+    ActionButton buttons[2];
+    int buttonCount = BuildActionButtons(graphics, buttonFont, actions, ACTION_WINDOW_WIDTH, buttons);
+    Gdiplus::REAL buttonGroupWidth = 0.0f;
+    for (int i = 0; i < buttonCount; ++i) {
+        buttonGroupWidth += buttons[i].rect.Width;
+    }
+    if (buttonCount > 0) {
+        buttonGroupWidth += static_cast<Gdiplus::REAL>(BUTTON_GAP * (buttonCount - 1));
+    }
 
     int textWidth = static_cast<int>(std::ceil(bounds.Width));
-    int idealWidth = HORIZONTAL_PADDING * 2 + DOT_SIZE + CONTENT_GAP + textWidth;
-    return min(MAX_WINDOW_WIDTH, max(1, idealWidth));
+    int actionWidth = buttonCount > 0 ? ACTION_GAP + static_cast<int>(std::ceil(buttonGroupWidth)) : 0;
+    int idealWidth = HORIZONTAL_PADDING * 2 + DOT_SIZE + CONTENT_GAP + textWidth + actionWidth;
+    int maxWidth = actions == STATUS_ACTIONS_NONE ? MAX_WINDOW_WIDTH : ACTION_WINDOW_WIDTH;
+    return min(maxWidth, max(1, idealWidth));
 }
 
 // Calculate window position (bottom center)
@@ -98,6 +133,60 @@ POINT CalculateWindowPosition(int windowWidth) {
     int x = workArea.left + (screenWidth - windowWidth) / 2;
     int y = workArea.bottom - WINDOW_HEIGHT - BOTTOM_MARGIN;
     return {x, y};
+}
+
+int ActionCount(StatusActionSet actions) {
+    if (actions == STATUS_ACTIONS_RETRY) return 1;
+    if (actions == STATUS_ACTIONS_RETRY_CANCEL) return 2;
+    return 0;
+}
+
+Gdiplus::REAL ButtonWidth(
+    Gdiplus::Graphics& graphics,
+    const Gdiplus::Font& font,
+    const wchar_t* label
+) {
+    Gdiplus::RectF bounds;
+    Gdiplus::RectF layoutRect(0.0f, 0.0f, 120.0f, static_cast<Gdiplus::REAL>(BUTTON_HEIGHT));
+    graphics.MeasureString(label, -1, &font, layoutRect, &bounds);
+    Gdiplus::REAL width = bounds.Width + static_cast<Gdiplus::REAL>(BUTTON_HORIZONTAL_PADDING * 2);
+    return max(static_cast<Gdiplus::REAL>(46.0f), width);
+}
+
+int BuildActionButtons(
+    Gdiplus::Graphics& graphics,
+    const Gdiplus::Font& font,
+    StatusActionSet actions,
+    int windowWidth,
+    ActionButton buttons[2]
+) {
+    int count = ActionCount(actions);
+    if (count <= 0) return 0;
+
+    buttons[0].action = STATUS_ACTION_RETRY;
+    buttons[0].label = L"重试";
+    buttons[0].rect.Width = ButtonWidth(graphics, font, buttons[0].label);
+    buttons[0].rect.Height = static_cast<Gdiplus::REAL>(BUTTON_HEIGHT);
+    if (count == 2) {
+        buttons[1].action = STATUS_ACTION_CANCEL;
+        buttons[1].label = L"取消";
+        buttons[1].rect.Width = ButtonWidth(graphics, font, buttons[1].label);
+        buttons[1].rect.Height = static_cast<Gdiplus::REAL>(BUTTON_HEIGHT);
+    }
+
+    Gdiplus::REAL totalWidth = 0.0f;
+    for (int i = 0; i < count; ++i) {
+        totalWidth += buttons[i].rect.Width;
+    }
+    totalWidth += static_cast<Gdiplus::REAL>(BUTTON_GAP * (count - 1));
+
+    Gdiplus::REAL cursorX = static_cast<Gdiplus::REAL>(windowWidth - HORIZONTAL_PADDING) - totalWidth;
+    for (int i = 0; i < count; ++i) {
+        buttons[i].rect.X = cursorX;
+        buttons[i].rect.Y = static_cast<Gdiplus::REAL>((WINDOW_HEIGHT - BUTTON_HEIGHT) / 2.0f);
+        cursorX += buttons[i].rect.Width + static_cast<Gdiplus::REAL>(BUTTON_GAP);
+    }
+    return count;
 }
 
 // Paint the window
@@ -119,10 +208,12 @@ void PaintWindow(HDC hdc, int width, int height) {
     path.CloseFigure();
 
     StatusType status = STATUS_RECORDING;
+    StatusActionSet actions = STATUS_ACTIONS_NONE;
     std::wstring text;
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         status = g_currentStatus;
+        actions = g_currentActions;
         text = g_currentText.empty() ? L" " : g_currentText;
     }
 
@@ -144,6 +235,7 @@ void PaintWindow(HDC hdc, int width, int height) {
     // Draw text
     Gdiplus::FontFamily fontFamily(L"Segoe UI");
     Gdiplus::Font font(&fontFamily, 13, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::Font buttonFont(&fontFamily, 12, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush textBrush(TEXT_COLOR);
 
     Gdiplus::StringFormat format;
@@ -152,14 +244,45 @@ void PaintWindow(HDC hdc, int width, int height) {
     format.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
     format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap);
 
+    ActionButton buttons[2];
+    int buttonCount = BuildActionButtons(graphics, buttonFont, actions, width, buttons);
+    Gdiplus::REAL textWidth = static_cast<Gdiplus::REAL>(max(0, width - HORIZONTAL_PADDING * 2 - DOT_SIZE - CONTENT_GAP));
+    if (buttonCount > 0) {
+        textWidth = max(
+            static_cast<Gdiplus::REAL>(0.0f),
+            buttons[0].rect.X - static_cast<Gdiplus::REAL>(ACTION_GAP) -
+                static_cast<Gdiplus::REAL>(HORIZONTAL_PADDING + DOT_SIZE + CONTENT_GAP)
+        );
+    }
+
     Gdiplus::RectF layoutRect(
         static_cast<Gdiplus::REAL>(HORIZONTAL_PADDING + DOT_SIZE + CONTENT_GAP),
         0.0f,
-        static_cast<Gdiplus::REAL>(max(0, width - HORIZONTAL_PADDING * 2 - DOT_SIZE - CONTENT_GAP)),
+        textWidth,
         static_cast<Gdiplus::REAL>(height)
     );
 
     graphics.DrawString(text.c_str(), -1, &font, layoutRect, &format, &textBrush);
+
+    Gdiplus::SolidBrush buttonBrush(Gdiplus::Color(40, 255, 255, 255));
+    Gdiplus::Pen buttonPen(Gdiplus::Color(56, 255, 255, 255), 1.0f);
+    for (int i = 0; i < buttonCount; ++i) {
+        ActionButton button = buttons[i];
+        Gdiplus::GraphicsPath buttonPath;
+        Gdiplus::REAL radius = static_cast<Gdiplus::REAL>(BUTTON_HEIGHT / 2);
+        buttonPath.AddArc(button.rect.X, button.rect.Y, radius * 2, radius * 2, 180, 90);
+        buttonPath.AddArc(button.rect.GetRight() - radius * 2, button.rect.Y, radius * 2, radius * 2, 270, 90);
+        buttonPath.AddArc(button.rect.GetRight() - radius * 2, button.rect.GetBottom() - radius * 2, radius * 2, radius * 2, 0, 90);
+        buttonPath.AddArc(button.rect.X, button.rect.GetBottom() - radius * 2, radius * 2, radius * 2, 90, 90);
+        buttonPath.CloseFigure();
+        graphics.FillPath(&buttonBrush, &buttonPath);
+        graphics.DrawPath(&buttonPen, &buttonPath);
+
+        Gdiplus::StringFormat buttonFormat;
+        buttonFormat.SetAlignment(Gdiplus::StringAlignmentCenter);
+        buttonFormat.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+        graphics.DrawString(button.label, -1, &buttonFont, button.rect, &buttonFormat, &textBrush);
+    }
 }
 
 // Window procedure
@@ -189,6 +312,38 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             DeleteDC(memDC);
             
             EndPaint(hwnd, &ps);
+            return 0;
+        }
+        case WM_LBUTTONUP: {
+            StatusActionSet actions = STATUS_ACTIONS_NONE;
+            StatusOverlayActionCallback callback = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(g_mutex);
+                actions = g_currentActions;
+                callback = g_actionCallback;
+            }
+            if (actions == STATUS_ACTIONS_NONE || !callback) {
+                return 0;
+            }
+
+            int x = static_cast<short>(LOWORD(lParam));
+            int y = static_cast<short>(HIWORD(lParam));
+            HDC screenDC = GetDC(nullptr);
+            Gdiplus::Graphics graphics(screenDC);
+            Gdiplus::FontFamily fontFamily(L"Segoe UI");
+            Gdiplus::Font buttonFont(&fontFamily, 12, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+            int windowWidth = CalculateWindowWidth(screenDC);
+            ActionButton buttons[2];
+            int count = BuildActionButtons(graphics, buttonFont, actions, windowWidth, buttons);
+            ReleaseDC(nullptr, screenDC);
+
+            for (int i = 0; i < count; ++i) {
+                const auto& rect = buttons[i].rect;
+                if (x >= rect.X && x <= rect.GetRight() && y >= rect.Y && y <= rect.GetBottom()) {
+                    callback(buttons[i].action);
+                    return 0;
+                }
+            }
             return 0;
         }
         case WM_DESTROY:
@@ -230,6 +385,18 @@ void UpdateWindow() {
     SIZE sizeWnd = {windowWidth, WINDOW_HEIGHT};
     POINT ptDst = CalculateWindowPosition(windowWidth);
     UpdateLayeredWindow(g_hwnd, screenDC, &ptDst, &sizeWnd, memDC, &ptSrc, 0, &blend, ULW_ALPHA);
+    StatusActionSet actions = STATUS_ACTIONS_NONE;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        actions = g_currentActions;
+    }
+    LONG_PTR exStyle = GetWindowLongPtrW(g_hwnd, GWL_EXSTYLE);
+    if (actions == STATUS_ACTIONS_NONE) {
+        exStyle |= WS_EX_TRANSPARENT;
+    } else {
+        exStyle &= ~WS_EX_TRANSPARENT;
+    }
+    SetWindowLongPtrW(g_hwnd, GWL_EXSTYLE, exStyle);
     SetWindowPos(
         g_hwnd,
         HWND_TOPMOST,
@@ -327,18 +494,28 @@ int status_overlay_init(void) {
     return g_hwnd ? 0 : -1;
 }
 
-void status_overlay_show(StatusType status, const char* text) {
+void status_overlay_show_actions(StatusType status, const char* text, StatusActionSet actions) {
     if (!g_hwnd) return;
     
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         g_currentStatus = status;
+        g_currentActions = actions;
         g_currentText = Utf8ToWide(text);
     }
     
     UpdateWindow();
     ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
     g_visible = true;
+}
+
+void status_overlay_show(StatusType status, const char* text) {
+    status_overlay_show_actions(status, text, STATUS_ACTIONS_NONE);
+}
+
+void status_overlay_set_action_callback(StatusOverlayActionCallback callback) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_actionCallback = callback;
 }
 
 void status_overlay_hide(void) {
@@ -365,6 +542,11 @@ void status_overlay_cleanup(void) {
     
     g_initialized = false;
     g_hwnd = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_currentActions = STATUS_ACTIONS_NONE;
+        g_actionCallback = nullptr;
+    }
 }
 
 } // extern "C"

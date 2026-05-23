@@ -295,6 +295,16 @@ fn clear_transcription_history(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn retry_transcription_history_item(
+    state: State<AppState>,
+    history_id: String,
+) -> Result<TranscriptionHistoryItem, String> {
+    state
+        .transcription_dispatcher
+        .retry_history_item(history_id)
+}
+
+#[tauri::command]
 fn get_sensevoice_status(state: State<AppState>) -> Result<SenseVoiceStatus, String> {
     let mut manager = state
         .sensevoice_manager
@@ -520,6 +530,26 @@ pub fn run() {
                 updater_manager: Mutex::new(UpdateManager::new(current_version)),
             });
 
+            let (overlay_action_tx, overlay_action_rx) = std::sync::mpsc::channel();
+            status_native::set_action_sender(overlay_action_tx);
+            let overlay_action_app = app_handle.clone();
+            std::thread::spawn(move || {
+                while let Ok(action) = overlay_action_rx.recv() {
+                    let state = overlay_action_app.state::<AppState>();
+                    let result = match action {
+                        status_native::OverlayAction::Retry => {
+                            state.transcription_dispatcher.retry_active()
+                        }
+                        status_native::OverlayAction::Cancel => {
+                            state.transcription_dispatcher.cancel_active_retry()
+                        }
+                    };
+                    if let Err(_err) = result {
+                        dev_eprintln!("failed to handle native status action: {_err}");
+                    }
+                }
+            });
+
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(not(target_os = "macos"))]
                 {
@@ -623,6 +653,7 @@ pub fn run() {
             test_audio_input_device,
             get_transcription_history,
             clear_transcription_history,
+            retry_transcription_history_item,
             get_sensevoice_status,
             prepare_sensevoice,
             start_sensevoice_service,
@@ -701,5 +732,19 @@ mod native_status_overlay_tests {
         assert!(LINUX_OVERLAY.contains("gtk_window_set_keep_above(GTK_WINDOW(g_window), TRUE)"));
         assert!(LINUX_OVERLAY.contains("gtk_window_present(GTK_WINDOW(g_window))"));
         assert!(LINUX_OVERLAY.contains("g_idle_add(show_window_callback, NULL)"));
+    }
+
+    #[test]
+    fn native_overlay_actions_are_available_on_all_platforms() {
+        for source in [MACOS_OVERLAY, WINDOWS_OVERLAY, LINUX_OVERLAY] {
+            assert!(source.contains("status_overlay_show_actions"));
+            assert!(source.contains("status_overlay_set_action_callback"));
+            assert!(source.contains("重试"));
+            assert!(source.contains("取消"));
+        }
+
+        assert!(MACOS_OVERLAY.contains("mouseUp(with event"));
+        assert!(WINDOWS_OVERLAY.contains("WM_LBUTTONUP"));
+        assert!(LINUX_OVERLAY.contains("button-release-event"));
     }
 }

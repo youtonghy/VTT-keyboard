@@ -12,6 +12,19 @@ typedef enum {
     STATUS_ERROR = 3
 } StatusType;
 
+typedef enum {
+    STATUS_ACTIONS_NONE = 0,
+    STATUS_ACTIONS_RETRY = 1,
+    STATUS_ACTIONS_RETRY_CANCEL = 2
+} StatusActionSet;
+
+typedef enum {
+    STATUS_ACTION_RETRY = 0,
+    STATUS_ACTION_CANCEL = 1
+} StatusOverlayAction;
+
+typedef void (*StatusOverlayActionCallback)(StatusOverlayAction action);
+
 /**
  * Initialize the status overlay window.
  * Call once at application startup.
@@ -24,6 +37,16 @@ int status_overlay_init(void);
  * The window will automatically appear at the bottom center of the screen.
  */
 void status_overlay_show(StatusType status, const char* text);
+
+/**
+ * Show the status overlay with optional action buttons.
+ */
+void status_overlay_show_actions(StatusType status, const char* text, StatusActionSet actions);
+
+/**
+ * Set the action callback for native button clicks.
+ */
+void status_overlay_set_action_callback(StatusOverlayActionCallback callback);
 
 /**
  * Hide the status overlay window.

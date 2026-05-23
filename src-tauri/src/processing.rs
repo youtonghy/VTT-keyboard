@@ -1,8 +1,10 @@
 use crate::audio_processing;
 use crate::paste;
 use crate::recorder::RecordedAudio;
-use crate::settings::{SettingsStore, TranscriptionAlignment, TriggerMatch};
-use crate::status_native::{self, StatusType};
+use crate::settings::{
+    ProcessingFailureStage, Settings, SettingsStore, TranscriptionAlignment, TriggerMatch,
+};
+use crate::status_native::{self, StatusActionSet, StatusType};
 use crate::transcription;
 use crate::triggers;
 use std::fs;
@@ -33,6 +35,7 @@ pub struct ProcessingOutcome {
     pub triggered_by_keyword: bool,
     pub trigger_matches: Vec<TriggerMatch>,
     pub alignment: Option<TranscriptionAlignment>,
+    pub failure_stage: Option<ProcessingFailureStage>,
     pub error_message: Option<String>,
 }
 
@@ -44,9 +47,46 @@ impl ProcessingOutcome {
     pub fn is_success(&self) -> bool {
         self.error_message.is_none()
     }
+
+    pub fn is_retryable_failure(&self) -> bool {
+        matches!(
+            self.failure_stage,
+            Some(ProcessingFailureStage::Transcription | ProcessingFailureStage::Trigger)
+        )
+    }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProcessingOutputMode {
+    #[default]
+    Paste,
+    PreviewOnly,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProcessingOptions {
+    pub output_mode: ProcessingOutputMode,
+    pub report_status: bool,
+}
+
+impl Default for ProcessingOptions {
+    fn default() -> Self {
+        Self {
+            output_mode: ProcessingOutputMode::Paste,
+            report_status: true,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct TranscribedTextContext {
+    pub model_group: String,
+    pub transcription_elapsed_ms: u64,
+    pub recording_duration_ms: u64,
+    pub alignment: Option<TranscriptionAlignment>,
+}
+
+#[derive(Clone, Default)]
 struct ProcessingOutcomeBuilder {
     history_enabled: bool,
     transcription_text: String,
@@ -114,11 +154,16 @@ impl ProcessingOutcomeBuilder {
             triggered_by_keyword: self.triggered_by_keyword,
             trigger_matches: self.trigger_matches,
             alignment: self.alignment,
+            failure_stage: None,
             error_message: None,
         }
     }
 
-    fn build_error(self, msg: impl Into<String>) -> ProcessingOutcome {
+    fn build_error(
+        self,
+        stage: ProcessingFailureStage,
+        msg: impl Into<String>,
+    ) -> ProcessingOutcome {
         ProcessingOutcome {
             history_enabled: self.history_enabled,
             transcription_text: self.transcription_text,
@@ -130,16 +175,28 @@ impl ProcessingOutcomeBuilder {
             triggered_by_keyword: self.triggered_by_keyword,
             trigger_matches: self.trigger_matches,
             alignment: self.alignment,
+            failure_stage: Some(stage),
             error_message: Some(msg.into()),
         }
     }
 }
 
 pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> ProcessingOutcome {
+    handle_recording_with_options(store, recording, ProcessingOptions::default())
+}
+
+pub fn handle_recording_with_options(
+    store: &SettingsStore,
+    recording: RecordedAudio,
+    options: ProcessingOptions,
+) -> ProcessingOutcome {
     let settings = match store.load() {
         Ok(value) => value,
         Err(err) => {
-            return ProcessingOutcome::builder().build_error(format!("设置读取失败: {err}"));
+            return ProcessingOutcome::builder().build_error(
+                ProcessingFailureStage::Setup,
+                format!("设置读取失败: {err}"),
+            );
         }
     };
     let history_enabled = settings.history.enabled;
@@ -162,7 +219,9 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
 
     if recording.samples.is_empty() {
         dev_log("录音为空，跳过转写");
-        emit_status("completed");
+        if options.report_status {
+            emit_status("completed");
+        }
         return base().build();
     }
     let transcription_started = Instant::now();
@@ -177,14 +236,19 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
         Err(err) => {
             return base()
                 .transcription_elapsed_ms(elapsed_since_ms(transcription_started))
-                .build_error(format!("录音分段失败: {err}"));
+                .build_error(
+                    ProcessingFailureStage::Transcription,
+                    format!("录音分段失败: {err}"),
+                );
         }
     };
     dev_log(&format!("生成 {} 段录音", paths.len()));
-    emit_status_detail(
-        "transcribing",
-        &transcription_segment_status(0, paths.len()),
-    );
+    if options.report_status {
+        emit_status_detail(
+            "transcribing",
+            &transcription_segment_status(0, paths.len()),
+        );
+    }
 
     let mut transcripts = Vec::new();
     let mut alignment_tokens = Vec::new();
@@ -193,10 +257,12 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     for (index, path) in paths.iter().enumerate() {
         let segment_index = index + 1;
         dev_log(&format!("开始请求转写段落 {}", segment_index));
-        emit_status_detail(
-            "transcribing",
-            &transcription_segment_status(segment_index, paths.len()),
-        );
+        if options.report_status {
+            emit_status_detail(
+                "transcribing",
+                &transcription_segment_status(segment_index, paths.len()),
+            );
+        }
         let transcription = match engine.transcribe(path) {
             Ok(value) => value,
             Err(err) => {
@@ -206,7 +272,7 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
                     .transcription_text(partial.clone())
                     .final_text(partial)
                     .transcription_elapsed_ms(elapsed_since_ms(transcription_started))
-                    .build_error(err.to_string());
+                    .build_error(ProcessingFailureStage::Transcription, err.to_string());
             }
         };
         let text = transcription.text;
@@ -240,24 +306,63 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     let transcription_elapsed_ms = elapsed_since_ms(transcription_started);
     dev_log(&format!("合并转写结果: {}", combined));
 
-    // After transcription, build the post-transcription base
-    let post = || {
+    let post = {
         base()
             .transcription_text(combined.clone())
             .transcription_elapsed_ms(transcription_elapsed_ms)
             .alignment(alignment.clone())
     };
 
-    let logger = |message: &str| dev_log(message);
-    let status_reporter = |title: &str| {
-        emit_status_detail("transcribing", &trigger_prompt_status(title));
-    };
-    let result = match triggers::apply_triggers(&settings, &combined, &logger, &status_reporter) {
+    process_transcribed_text(&settings, combined, post, options)
+}
+
+pub fn handle_transcribed_text_with_options(
+    store: &SettingsStore,
+    text: &str,
+    context: TranscribedTextContext,
+    options: ProcessingOptions,
+) -> ProcessingOutcome {
+    let settings = match store.load() {
         Ok(value) => value,
         Err(err) => {
-            return post()
-                .final_text(combined.clone())
-                .build_error(format!("触发词处理失败: {err}"));
+            return ProcessingOutcome::builder().build_error(
+                ProcessingFailureStage::Setup,
+                format!("设置读取失败: {err}"),
+            );
+        }
+    };
+    let combined = normalize_text_for_output(text, settings.output.remove_newlines);
+    let base = ProcessingOutcome::builder()
+        .history_enabled(settings.history.enabled)
+        .model_group(context.model_group)
+        .recording_duration_ms(context.recording_duration_ms)
+        .transcription_elapsed_ms(context.transcription_elapsed_ms)
+        .transcription_text(combined.clone())
+        .alignment(context.alignment);
+
+    process_transcribed_text(&settings, combined, base, options)
+}
+
+fn process_transcribed_text(
+    settings: &Settings,
+    combined: String,
+    post: ProcessingOutcomeBuilder,
+    options: ProcessingOptions,
+) -> ProcessingOutcome {
+    let remove_newlines = settings.output.remove_newlines;
+    let logger = |message: &str| dev_log(message);
+    let status_reporter = |title: &str| {
+        if options.report_status {
+            emit_status_detail("transcribing", &trigger_prompt_status(title));
+        }
+    };
+    let result = match triggers::apply_triggers(settings, &combined, &logger, &status_reporter) {
+        Ok(value) => value,
+        Err(err) => {
+            return post.final_text(combined.clone()).build_error(
+                ProcessingFailureStage::Trigger,
+                format!("触发词处理失败: {err}"),
+            );
         }
     };
     dev_log(&format!(
@@ -272,24 +377,34 @@ pub fn handle_recording(store: &SettingsStore, recording: RecordedAudio) -> Proc
     let final_output = normalize_text_for_output(&result.output, remove_newlines);
 
     let post_trigger = || {
-        post()
+        post.clone()
             .final_text(final_output.clone())
             .triggered(result.triggered)
             .triggered_by_keyword(result.triggered_by_keyword)
             .trigger_matches(result.trigger_matches.clone())
     };
 
-    if result.triggered {
-        dev_log("复制原文到剪贴板");
-        if let Err(err) = paste::write_text(&combined) {
-            return post_trigger().build_error(format!("写入剪贴板失败: {err}"));
+    if options.output_mode == ProcessingOutputMode::Paste {
+        if result.triggered {
+            dev_log("复制原文到剪贴板");
+            if let Err(err) = paste::write_text(&combined) {
+                return post_trigger().build_error(
+                    ProcessingFailureStage::Output,
+                    format!("写入剪贴板失败: {err}"),
+                );
+            }
+        }
+        dev_log("写入并粘贴处理后的文本");
+        if let Err(err) = paste::write_and_paste(&final_output) {
+            return post_trigger().build_error(
+                ProcessingFailureStage::Output,
+                format!("写入剪贴板失败: {err}"),
+            );
+        }
+        if options.report_status {
+            emit_status("completed");
         }
     }
-    dev_log("写入并粘贴处理后的文本");
-    if let Err(err) = paste::write_and_paste(&final_output) {
-        return post_trigger().build_error(format!("写入剪贴板失败: {err}"));
-    }
-    emit_status("completed");
     post_trigger().build()
 }
 
@@ -317,6 +432,21 @@ pub fn emit_status_detail(status: &str, text: &str) {
     };
 
     show_status(status_type, text);
+}
+
+pub fn emit_retryable_failure_status(error_text: &str, actions: StatusActionSet) {
+    let current_count = STATUS_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
+    let text = failure_status(error_text);
+    status_native::show_with_actions(StatusType::Error, &text, actions);
+
+    if actions == StatusActionSet::None {
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(2));
+            if STATUS_COUNTER.load(Ordering::SeqCst) == current_count {
+                status_native::hide();
+            }
+        });
+    }
 }
 
 fn show_status(status_type: StatusType, text: &str) {
@@ -397,9 +527,10 @@ fn trigger_prompt_status(title: &str) -> String {
 mod tests {
     use super::{
         calculate_recording_duration_ms, failure_status, remove_line_breaks,
-        transcription_segment_status, trigger_prompt_status,
+        transcription_segment_status, trigger_prompt_status, ProcessingOutcome,
     };
     use crate::recorder::RecordedAudio;
+    use crate::settings::ProcessingFailureStage;
 
     #[test]
     fn remove_line_breaks_removes_crlf_lf_and_cr() {
@@ -453,5 +584,21 @@ mod tests {
         assert_eq!(trigger_prompt_status("  "), "触发提示词");
         assert_eq!(failure_status("网络超时"), "操作失败: 网络超时");
         assert_eq!(failure_status("  "), "操作失败");
+    }
+
+    #[test]
+    fn retryable_failures_are_limited_to_transcription_and_trigger_stages() {
+        let transcription = ProcessingOutcome::builder().build_error(
+            ProcessingFailureStage::Transcription,
+            "transcription failed",
+        );
+        let trigger =
+            ProcessingOutcome::builder().build_error(ProcessingFailureStage::Trigger, "trigger");
+        let output =
+            ProcessingOutcome::builder().build_error(ProcessingFailureStage::Output, "paste");
+
+        assert!(transcription.is_retryable_failure());
+        assert!(trigger.is_retryable_failure());
+        assert!(!output.is_retryable_failure());
     }
 }

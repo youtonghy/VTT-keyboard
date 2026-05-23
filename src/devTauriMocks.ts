@@ -135,6 +135,7 @@ const createHistoryItems = (): TranscriptionHistoryItem[] => [
     triggered: false,
     triggeredByKeyword: false,
     triggerMatches: [],
+    failureStage: "transcription",
     errorMessage: "Mocked network timeout for layout verification.",
   },
 ];
@@ -145,6 +146,7 @@ const clone = <T,>(value: T): T =>
     : JSON.parse(JSON.stringify(value));
 
 let mockSettings = createDefaultSettings();
+let mockHistoryItems = createHistoryItems();
 let mockAutostartEnabled = false;
 let mockMacOSPermissions = {
   supported: true,
@@ -277,8 +279,32 @@ export async function setupDevTauriMocks() {
         case "get_update_status":
           return clone(updateStatus);
         case "get_transcription_history":
-          return createHistoryItems();
+          return clone(mockHistoryItems);
+        case "retry_transcription_history_item": {
+          const historyId = (payload as { historyId?: string } | undefined)?.historyId;
+          const index = mockHistoryItems.findIndex((item) => item.id === historyId);
+          if (index < 0) {
+            throw new Error("History item not found");
+          }
+          const updated: TranscriptionHistoryItem = {
+            ...mockHistoryItems[index],
+            status: "success",
+            transcriptionText: "Mock retry transcription result.",
+            finalText: "Mock retry transcription result.",
+            transcriptionElapsedMs: 920,
+            triggered: false,
+            triggeredByKeyword: false,
+            triggerMatches: [],
+            failureStage: undefined,
+            errorMessage: undefined,
+          };
+          mockHistoryItems = mockHistoryItems.map((item) =>
+            item.id === updated.id ? updated : item
+          );
+          return clone(updated);
+        }
         case "clear_transcription_history":
+          mockHistoryItems = [];
           return null;
         case "get_sensevoice_status":
         case "prepare_sensevoice":

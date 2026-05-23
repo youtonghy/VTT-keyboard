@@ -178,6 +178,19 @@ impl SettingsStore {
         self.persist_transcription_history(&history)
     }
 
+    pub fn replace_transcription_history_item(
+        &self,
+        item: TranscriptionHistoryItem,
+    ) -> Result<bool, SettingsError> {
+        let mut history = self.load_transcription_history()?;
+        let Some(index) = history.iter().position(|value| value.id == item.id) else {
+            return Ok(false);
+        };
+        history[index] = item;
+        self.persist_transcription_history(&history)?;
+        Ok(true)
+    }
+
     pub fn clear_transcription_history(&self) -> Result<(), SettingsError> {
         self.persist_transcription_history(&[])
     }

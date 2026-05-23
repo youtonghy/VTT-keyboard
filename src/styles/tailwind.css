@@ -749,6 +749,22 @@
     background-color: transparent;
   }
 
+  .history-dialog-retry {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium;
+    border-color: color-mix(in oklab, var(--color-accent) 38%, var(--color-border));
+    color: var(--color-accent-strong);
+    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
+  }
+
+  .history-dialog-retry:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--color-accent) 56%, var(--color-border));
+    background-color: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-elevated));
+  }
+
+  .history-dialog-retry:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+
   .history-dialog-close:hover {
     border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
     color: var(--color-accent-strong);
