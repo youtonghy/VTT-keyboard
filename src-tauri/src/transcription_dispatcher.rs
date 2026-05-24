@@ -6,6 +6,7 @@ use crate::settings::{
     TranscriptionHistoryStatus,
 };
 use crate::status_native::StatusActionSet;
+use crate::transcription;
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc;
 use std::thread;
@@ -30,7 +31,10 @@ enum DispatchMessage {
 
 #[derive(Clone)]
 enum RetrySource {
-    Recording(RecordedAudio),
+    Recording {
+        recording: RecordedAudio,
+        model_group: String,
+    },
     TranscribedText {
         text: String,
         model_group: String,
@@ -276,7 +280,7 @@ fn process_retry_source(
     options: processing::ProcessingOptions,
 ) -> processing::ProcessingOutcome {
     match source {
-        RetrySource::Recording(recording) => {
+        RetrySource::Recording { recording, .. } => {
             if let Err(err) = ensure_sensevoice_runtime_ready(app, store) {
                 #[cfg(debug_assertions)]
                 eprintln!("SenseVoice 运行时自动恢复失败: {err}");
@@ -326,6 +330,7 @@ fn retry_history_item(
         .cloned()
         .or_else(|| retry_source_from_history_item(&item))
         .ok_or_else(|| "原始录音已不可用，无法重试转写".to_string())?;
+    ensure_retry_source_matches_current_engine(store, &source)?;
     let outcome = process_retry_source(
         app,
         store,
@@ -408,9 +413,10 @@ fn retry_source_from_recording_outcome(
     outcome: &processing::ProcessingOutcome,
 ) -> Option<RetrySource> {
     match outcome.failure_stage {
-        Some(ProcessingFailureStage::Transcription) => {
-            Some(RetrySource::Recording(recording.clone()))
-        }
+        Some(ProcessingFailureStage::Transcription) => Some(RetrySource::Recording {
+            recording: recording.clone(),
+            model_group: outcome.model_group.clone(),
+        }),
         Some(ProcessingFailureStage::Trigger) => retry_source_from_transcribed_outcome(outcome),
         _ => None,
     }
@@ -422,7 +428,13 @@ fn retry_source_from_previous_outcome(
 ) -> Option<RetrySource> {
     match outcome.failure_stage {
         Some(ProcessingFailureStage::Transcription) => match previous {
-            RetrySource::Recording(recording) => Some(RetrySource::Recording(recording.clone())),
+            RetrySource::Recording {
+                recording,
+                model_group,
+            } => Some(RetrySource::Recording {
+                recording: recording.clone(),
+                model_group: model_group.clone(),
+            }),
             RetrySource::TranscribedText { .. } => None,
         },
         Some(ProcessingFailureStage::Trigger) => {
@@ -430,6 +442,46 @@ fn retry_source_from_previous_outcome(
         }
         _ => None,
     }
+}
+
+fn ensure_retry_source_matches_current_engine(
+    store: &SettingsStore,
+    source: &RetrySource,
+) -> Result<(), String> {
+    let RetrySource::Recording {
+        model_group: expected,
+        ..
+    } = source
+    else {
+        return Ok(());
+    };
+    if expected.trim().is_empty() {
+        return Ok(());
+    }
+
+    let settings = store.load().map_err(|err| err.to_string())?;
+    let current = transcription::create_engine(&settings).model_group();
+    retry_source_engine_mismatch_error(source, &current).map_or(Ok(()), Err)
+}
+
+fn retry_source_engine_mismatch_error(
+    source: &RetrySource,
+    current_model_group: &str,
+) -> Option<String> {
+    let RetrySource::Recording {
+        model_group: expected,
+        ..
+    } = source
+    else {
+        return None;
+    };
+    if expected.trim().is_empty() || current_model_group == expected {
+        return None;
+    }
+
+    Some(format!(
+        "历史记录来自 {expected}，当前转写引擎是 {current_model_group}。请切回原转写引擎后再重试，避免用不兼容的引擎处理旧录音。"
+    ))
 }
 
 fn retry_source_from_transcribed_outcome(
@@ -526,4 +578,58 @@ fn ensure_sensevoice_runtime_ready(app: &AppHandle, store: &SettingsStore) -> Re
     }
     ensure_service_ready_blocking(app, store, SENSEVOICE_READY_TIMEOUT)
         .map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn recording_source(model_group: &str) -> RetrySource {
+        RetrySource::Recording {
+            recording: RecordedAudio {
+                samples: vec![0],
+                sample_rate: 16_000,
+                channels: 1,
+            },
+            model_group: model_group.to_string(),
+        }
+    }
+
+    #[test]
+    fn recording_retry_allows_same_engine() {
+        assert!(retry_source_engine_mismatch_error(
+            &recording_source("OpenAI / whisper-1"),
+            "OpenAI / whisper-1"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn recording_retry_blocks_engine_switch() {
+        let error = retry_source_engine_mismatch_error(
+            &recording_source("OpenAI / whisper-1"),
+            "SenseVoice / FunAudioLLM/SenseVoiceSmall",
+        )
+        .expect("engine mismatch error");
+
+        assert!(error.contains("历史记录来自 OpenAI / whisper-1"));
+        assert!(error.contains("当前转写引擎是 SenseVoice / FunAudioLLM/SenseVoiceSmall"));
+    }
+
+    #[test]
+    fn transcribed_text_retry_ignores_speech_engine_switch() {
+        let source = RetrySource::TranscribedText {
+            text: "hello".to_string(),
+            model_group: "OpenAI / whisper-1".to_string(),
+            transcription_elapsed_ms: 100,
+            recording_duration_ms: 500,
+            alignment: None,
+        };
+
+        assert!(retry_source_engine_mismatch_error(
+            &source,
+            "SenseVoice / FunAudioLLM/SenseVoiceSmall"
+        )
+        .is_none());
+    }
 }
