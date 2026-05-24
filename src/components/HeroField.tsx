@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode, Ref } from "react";
 import {
   Button,
   Checkbox,
+  Header,
   Input,
   Label,
   ListBox,
@@ -201,8 +202,8 @@ export function HeroSelectControl({
         <ListBox>
           {groups
             ? groups.map((group) => (
-                <ListBox.Section key={group.label} aria-label={group.label}>
-                  <div className="hero-select-group-label">{group.label}</div>
+                <ListBox.Section key={group.label}>
+                  <Header className="hero-select-group-label">{group.label}</Header>
                   {group.options.map((option) => (
                     <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
                       {option.label}

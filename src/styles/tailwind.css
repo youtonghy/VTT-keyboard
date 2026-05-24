@@ -334,6 +334,7 @@
     @apply min-w-0 rounded-lg border p-0 shadow-sm;
     border-color: var(--color-border);
     background-color: color-mix(in oklab, var(--color-surface-elevated) 94%, transparent);
+    overflow: visible;
   }
 
   .settings-card-header {
@@ -352,6 +353,7 @@
 
   .settings-card-body {
     @apply grid min-w-0 items-start gap-4 px-5 pb-5 md:px-6 md:pb-6;
+    overflow: visible;
   }
 
   .field {
@@ -660,6 +662,7 @@
     @apply min-w-0 rounded-lg border p-0;
     border-color: var(--color-border);
     background-color: color-mix(in oklab, var(--color-surface-elevated) 86%, var(--color-bg));
+    overflow: visible;
   }
 
   .trigger-card-header {
@@ -688,6 +691,7 @@
 
   .trigger-card-body {
     @apply grid min-w-0 gap-3 px-4 pb-4 md:grid-cols-2;
+    overflow: visible;
   }
 
   .trigger-card-body .field:last-child {
@@ -912,7 +916,7 @@
   }
 
   .hero-select-trigger {
-    @apply min-h-10 rounded-xl border px-3 py-2.5;
+    @apply min-h-10 w-full rounded-xl border px-3 py-2.5;
     border-color: var(--color-border);
     background-color: color-mix(in oklab, var(--color-surface-elevated) 88%, var(--color-bg));
   }
@@ -923,9 +927,11 @@
   }
 
   .hero-select-popover {
-    @apply rounded-xl border;
+    @apply z-[80] max-h-72 rounded-xl border shadow-xl;
     border-color: var(--color-border);
     background-color: var(--color-surface-elevated);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .hero-select-popover [data-slot="list-box-item"] {
@@ -1009,34 +1015,19 @@
   }
 
   .tooltip-content {
-    @apply absolute z-50 w-max max-w-[280px] rounded-lg px-3 py-2 text-xs font-medium shadow-lg backdrop-blur-md opacity-0 whitespace-normal break-words pointer-events-none;
+    @apply fixed z-[90] w-max max-w-[280px] rounded-lg px-3 py-2 text-xs font-medium shadow-lg backdrop-blur-md opacity-0 whitespace-normal break-words pointer-events-none;
     color: var(--color-text-primary);
     background-color: color-mix(in oklab, var(--color-surface-elevated) 90%, transparent);
     border: 1px solid var(--color-border);
     animation: tooltip-fade-in 0.15s ease-out forwards;
   }
 
-  .tooltip-top {
-    @apply bottom-full mb-2 left-1/2 -translate-x-1/2;
-  }
-  .tooltip-bottom {
-    @apply top-full mt-2 left-1/2 -translate-x-1/2;
-  }
-  .tooltip-left {
-    @apply right-full mr-2 top-1/2 -translate-y-1/2;
-  }
-  .tooltip-right {
-    @apply left-full ml-2 top-1/2 -translate-y-1/2;
-  }
-
   @keyframes tooltip-fade-in {
     from {
       opacity: 0;
-      transform: translateY(4px);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
     }
   }
 
