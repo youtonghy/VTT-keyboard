@@ -92,11 +92,8 @@ pub fn apply_triggers(
                 .trim()
                 .to_string();
             let generation_input = build_trigger_generation_input(&prompt, &cleaned);
-            output = openai::generate_text(
-                &settings.text_processing.openai,
-                &generation_input,
-                &instructions,
-            )?;
+            output =
+                openai::generate_text_for_settings(settings, &generation_input, &instructions)?;
             #[cfg(debug_assertions)]
             {
                 _log(&format!("触发卡片 {} 结果: {}", card.id, output));

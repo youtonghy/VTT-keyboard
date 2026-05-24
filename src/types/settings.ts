@@ -11,6 +11,7 @@ export interface Settings {
   shortcut: ShortcutSettings;
   recording: RecordingSettings;
   provider: TranscriptionProvider;
+  privacy: PrivacySettings;
   openai: OpenAiSettings;
   textProcessing: TextProcessingSettings;
   volcengine: VolcengineSettings;
@@ -30,6 +31,10 @@ export interface ShortcutSettings {
 export interface RecordingSettings {
   segmentSeconds: number;
   inputDeviceName: string;
+}
+
+export interface PrivacySettings {
+  enabled: boolean;
 }
 
 export interface OpenAiSettings {

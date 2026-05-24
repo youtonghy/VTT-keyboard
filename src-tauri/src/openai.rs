@@ -1,3 +1,4 @@
+use crate::privacy;
 use crate::settings::{OpenAiSettings, Settings, TextSettings};
 use reqwest::blocking::{multipart, Client};
 use reqwest::StatusCode;
@@ -73,6 +74,8 @@ struct TranscriptionResponse {
 
 pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String, OpenAiError> {
     ensure_auth(&settings.openai)?;
+    privacy::ensure_url_allowed(&settings.privacy, &settings.openai.api_base, "OpenAI 转写")
+        .map_err(|err| OpenAiError::Config(err.to_string()))?;
     let file_bytes = fs::read(audio_path).map_err(|err| OpenAiError::Io(err.to_string()))?;
     let file_name = audio_path
         .file_name()
@@ -164,6 +167,20 @@ fn generate_text_with_chat_completions(
         .json()
         .map_err(|err| OpenAiError::Parse(err.to_string()))?;
     extract_chat_completion_text(&value)
+}
+
+pub fn generate_text_for_settings(
+    settings: &Settings,
+    input: &str,
+    instructions: &str,
+) -> Result<String, OpenAiError> {
+    privacy::ensure_url_allowed(
+        &settings.privacy,
+        &settings.text_processing.openai.api_base,
+        "触发词处理",
+    )
+    .map_err(|err| OpenAiError::Config(err.to_string()))?;
+    generate_text(&settings.text_processing.openai, input, instructions)
 }
 
 fn ensure_auth(settings: &OpenAiSettings) -> Result<(), OpenAiError> {

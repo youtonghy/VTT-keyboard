@@ -15,6 +15,7 @@ const createDefaultSettings = (): Settings => ({
   shortcut: { key: "CommandOrControl+Shift+Space" },
   recording: { segmentSeconds: 60, inputDeviceName: "" },
   provider: "openai",
+  privacy: { enabled: false },
   openai: {
     apiBase: "https://api.openai.com/v1",
     apiKey: "",

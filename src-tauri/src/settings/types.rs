@@ -29,6 +29,8 @@ pub struct Settings {
     pub recording: RecordingSettings,
     #[serde(default)]
     pub provider: TranscriptionProvider,
+    #[serde(default)]
+    pub privacy: PrivacySettings,
     pub openai: OpenAiSettings,
     #[serde(default)]
     pub text_processing: TextProcessingSettings,
@@ -60,6 +62,7 @@ impl Default for Settings {
                 input_device_name: String::new(),
             },
             provider: TranscriptionProvider::default(),
+            privacy: PrivacySettings::default(),
             openai: OpenAiSettings {
                 api_base: default_openai_api_base(),
                 api_key: "".to_string(),
@@ -136,6 +139,13 @@ fn default_text_max_output_tokens() -> u32 {
 
 fn default_text_top_p() -> f32 {
     1.0
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacySettings {
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

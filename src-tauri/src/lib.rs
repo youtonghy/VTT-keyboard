@@ -3,6 +3,7 @@ mod audio_processing;
 mod openai;
 mod paste;
 mod permissions;
+mod privacy;
 mod processing;
 mod recorder;
 mod sensevoice;
@@ -320,6 +321,9 @@ fn prepare_sensevoice(
     app: tauri::AppHandle,
     state: State<AppState>,
 ) -> Result<SenseVoiceStatus, String> {
+    let settings = state.settings_store.load().map_err(|err| err.to_string())?;
+    privacy::ensure_external_network_allowed(&settings.privacy, "准备本地模型")
+        .map_err(|err| err.to_string())?;
     let mut manager = state
         .sensevoice_manager
         .lock()
@@ -362,6 +366,9 @@ fn update_sensevoice_runtime(
     app: tauri::AppHandle,
     state: State<AppState>,
 ) -> Result<SenseVoiceStatus, String> {
+    let settings = state.settings_store.load().map_err(|err| err.to_string())?;
+    privacy::ensure_external_network_allowed(&settings.privacy, "更新本地模型运行时")
+        .map_err(|err| err.to_string())?;
     let mut manager = state
         .sensevoice_manager
         .lock()

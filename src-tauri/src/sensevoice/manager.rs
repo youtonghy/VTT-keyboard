@@ -13,6 +13,7 @@ use super::{
     },
     native_runtime, SenseVoiceError,
 };
+use crate::privacy;
 use crate::sensevoice::worker::{WorkerEvent, WorkerJob};
 use crate::settings::SettingsStore;
 use crate::AppState;
@@ -823,15 +824,24 @@ pub fn ensure_service_ready_blocking(
     store: &SettingsStore,
     timeout: Duration,
 ) -> Result<(), SenseVoiceError> {
-    let sensevoice = store
-        .load_sensevoice()
+    let settings = store
+        .load()
         .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+    let sensevoice = settings.sensevoice.clone();
     if !sensevoice.enabled || !sensevoice.installed {
         // 用户尚未启用或未安装，不做自动恢复，交由上层错误处理
         return Ok(());
     }
     let local_model = normalize_local_model(&sensevoice.local_model);
     let spec = spec_for_local_model(local_model);
+    if spec.runtime_kind == LocalRuntimeKind::Docker {
+        privacy::ensure_url_allowed(
+            &settings.privacy,
+            &sensevoice.service_url,
+            "本地模型健康检查",
+        )
+        .map_err(|err| SenseVoiceError::Config(err.to_string()))?;
+    }
 
     // 快路径：原生模型已加载，或 Docker 容器运行中且 HTTP 健康 → 直接返回
     if spec.runtime_kind == LocalRuntimeKind::Native {
@@ -1025,6 +1035,11 @@ fn run_startup_task(
                     "SenseVoice 尚未安装，请先完成下载".to_string(),
                 ));
             }
+            let privacy_enabled = store
+                .load()
+                .map_err(|err| SenseVoiceError::Settings(err.to_string()))?
+                .privacy
+                .enabled;
 
             let paths = ensure_paths(&app)?;
             native_runtime::set_models_root(paths.models_dir.clone());
@@ -1360,6 +1375,11 @@ fn run_startup_task(
             }
 
             // 全新创建容器
+            if privacy_enabled {
+                return Err(SenseVoiceError::Config(privacy::blocked_message(
+                    "启动新的本地模型容器",
+                )));
+            }
             if local_model == LOCAL_MODEL_SENSEVOICE {
                 ensure_runtime_image(&app, &paths.runtime_dir)?;
             } else {

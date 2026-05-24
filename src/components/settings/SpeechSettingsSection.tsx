@@ -69,6 +69,29 @@ export function SpeechSettingsSection({
   sherpaLanguageOptions,
   qwenVariantOptions,
 }: SpeechSettingsSectionProps) {
+  const privacyModeEnabled = draft.privacy.enabled;
+  const providerGroups = privacyModeEnabled
+    ? [
+        {
+          label: t("speech.categoryLocal"),
+          options: [{ value: "sensevoice", label: t("speech.sensevoice") }],
+        },
+      ]
+    : [
+        {
+          label: t("speech.categoryCloud"),
+          options: [
+            { value: "openai", label: "OpenAI" },
+            { value: "volcengine", label: t("speech.volcengine") },
+            { value: "aliyun-asr", label: t("speech.aliyunAsr") },
+            { value: "aliyun-paraformer", label: t("speech.aliyunParaformer") },
+          ],
+        },
+        {
+          label: t("speech.categoryLocal"),
+          options: [{ value: "sensevoice", label: t("speech.sensevoice") }],
+        },
+      ];
   const localModelOptions: Option[] = [
     {
       value: "sensevoice",
@@ -101,7 +124,9 @@ export function SpeechSettingsSection({
             onChange={(value) =>
               updateDraft((prev) => ({
                 ...prev,
-                provider: value as Settings["provider"],
+                provider: privacyModeEnabled
+                  ? "sensevoice"
+                  : (value as Settings["provider"]),
                 aliyun: isAliyunProvider(value as Settings["provider"])
                   ? {
                       ...prev.aliyun,
@@ -113,24 +138,11 @@ export function SpeechSettingsSection({
                   : prev.aliyun,
               }))
             }
-            groups={[
-              {
-                label: t("speech.categoryCloud"),
-                options: [
-                  { value: "openai", label: "OpenAI" },
-                  { value: "volcengine", label: t("speech.volcengine") },
-                  { value: "aliyun-asr", label: t("speech.aliyunAsr") },
-                  { value: "aliyun-paraformer", label: t("speech.aliyunParaformer") },
-                ],
-              },
-              {
-                label: t("speech.categoryLocal"),
-                options: [
-                  { value: "sensevoice", label: t("speech.sensevoice") },
-                ],
-              },
-            ]}
+            groups={providerGroups}
            /></HeroField>
+        {privacyModeEnabled ? (
+          <div className="sensevoice-hint">{t("speech.privacyModeLocalOnly")}</div>
+        ) : null}
       </SettingsCard>
 
       {draft.provider === "openai" ? (
