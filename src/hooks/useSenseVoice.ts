@@ -7,7 +7,7 @@ export interface SenseVoiceStatus {
   installed: boolean;
   enabled: boolean;
   running: boolean;
-  runtimeState: "stopped" | "running" | "paused" | "starting";
+  runtimeState: "stopped" | "running" | "paused" | "starting" | "exited";
   runtimeKind: "native" | "docker";
   supportsPause: boolean;
   localModel: string;
@@ -25,6 +25,24 @@ export interface SenseVoiceProgress {
   downloadedBytes?: number;
   totalBytes?: number;
   detail?: string;
+}
+
+export interface SenseVoiceDockerRuntimeStatus {
+  available: boolean;
+  daemonRunning: boolean;
+  containerName: string;
+  containerExists: boolean;
+  containerState: string;
+  containerModelKey: string;
+  containerModelId: string;
+  expectedModelKey: string;
+  expectedModelId: string;
+  imageTag: string;
+  imageExists: boolean;
+  serviceUrl: string;
+  runtimeDir: string;
+  modelsDir: string;
+  lastError: string;
 }
 
 interface SenseVoiceRuntimeLog {
@@ -48,8 +66,29 @@ const defaultStatus: SenseVoiceStatus = {
   lastError: "",
 };
 
+const defaultDockerRuntimeStatus: SenseVoiceDockerRuntimeStatus = {
+  available: false,
+  daemonRunning: false,
+  containerName: "",
+  containerExists: false,
+  containerState: "stopped",
+  containerModelKey: "",
+  containerModelId: "",
+  expectedModelKey: "sensevoice",
+  expectedModelId: "",
+  imageTag: "",
+  imageExists: false,
+  serviceUrl: "",
+  runtimeDir: "",
+  modelsDir: "",
+  lastError: "",
+};
+
 export function useSenseVoice(monitoringEnabled = false) {
   const [status, setStatus] = useState<SenseVoiceStatus>(defaultStatus);
+  const [dockerRuntimeStatus, setDockerRuntimeStatus] = useState<SenseVoiceDockerRuntimeStatus>(
+    defaultDockerRuntimeStatus
+  );
   const [progress, setProgress] = useState<SenseVoiceProgress | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,6 +107,12 @@ export function useSenseVoice(monitoringEnabled = false) {
         return prev;
       });
     }
+    return next;
+  }, []);
+
+  const refreshDockerRuntimeStatus = useCallback(async () => {
+    const next = await invoke<SenseVoiceDockerRuntimeStatus>("get_sensevoice_docker_runtime_status");
+    setDockerRuntimeStatus(next);
     return next;
   }, []);
 
@@ -111,6 +156,18 @@ export function useSenseVoice(monitoringEnabled = false) {
     }
   }, []);
 
+  const stopServiceForce = useCallback(async () => {
+    setLoading(true);
+    try {
+      const next = await invoke<SenseVoiceStatus>("stop_sensevoice_service_force");
+      setStatus(next);
+      setProgress(null);
+      return next;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const updateRuntime = useCallback(async () => {
     setLoading(true);
     try {
@@ -119,6 +176,31 @@ export function useSenseVoice(monitoringEnabled = false) {
       setLoading(false);
     }
   }, []);
+
+  const restartService = useCallback(async () => {
+    setLoading(true);
+    try {
+      const next = await invoke<SenseVoiceStatus>("restart_sensevoice_service");
+      setStatus(next);
+      void refreshStatus().catch(() => {});
+      return next;
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshStatus]);
+
+  const removeRuntimeContainer = useCallback(async () => {
+    setLoading(true);
+    try {
+      const next = await invoke<SenseVoiceStatus>("remove_sensevoice_runtime_container");
+      setStatus(next);
+      setProgress(null);
+      void refreshDockerRuntimeStatus().catch(() => {});
+      return next;
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshDockerRuntimeStatus]);
 
   useEffect(() => {
     void refreshStatus().catch(() => {});
@@ -189,14 +271,19 @@ export function useSenseVoice(monitoringEnabled = false) {
 
   return {
     status,
+    dockerRuntimeStatus,
     progress,
     logLines,
     loading,
     refreshStatus,
+    refreshDockerRuntimeStatus,
     prepare,
     updateSettings,
     startService,
     stopService,
+    stopServiceForce,
+    restartService,
+    removeRuntimeContainer,
     updateRuntime,
   };
 }

@@ -7,8 +7,8 @@ use super::docker_utils::{
 use super::{
     model::{
         docker_container_name, is_vllm_local_model, legacy_container_names, normalize_local_model,
-        resolve_vllm_model_id, runtime_container_name, runtime_image_tag, service_start_timeout,
-        spec_for_local_model, LocalRuntimeKind, CONTAINER_LABEL_MODEL_ID,
+        resolve_runtime_model_id, resolve_vllm_model_id, runtime_container_name, runtime_image_tag,
+        service_start_timeout, spec_for_local_model, LocalRuntimeKind, CONTAINER_LABEL_MODEL_ID,
         CONTAINER_LABEL_MODEL_KEY, LOCAL_MODEL_SENSEVOICE, LOCAL_MODEL_VOXTRAL,
     },
     native_runtime, SenseVoiceError,
@@ -63,6 +63,7 @@ const RUNTIME_STATE_STOPPED: &str = "stopped";
 const RUNTIME_STATE_RUNNING: &str = "running";
 const RUNTIME_STATE_PAUSED: &str = "paused";
 const RUNTIME_STATE_STARTING: &str = "starting";
+const RUNTIME_STATE_EXITED: &str = "exited";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,6 +79,26 @@ pub struct SenseVoiceStatus {
     pub model_id: String,
     pub device: String,
     pub download_state: String,
+    pub last_error: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SenseVoiceDockerRuntimeStatus {
+    pub available: bool,
+    pub daemon_running: bool,
+    pub container_name: String,
+    pub container_exists: bool,
+    pub container_state: String,
+    pub container_model_key: String,
+    pub container_model_id: String,
+    pub expected_model_key: String,
+    pub expected_model_id: String,
+    pub image_tag: String,
+    pub image_exists: bool,
+    pub service_url: String,
+    pub runtime_dir: String,
+    pub models_dir: String,
     pub last_error: String,
 }
 
@@ -118,7 +139,7 @@ impl RuntimeState {
             RuntimeState::Stopped => RUNTIME_STATE_STOPPED,
             RuntimeState::Running => RUNTIME_STATE_RUNNING,
             RuntimeState::Paused => RUNTIME_STATE_PAUSED,
-            RuntimeState::Exited => RUNTIME_STATE_STOPPED,
+            RuntimeState::Exited => RUNTIME_STATE_EXITED,
         }
     }
 }
@@ -236,7 +257,6 @@ impl SenseVoiceManager {
         }
         let job = WorkerJob {
             local_model: local_model.to_string(),
-            service_url: sensevoice.service_url,
             model_id: sensevoice.model_id,
             language: sensevoice.language,
             device: sensevoice.device,
@@ -244,7 +264,6 @@ impl SenseVoiceManager {
             models_dir: paths.models_dir.to_string_lossy().to_string(),
             state_file: paths.state_file.to_string_lossy().to_string(),
             image_tag: runtime_image_tag(local_model).to_string(),
-            container_name: runtime_container_name(local_model).to_string(),
         };
         self.spawn_prepare_worker(app, store, &job)?;
         self.status(store)
@@ -266,7 +285,7 @@ impl SenseVoiceManager {
             .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
         let local_model = normalize_local_model(&sensevoice.local_model);
         let local_model_spec = spec_for_local_model(local_model);
-        let container_name = docker_container_name();
+        let container_name = runtime_container_name(local_model);
         let runtime_state = if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
             if native_runtime::is_loaded(local_model) {
                 RuntimeState::Running
@@ -280,22 +299,14 @@ impl SenseVoiceManager {
         if runtime_state == RuntimeState::Running
             && local_model_spec.runtime_kind == LocalRuntimeKind::Docker
         {
-            // 优先读取宿主机配置文件，回退到 Docker labels
-            let config_dir_result = app.path().app_local_data_dir().map(|d| {
-                d.join("sensevoice")
-                    .join("runtime")
-                    .join(VLLM_CONFIG_DIR_NAME)
-            });
-            let (loaded_key, loaded_id) = config_dir_result
-                .ok()
-                .and_then(|dir| read_vllm_config_model(&dir))
-                .or_else(|| {
-                    let k = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
-                    let i = get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
-                    Some((k?, i?))
-                })
-                .unwrap_or_default();
-            let expected_model_id = resolve_vllm_model_id(local_model, &sensevoice.model_id);
+            let config_dir_result = app
+                .path()
+                .app_local_data_dir()
+                .map(|d| d.join("sensevoice").join("runtime").join(VLLM_CONFIG_DIR_NAME));
+            let (loaded_key, loaded_id) =
+                read_runtime_container_model(local_model, container_name, config_dir_result.ok())
+                    .unwrap_or_default();
+            let expected_model_id = resolve_runtime_model_id(local_model, &sensevoice.model_id);
             if loaded_key == local_model && loaded_id == expected_model_id {
                 self.start_in_progress = false;
                 self.start_cancel_flag.store(false, Ordering::Relaxed);
@@ -349,7 +360,6 @@ impl SenseVoiceManager {
         app: &AppHandle,
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
-        // 始终使用 pause 模式停止容器（保留容器以便下次快速恢复）
         self.stop_service_with_mode(app, store, STOP_MODE_PAUSE)
     }
 
@@ -359,6 +369,128 @@ impl SenseVoiceManager {
         store: &SettingsStore,
     ) -> Result<SenseVoiceStatus, SenseVoiceError> {
         self.stop_service_with_mode(app, store, STOP_MODE_STOP)
+    }
+
+    pub fn restart_service_async(
+        &mut self,
+        app: &AppHandle,
+        store: &SettingsStore,
+    ) -> Result<SenseVoiceStatus, SenseVoiceError> {
+        self.restart_service_keep_container(app, store)?;
+        self.start_service_async(app, store)
+    }
+
+    pub fn remove_runtime_container(
+        &mut self,
+        app: &AppHandle,
+        store: &SettingsStore,
+    ) -> Result<SenseVoiceStatus, SenseVoiceError> {
+        self.stop_prepare_task();
+        self.start_cancel_flag.store(true, Ordering::Relaxed);
+        self.start_in_progress = false;
+        self.stop_log_stream();
+
+        let local_model = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?
+            .local_model;
+        let local_model_spec = spec_for_local_model(&local_model);
+        if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+            native_runtime::unload(local_model_spec.model_key);
+        } else {
+            remove_container_if_exists(runtime_container_name(&local_model))
+                .map_err(SenseVoiceError::Process)?;
+        }
+
+        self.container_running_cache.store(false, Ordering::Relaxed);
+        self.container_paused_cache.store(false, Ordering::Relaxed);
+        self.container_name = None;
+        let ready_state = if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+            "ready"
+        } else {
+            "idle"
+        };
+        let _ = self.update_state(store, ready_state, "", None, None);
+        self.emit_progress(app, "stopped", "Runtime container removed", None);
+        self.status(store)
+    }
+
+    pub fn refresh_docker_runtime_status(
+        &mut self,
+        app: &AppHandle,
+        store: &SettingsStore,
+    ) -> Result<SenseVoiceDockerRuntimeStatus, SenseVoiceError> {
+        self.docker_runtime_status(app, store)
+    }
+
+    pub fn docker_runtime_status(
+        &mut self,
+        app: &AppHandle,
+        store: &SettingsStore,
+    ) -> Result<SenseVoiceDockerRuntimeStatus, SenseVoiceError> {
+        self.reconcile_prepare_task();
+        let sensevoice = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?;
+        let local_model = normalize_local_model(&sensevoice.local_model);
+        let spec = spec_for_local_model(local_model);
+        let paths = ensure_paths(app)?;
+        let container_name = runtime_container_name(local_model).to_string();
+        let image_tag = runtime_image_tag(local_model).to_string();
+        let mut available = false;
+        let mut daemon_running = false;
+        let mut last_error = String::new();
+
+        match docker_cli_available() {
+            Ok(()) => {
+                available = true;
+                match docker_daemon_available() {
+                    Ok(()) => daemon_running = true,
+                    Err(err) => last_error = err,
+                }
+            }
+            Err(err) => last_error = err,
+        }
+
+        let container_state = if spec.runtime_kind == LocalRuntimeKind::Docker && daemon_running {
+            docker_container_state(&container_name).unwrap_or(RuntimeState::Stopped)
+        } else {
+            RuntimeState::Stopped
+        };
+        let container_exists = spec.runtime_kind == LocalRuntimeKind::Docker
+            && daemon_running
+            && docker_container_exists(&container_name);
+        let (container_model_key, container_model_id) =
+            if spec.runtime_kind == LocalRuntimeKind::Docker && container_exists {
+                read_runtime_container_model(
+                    local_model,
+                    &container_name,
+                    Some(vllm_config_dir(&paths.runtime_dir)),
+                )
+                .unwrap_or_default()
+            } else {
+                (String::new(), String::new())
+            };
+
+        Ok(SenseVoiceDockerRuntimeStatus {
+            available,
+            daemon_running,
+            container_name,
+            container_exists,
+            container_state: container_state.as_status_str().to_string(),
+            container_model_key,
+            container_model_id,
+            expected_model_key: local_model.to_string(),
+            expected_model_id: resolve_runtime_model_id(local_model, &sensevoice.model_id),
+            image_tag: image_tag.clone(),
+            image_exists: spec.runtime_kind == LocalRuntimeKind::Docker
+                && daemon_running
+                && docker_image_exists(&image_tag),
+            service_url: sensevoice.service_url,
+            runtime_dir: paths.runtime_dir.to_string_lossy().to_string(),
+            models_dir: paths.models_dir.to_string_lossy().to_string(),
+            last_error,
+        })
     }
 
     /// 更新运行时：停止并删除当前模型的容器，更新镜像，然后重新启动
@@ -505,12 +637,69 @@ impl SenseVoiceManager {
         } else {
             self.container_running_cache.store(false, Ordering::Relaxed);
             self.container_paused_cache.store(false, Ordering::Relaxed);
-            // stop 模式：停止容器但不删除，保留容器以便后续 docker start 恢复
-            let _ = stop_container(container_name);
+            // stop 模式：直接移除容器，释放环境并触发下次完整重建
+            let _ = remove_container_if_exists(container_name);
             self.container_name = None;
             let _ = self.update_state(store, "idle", "", None, None);
             self.emit_progress(app, "stopped", "Service stopped", None);
         }
+        self.status(store)
+    }
+
+    fn restart_service_keep_container(
+        &mut self,
+        app: &AppHandle,
+        store: &SettingsStore,
+    ) -> Result<SenseVoiceStatus, SenseVoiceError> {
+        self.stop_prepare_task();
+        self.start_cancel_flag.store(true, Ordering::Relaxed);
+        self.start_in_progress = false;
+        self.stop_log_stream();
+        let local_model = store
+            .load_sensevoice()
+            .map_err(|err| SenseVoiceError::Settings(err.to_string()))?
+            .local_model;
+        let local_model_spec = spec_for_local_model(&local_model);
+        if local_model_spec.runtime_kind == LocalRuntimeKind::Native {
+            native_runtime::unload(local_model_spec.model_key);
+            self.container_running_cache.store(false, Ordering::Relaxed);
+            self.container_paused_cache.store(false, Ordering::Relaxed);
+            self.container_name = None;
+            let _ = self.update_state(store, "ready", "", None, None);
+            self.emit_progress(app, "stopped", "Native model unloaded", None);
+            return self.status(store);
+        }
+        let container_name = runtime_container_name(&local_model);
+        match docker_container_state(container_name).unwrap_or(RuntimeState::Stopped) {
+            RuntimeState::Running => {
+                stop_container(container_name)?;
+                self.container_running_cache.store(false, Ordering::Relaxed);
+                self.container_paused_cache.store(false, Ordering::Relaxed);
+                self.container_name = Some(container_name.to_string());
+                let _ = self.update_state(store, "idle", "", None, None);
+            }
+            RuntimeState::Paused => {
+                unpause_container(container_name)?;
+                stop_container(container_name)?;
+                self.container_running_cache.store(false, Ordering::Relaxed);
+                self.container_paused_cache.store(false, Ordering::Relaxed);
+                self.container_name = Some(container_name.to_string());
+                let _ = self.update_state(store, "idle", "", None, None);
+            }
+            RuntimeState::Exited => {
+                self.container_running_cache.store(false, Ordering::Relaxed);
+                self.container_paused_cache.store(false, Ordering::Relaxed);
+                self.container_name = Some(container_name.to_string());
+                let _ = self.update_state(store, "idle", "", None, None);
+            }
+            RuntimeState::Stopped => {
+                self.container_running_cache.store(false, Ordering::Relaxed);
+                self.container_paused_cache.store(false, Ordering::Relaxed);
+                self.container_name = None;
+                let _ = self.update_state(store, "idle", "", None, None);
+            }
+        }
+        self.emit_progress(app, "stopped", "Service restarting", None);
         self.status(store)
     }
 
@@ -849,7 +1038,7 @@ pub fn ensure_service_ready_blocking(
             return Ok(());
         }
     } else {
-        let container_name = docker_container_name();
+        let container_name = runtime_container_name(local_model);
         if matches!(
             docker_container_state(container_name),
             Ok(RuntimeState::Running)
@@ -1107,17 +1296,15 @@ fn run_startup_task(
             // 单容器模式：检查当前容器配置的模型是否匹配（含具体变体 ID）
             // 优先读取宿主机配置文件（容器内模型调度的真实来源），回退到 Docker labels
             let mut effective_container_state = container_state;
-            let expected_model_id = resolve_vllm_model_id(local_model, &sensevoice.model_id);
+            let expected_model_id = resolve_runtime_model_id(local_model, &sensevoice.model_id);
             let config_dir = vllm_config_dir(&paths.runtime_dir);
             if container_state != RuntimeState::Stopped {
-                let (loaded_key, loaded_id) = read_vllm_config_model(&config_dir)
-                    .or_else(|| {
-                        // 旧容器没有配置文件，回退到 Docker labels
-                        let k = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
-                        let i = get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
-                        Some((k?, i?))
-                    })
-                    .unwrap_or_default();
+                let (loaded_key, loaded_id) = read_runtime_container_model(
+                    local_model,
+                    container_name,
+                    Some(config_dir.clone()),
+                )
+                .unwrap_or_default();
                 let key_matches = loaded_key == local_model;
                 let id_matches = loaded_id == expected_model_id;
                 if !key_matches || !id_matches {
@@ -1146,10 +1333,12 @@ fn run_startup_task(
                             let _ = stop_container(container_name);
                         }
                         // 写入新配置
+                        let next_vllm_model_id =
+                            resolve_vllm_model_id(local_model, &sensevoice.model_id);
                         write_vllm_config(
                             &config_dir,
                             normalize_local_model(local_model),
-                            &expected_model_id,
+                            &next_vllm_model_id,
                             port,
                             VLLM_GPU_MEMORY_UTILIZATION,
                             &vllm_extra_args(local_model),
@@ -1391,12 +1580,13 @@ fn run_startup_task(
             let _ = remove_container_if_exists(container_name);
             if local_model == LOCAL_MODEL_SENSEVOICE {
                 let hub = read_selected_hub(&paths.state_file).unwrap_or_else(|| "hf".to_string());
+                let model_id = resolve_runtime_model_id(local_model, &sensevoice.model_id);
                 run_service_container(
                     container_name,
                     &publish_host,
                     port,
                     &paths.models_dir,
-                    &sensevoice.model_id,
+                    &model_id,
                     &sensevoice.device,
                     &hub,
                 )?;
@@ -1984,6 +2174,11 @@ fn write_runtime_files(paths: &SenseVoicePaths) -> Result<(), SenseVoiceError> {
 }
 
 fn ensure_docker_available() -> Result<(), SenseVoiceError> {
+    docker_cli_available().map_err(SenseVoiceError::Config)?;
+    docker_daemon_available().map_err(SenseVoiceError::Config)
+}
+
+fn docker_cli_available() -> Result<(), String> {
     let mut version = docker_command();
     version
         .arg("version")
@@ -1991,26 +2186,29 @@ fn ensure_docker_available() -> Result<(), SenseVoiceError> {
         .arg("{{.Client.Version}}");
     hide_window(&mut version);
     let output = version.output().map_err(|err| {
-        SenseVoiceError::Config(format!("未检测到 Docker，请先安装 Docker: {err}"))
+        format!("未检测到 Docker，请先安装 Docker: {err}")
     })?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(SenseVoiceError::Config(format!(
+        return Err(format!(
             "Docker 不可用，请先安装 Docker Desktop 并确保 docker 命令可执行: {detail}"
-        )));
+        ));
     }
+    Ok(())
+}
 
+fn docker_daemon_available() -> Result<(), String> {
     let mut info = docker_command();
     info.arg("info");
     hide_window(&mut info);
     let output = info
         .output()
-        .map_err(|err| SenseVoiceError::Config(format!("无法连接 Docker daemon: {err}")))?;
+        .map_err(|err| format!("无法连接 Docker daemon: {err}"))?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(SenseVoiceError::Config(format!(
+        return Err(format!(
             "Docker daemon 未运行，请先启动 Docker Desktop: {detail}"
-        )));
+        ));
     }
     Ok(())
 }
@@ -2293,6 +2491,13 @@ fn docker_container_state(name: &str) -> Result<RuntimeState, SenseVoiceError> {
         return Ok(RuntimeState::Exited);
     }
     Ok(RuntimeState::Stopped)
+}
+
+fn docker_container_exists(name: &str) -> bool {
+    let mut command = docker_command();
+    command.arg("inspect").arg(name);
+    hide_window(&mut command);
+    command.status().is_ok_and(|status| status.success())
 }
 
 #[allow(dead_code)]
@@ -2640,6 +2845,27 @@ fn read_vllm_config_model(config_dir: &Path) -> Option<(String, String)> {
         }
     }
     Some((model_key?, model_id?))
+}
+
+fn read_runtime_container_model(
+    local_model: &str,
+    container_name: &str,
+    config_dir: Option<PathBuf>,
+) -> Option<(String, String)> {
+    let labels = || {
+        let key = get_container_label(container_name, CONTAINER_LABEL_MODEL_KEY);
+        let id = get_container_label(container_name, CONTAINER_LABEL_MODEL_ID);
+        Some((key?, id?))
+    };
+
+    if is_vllm_local_model(local_model) {
+        config_dir
+            .as_deref()
+            .and_then(read_vllm_config_model)
+            .or_else(labels)
+    } else {
+        labels().or_else(|| config_dir.as_deref().and_then(read_vllm_config_model))
+    }
 }
 
 /// 去除 bash 单/双引号包裹

@@ -1,5 +1,6 @@
 import type { TFunction } from "i18next";
 import { Button } from "@heroui/react";
+import { RefreshCw, RotateCw, Square, Trash2, Play, Pause } from "lucide-react";
 import { CustomSelect } from "../CustomSelect";
 import { HeroCheckboxField, HeroField, HeroInputField } from "../HeroField";
 import { NumberWheelInput } from "../NumberWheelInput";
@@ -23,6 +24,23 @@ interface SpeechSettingsSectionProps {
   supportsSherpaOnnxSenseVoice: boolean;
   sherpaFallbackActive: boolean;
   sensevoiceStatus: SenseVoiceStatus;
+  sensevoiceDockerRuntimeStatus: {
+    available: boolean;
+    daemonRunning: boolean;
+    containerName: string;
+    containerExists: boolean;
+    containerState: string;
+    containerModelKey: string;
+    containerModelId: string;
+    expectedModelKey: string;
+    expectedModelId: string;
+    imageTag: string;
+    imageExists: boolean;
+    serviceUrl: string;
+    runtimeDir: string;
+    modelsDir: string;
+    lastError: string;
+  };
   sensevoiceProgress: SenseVoiceProgress | null;
   sensevoiceLogLines: string[];
   sensevoiceLogsExpanded: boolean;
@@ -31,7 +49,11 @@ interface SpeechSettingsSectionProps {
   handleSenseVoicePrepare: () => void;
   handleSenseVoiceStart: () => void;
   handleSenseVoiceStop: () => void;
+  handleSenseVoiceRestart: () => void;
+  handleSenseVoiceRemoveContainer: () => void;
   handleUpdateRuntime: () => void;
+  refreshSenseVoiceStatus: () => Promise<unknown>;
+  refreshSenseVoiceDockerRuntimeStatus: () => Promise<unknown>;
   normalizeLocalModel: (value: string | undefined) => string;
   normalizeSenseVoiceLanguage: (value: string | undefined) => string;
   normalizeSenseVoiceDevice: (localModel: string | undefined, device: string | undefined) => string;
@@ -50,6 +72,7 @@ export function SpeechSettingsSection({
   supportsSherpaOnnxSenseVoice,
   sherpaFallbackActive,
   sensevoiceStatus,
+  sensevoiceDockerRuntimeStatus,
   sensevoiceProgress,
   sensevoiceLogLines,
   sensevoiceLogsExpanded,
@@ -58,7 +81,11 @@ export function SpeechSettingsSection({
   handleSenseVoicePrepare,
   handleSenseVoiceStart,
   handleSenseVoiceStop,
+  handleSenseVoiceRestart,
+  handleSenseVoiceRemoveContainer,
   handleUpdateRuntime,
+  refreshSenseVoiceStatus,
+  refreshSenseVoiceDockerRuntimeStatus,
   normalizeLocalModel,
   normalizeSenseVoiceLanguage,
   normalizeSenseVoiceDevice,
@@ -604,6 +631,29 @@ export function SpeechSettingsSection({
               draft.sensevoice.device
             );
             const selectedQwenVariant = getQwenVariantByModelId(draft.sensevoice.modelId);
+            const dockerRuntimeReady =
+              sensevoiceDockerRuntimeStatus.available && sensevoiceDockerRuntimeStatus.daemonRunning;
+            const dockerRuntimeState = sensevoiceDockerRuntimeStatus.containerState || "stopped";
+            const dockerRuntimeStateLabel =
+              dockerRuntimeState === "running"
+                ? t("sensevoice.runtimeEnvironmentRunning")
+                : dockerRuntimeState === "paused"
+                  ? t("sensevoice.runtimeEnvironmentPaused")
+                  : dockerRuntimeState === "exited" || dockerRuntimeState === "created"
+                    ? t("sensevoice.runtimeEnvironmentStopped")
+                    : dockerRuntimeReady && !sensevoiceDockerRuntimeStatus.containerExists
+                      ? t("sensevoice.runtimeEnvironmentMissing")
+                      : t("sensevoice.runtimeEnvironmentError");
+            const dockerRuntimeModelLabel =
+              sensevoiceDockerRuntimeStatus.containerModelId ||
+              sensevoiceDockerRuntimeStatus.expectedModelId ||
+              draft.sensevoice.modelId;
+            const runtimePanelBusy =
+              sensevoiceLoading ||
+              progressStage === "prepare" ||
+              progressStage === "install" ||
+              progressStage === "download" ||
+              progressStage === "loading";
 
             return (
               <>
@@ -736,6 +786,112 @@ export function SpeechSettingsSection({
                   <div className="sensevoice-hint">{t("sensevoice.qwenCudaOnlyHint")}</div>
                 ) : null}
 
+                {!isNativeRuntime ? (
+                  <div className="sensevoice-runtime-panel">
+                    <div className="sensevoice-runtime-panel-header">
+                      <div>
+                        <div className="sensevoice-runtime-panel-title">
+                          {t("sensevoice.runtimePanelTitle")}
+                        </div>
+                        <div className="sensevoice-runtime-panel-description">
+                          {t("sensevoice.runtimePanelDescription")}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="tertiary"
+                        isIconOnly
+                        isDisabled={runtimePanelBusy}
+                        onPress={() => {
+                          void refreshSenseVoiceStatus();
+                          void refreshSenseVoiceDockerRuntimeStatus();
+                        }}
+                        aria-label={t("sensevoice.runtimeRefresh")}
+                      >
+                        <RefreshCw size={16} />
+                      </Button>
+                    </div>
+
+                    <div className="sensevoice-runtime-grid">
+                      <div>
+                        <span>{t("sensevoice.runtimeStatus")}</span>
+                        <strong>{dockerRuntimeStateLabel}</strong>
+                      </div>
+                      <div>
+                        <span>{t("sensevoice.runtimeContainer")}</span>
+                        <strong>{sensevoiceDockerRuntimeStatus.containerName || "—"}</strong>
+                      </div>
+                      <div>
+                        <span>{t("sensevoice.runtimeImage")}</span>
+                        <strong>{sensevoiceDockerRuntimeStatus.imageTag || "—"}</strong>
+                      </div>
+                      <div>
+                        <span>{t("sensevoice.runtimeModel")}</span>
+                        <strong>{dockerRuntimeModelLabel}</strong>
+                      </div>
+                    </div>
+
+                    {sensevoiceDockerRuntimeStatus.lastError ? (
+                      <div className="sensevoice-error">
+                        {sensevoiceDockerRuntimeStatus.lastError}
+                      </div>
+                    ) : null}
+
+                    {!dockerRuntimeReady ? (
+                      <div className="sensevoice-hint">
+                        {t("sensevoice.runtimeEnvironmentError")}
+                      </div>
+                    ) : null}
+
+                    <div className="button-row sensevoice-runtime-actions">
+                      {installed && !running ? (
+                        <Button
+                          type="button"
+                          variant="primary"
+                          onPress={handleSenseVoiceStart}
+                          isDisabled={startBusy}
+                        >
+                          <Play size={16} />
+                          {isNativeRuntime ? t("sensevoice.load") : t("sensevoice.runtimeStart")}
+                        </Button>
+                      ) : null}
+                      {running ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onPress={handleSenseVoiceStop}
+                          isDisabled={stopBusy}
+                        >
+                          {draft.sensevoice.stopMode === "pause" ? <Pause size={16} /> : <Square size={16} />}
+                          {isNativeRuntime ? t("sensevoice.unload") : draft.sensevoice.stopMode === "pause" ? t("sensevoice.runtimePause") : t("sensevoice.runtimeStop")}
+                        </Button>
+                      ) : null}
+                      {!isNativeRuntime ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onPress={handleSenseVoiceRestart}
+                            isDisabled={runtimePanelBusy || !installed}
+                          >
+                            <RotateCw size={16} />
+                            {t("sensevoice.runtimeRestart")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onPress={handleSenseVoiceRemoveContainer}
+                            isDisabled={runtimePanelBusy || !installed}
+                          >
+                            <Trash2 size={16} />
+                            {t("sensevoice.runtimeRemove")}
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
                 {showProgressBar ? (
                   <div className="sensevoice-progress">
                     <span>{sensevoiceProgress?.message}</span>
@@ -806,19 +962,9 @@ export function SpeechSettingsSection({
                       variant="primary"
                       onPress={handleSenseVoicePrepare}
                       isDisabled={prepareBusy}
-                    >
-                      {t("sensevoice.prepare")}
-                    </Button>
-                  ) : null}
-                  {installed && !running ? (
-                    <Button type="button" variant="primary" onPress={handleSenseVoiceStart} isDisabled={startBusy}>
-                      {isNativeRuntime ? t("sensevoice.load") : t("sensevoice.start")}
-                    </Button>
-                  ) : null}
-                  {running ? (
-                    <Button type="button" variant="secondary" onPress={handleSenseVoiceStop} isDisabled={stopBusy}>
-                      {isNativeRuntime ? t("sensevoice.unload") : t("sensevoice.stop")}
-                    </Button>
+                      >
+                        {t("sensevoice.prepare")}
+                      </Button>
                   ) : null}
                   {installed && !running && !isNativeRuntime ? (
                     <Button

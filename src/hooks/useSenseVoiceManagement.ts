@@ -22,14 +22,19 @@ export function useSenseVoiceManagement({
 
   const {
     status: sensevoiceStatus,
+    dockerRuntimeStatus: sensevoiceDockerRuntimeStatus,
     progress: sensevoiceProgress,
     logLines: sensevoiceLogLines,
     loading: sensevoiceLoading,
     refreshStatus: refreshSenseVoiceStatus,
+    refreshDockerRuntimeStatus: refreshSenseVoiceDockerRuntimeStatus,
     prepare: prepareSenseVoice,
     updateSettings: updateSenseVoiceSettings,
     startService: startSenseVoiceService,
     stopService: stopSenseVoiceService,
+    stopServiceForce: stopSenseVoiceServiceForce,
+    restartService: restartSenseVoiceService,
+    removeRuntimeContainer: removeSenseVoiceRuntimeContainer,
     updateRuntime: updateSenseVoiceRuntime,
   } = useSenseVoice(isSenseVoiceActive);
 
@@ -61,7 +66,10 @@ export function useSenseVoiceManagement({
     }
     try {
       await prepareSenseVoice();
-      await refreshSenseVoiceStatus();
+      await Promise.all([
+        refreshSenseVoiceStatus(),
+        refreshSenseVoiceDockerRuntimeStatus(),
+      ]);
       toast.success(t("sensevoice.prepareQueued"));
     } catch (error) {
       toast.error(t("sensevoice.prepareError", { error: toErrorMessage(error) }));
@@ -81,7 +89,10 @@ export function useSenseVoiceManagement({
     }
     try {
       await startSenseVoiceService();
-      await refreshSenseVoiceStatus();
+      await Promise.all([
+        refreshSenseVoiceStatus(),
+        refreshSenseVoiceDockerRuntimeStatus(),
+      ]);
       toast.success(t("sensevoice.startQueued"));
     } catch (error) {
       toast.error(t("sensevoice.startError", { error: toErrorMessage(error) }));
@@ -100,16 +111,75 @@ export function useSenseVoiceManagement({
       return;
     }
     try {
-      await stopSenseVoiceService();
-      await refreshSenseVoiceStatus();
+      if (draft.sensevoice.stopMode === "pause") {
+        await stopSenseVoiceService();
+      } else {
+        await stopSenseVoiceServiceForce();
+      }
+      await Promise.all([
+        refreshSenseVoiceStatus(),
+        refreshSenseVoiceDockerRuntimeStatus(),
+      ]);
       const runtimeKind = sensevoiceStatus.runtimeKind;
       if (runtimeKind === "native") {
         toast.success(t("sensevoice.unloadSuccess"));
-      } else {
+      } else if (draft.sensevoice.stopMode === "pause") {
         toast.success(t("sensevoice.pauseSuccess"));
+      } else {
+        toast.success(t("sensevoice.stopSuccess"));
       }
     } catch (error) {
       toast.error(t("sensevoice.stopError", { error: toErrorMessage(error) }));
+    }
+  };
+
+  const handleSenseVoiceRestart = async () => {
+    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
+    if (!nextSenseVoiceSettings) {
+      return;
+    }
+    try {
+      await updateSenseVoiceSettings(nextSenseVoiceSettings);
+    } catch (error) {
+      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
+      return;
+    }
+    try {
+      await restartSenseVoiceService();
+      await Promise.all([
+        refreshSenseVoiceStatus(),
+        refreshSenseVoiceDockerRuntimeStatus(),
+      ]);
+      toast.success(t("sensevoice.restartQueued"));
+    } catch (error) {
+      toast.error(t("sensevoice.restartError", { error: toErrorMessage(error) }));
+    }
+  };
+
+  const handleSenseVoiceRemoveContainer = async () => {
+    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
+    if (!nextSenseVoiceSettings) {
+      return;
+    }
+    const confirmed = window.confirm(t("sensevoice.removeRuntimeConfirm"));
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await updateSenseVoiceSettings(nextSenseVoiceSettings);
+    } catch (error) {
+      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
+      return;
+    }
+    try {
+      await removeSenseVoiceRuntimeContainer();
+      await Promise.all([
+        refreshSenseVoiceStatus(),
+        refreshSenseVoiceDockerRuntimeStatus(),
+      ]);
+      toast.success(t("sensevoice.removeRuntimeSuccess"));
+    } catch (error) {
+      toast.error(t("sensevoice.removeRuntimeError", { error: toErrorMessage(error) }));
     }
   };
 
@@ -126,7 +196,10 @@ export function useSenseVoiceManagement({
     }
     try {
       await updateSenseVoiceRuntime();
-      await refreshSenseVoiceStatus();
+      await Promise.all([
+        refreshSenseVoiceStatus(),
+        refreshSenseVoiceDockerRuntimeStatus(),
+      ]);
       toast.success(t("sensevoice.updateRuntimeQueued"));
     } catch (error) {
       toast.error(t("sensevoice.updateRuntimeError", { error: toErrorMessage(error) }));
@@ -137,8 +210,11 @@ export function useSenseVoiceManagement({
     if (!isSenseVoiceActive) {
       return;
     }
-    void refreshSenseVoiceStatus().catch(() => {});
-  }, [isSenseVoiceActive, refreshSenseVoiceStatus]);
+    void Promise.all([
+      refreshSenseVoiceStatus(),
+      refreshSenseVoiceDockerRuntimeStatus(),
+    ]).catch(() => {});
+  }, [isSenseVoiceActive, refreshSenseVoiceDockerRuntimeStatus, refreshSenseVoiceStatus]);
 
   useEffect(() => {
     const unlisten = listen("sensevoice-startup-download-required", async () => {
@@ -183,13 +259,17 @@ export function useSenseVoiceManagement({
 
   return {
     sensevoiceStatus,
+    sensevoiceDockerRuntimeStatus,
     sensevoiceProgress,
     sensevoiceLogLines,
     sensevoiceLoading,
     refreshSenseVoiceStatus,
+    refreshSenseVoiceDockerRuntimeStatus,
     handleSenseVoicePrepare,
     handleSenseVoiceStart,
     handleSenseVoiceStop,
+    handleSenseVoiceRestart,
+    handleSenseVoiceRemoveContainer,
     handleUpdateRuntime,
   };
 }
