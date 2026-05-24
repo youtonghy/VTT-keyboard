@@ -4,6 +4,7 @@
 //! - 录音文件识别 (HTTP POST)
 //! - 流式识别 (WebSocket)
 
+use crate::privacy;
 use crate::settings::{Settings, VolcengineSettings};
 use base64::{engine::general_purpose, Engine as _};
 use hound::WavReader;
@@ -101,6 +102,13 @@ struct AudioMetadata {
 /// 根据设置选择使用录音文件识别或流式识别
 pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String, VolcengineError> {
     ensure_config(&settings.volcengine)?;
+    let endpoint = if settings.volcengine.use_streaming {
+        STREAMING_ASR_URL
+    } else {
+        FILE_ASR_URL
+    };
+    privacy::ensure_url_allowed(&settings.privacy, endpoint, "火山引擎转写")
+        .map_err(|err| VolcengineError::Config(err.to_string()))?;
 
     if settings.volcengine.use_streaming {
         transcribe_streaming(settings, audio_path)

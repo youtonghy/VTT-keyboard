@@ -2,6 +2,7 @@ use super::{
     model::{normalize_local_model, resolve_vllm_model_id, spec_for_local_model, LocalRuntimeKind},
     native_runtime, SenseVoiceError,
 };
+use crate::privacy;
 use crate::settings::{Settings, TranscriptionAlignment};
 use reqwest::blocking::{multipart, Client};
 use serde::Deserialize;
@@ -69,6 +70,8 @@ pub fn transcribe_audio(
             "SenseVoice 服务地址不能为空".to_string(),
         ));
     }
+    privacy::ensure_url_allowed(&settings.privacy, service_url, "本地模型转写")
+        .map_err(|err| SenseVoiceError::Config(err.to_string()))?;
 
     let file_bytes = fs::read(audio_path).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
     let file_name = audio_path

@@ -130,6 +130,10 @@ fn normalize_sensevoice_language(language: &str) -> &str {
 
 pub(crate) fn normalize_settings(settings: &Settings) -> Settings {
     let mut normalized = settings.clone();
+    if normalized.privacy.enabled {
+        normalized.provider = TranscriptionProvider::Sensevoice;
+        normalized.startup.auto_check_updates = false;
+    }
     normalized.recording.input_device_name =
         normalized.recording.input_device_name.trim().to_string();
     if normalized.recording.segment_seconds == 0 {

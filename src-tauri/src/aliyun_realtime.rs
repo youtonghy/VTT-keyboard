@@ -1,3 +1,4 @@
+use crate::privacy;
 use crate::settings::Settings;
 use hound::{SampleFormat, WavReader};
 use serde_json::{json, Value};
@@ -77,6 +78,8 @@ fn transcribe_realtime(
     }
     let api_key = resolve_api_key(settings, region)?;
     let endpoint = resolve_endpoint(region)?;
+    privacy::ensure_url_allowed(&settings.privacy, endpoint.as_str(), "阿里云转写")
+        .map_err(|err| AliyunRealtimeError::Config(err.to_string()))?;
 
     let mut request = endpoint
         .as_str()

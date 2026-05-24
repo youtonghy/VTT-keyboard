@@ -614,6 +614,24 @@ function App() {
               <HeroField label={t("general.language")}>
                 <LanguageSwitcher />
               </HeroField>
+              <HeroCheckboxField
+                label={t("general.privacyMode")}
+                isSelected={draft.privacy.enabled}
+                onChange={(value) =>
+                  updateDraft((prev) => ({
+                    ...prev,
+                    privacy: { ...prev.privacy, enabled: value },
+                    provider: value ? "sensevoice" : prev.provider,
+                    startup: value
+                      ? { ...prev.startup, autoCheckUpdates: false }
+                      : prev.startup,
+                  }))
+                }
+              >
+                <Tooltip content={t("general.privacyModeHint")}>
+                  <span className="hint-icon"><Info size={14} /></span>
+                </Tooltip>
+              </HeroCheckboxField>
               {isMacOS ? (
                 <HeroCheckboxField
                   label={t("general.hideDockIcon")}

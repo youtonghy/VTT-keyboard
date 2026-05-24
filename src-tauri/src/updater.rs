@@ -1,4 +1,4 @@
-use crate::{settings::SettingsStore, AppState};
+use crate::{privacy, settings::SettingsStore, AppState};
 use serde::Serialize;
 use std::fmt::{Debug, Display};
 use tauri::{AppHandle, Emitter, Manager};
@@ -171,8 +171,15 @@ fn update_metadata(update: &Update) -> (Option<String>, Option<String>) {
 fn should_auto_check(store: &SettingsStore) -> bool {
     store
         .load()
-        .map(|settings| settings.startup.auto_check_updates)
+        .map(|settings| settings.startup.auto_check_updates && !settings.privacy.enabled)
         .unwrap_or(true)
+}
+
+fn privacy_mode_enabled(store: &SettingsStore) -> bool {
+    store
+        .load()
+        .map(|settings| settings.privacy.enabled)
+        .unwrap_or(false)
 }
 
 pub fn get_status(app: &AppHandle) -> Result<UpdateStatusPayload, String> {
@@ -208,6 +215,24 @@ async fn check_for_updates(
     store: SettingsStore,
     force: bool,
 ) -> Result<(), String> {
+    if privacy_mode_enabled(&store) {
+        if force {
+            return Err(privacy::blocked_message("检查更新"));
+        }
+        let status = with_manager(&app, |manager| {
+            if manager.pending_update.is_none()
+                && manager.downloaded_package.is_none()
+                && !manager.download_in_progress
+                && !manager.install_in_progress
+            {
+                manager.reset_to_idle();
+            }
+            manager.status.clone()
+        })?;
+        emit_status(&app, &status);
+        return Ok(());
+    }
+
     if !force && !should_auto_check(&store) {
         let status = with_manager(&app, |manager| {
             if manager.pending_update.is_none()
@@ -322,6 +347,11 @@ async fn download_pending_update_inner(
     app: AppHandle,
     install_after_download: bool,
 ) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let settings = state.settings_store.load().map_err(|err| err.to_string())?;
+    privacy::ensure_external_network_allowed(&settings.privacy, "下载更新")
+        .map_err(|err| err.to_string())?;
+
     let update = with_manager(&app, |manager| {
         if manager.download_in_progress || manager.install_in_progress {
             return None;
