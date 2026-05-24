@@ -83,12 +83,9 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
         .unwrap_or("recording.wav");
     let form = build_transcription_form(&settings.openai, file_name, file_bytes)?;
     let client = Client::new();
-    let url = format!(
-        "{}/audio/transcriptions",
-        settings.openai.api_base.trim_end_matches('/')
-    );
+    let url = transcription_endpoint_url(&settings.openai.api_base);
     let response = client
-        .post(url)
+        .post(&url)
         .bearer_auth(settings.openai.api_key.trim())
         .multipart(form)
         .send()
@@ -96,7 +93,9 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
-        return Err(OpenAiError::Request(format!("{status}: {body}")));
+        return Err(OpenAiError::Request(format_transcription_error(
+            status, &body, &url,
+        )));
     }
     let body = response
         .text()
@@ -286,6 +285,53 @@ fn text_endpoint_url(api_base: &str, endpoint: TextEndpoint) -> String {
         .trim_end_matches('/');
 
     format!("{}/{}", root, endpoint.path())
+}
+
+fn transcription_endpoint_url(api_base: &str) -> String {
+    let base = api_base.trim().trim_end_matches('/');
+    let root = base
+        .strip_suffix("/audio/transcriptions")
+        .or_else(|| base.strip_suffix("/audio/translations"))
+        .or_else(|| base.strip_suffix("/chat/completions"))
+        .or_else(|| base.strip_suffix("/responses"))
+        .or_else(|| base.strip_suffix("/completions"))
+        .or_else(|| base.strip_suffix("/embeddings"))
+        .unwrap_or(base)
+        .trim_end_matches('/');
+
+    format!("{root}/audio/transcriptions")
+}
+
+fn format_transcription_error(status: StatusCode, body: &str, url: &str) -> String {
+    let body = body.trim();
+    if should_report_transcriptions_unsupported(status, body) {
+        let detail = if body.is_empty() {
+            String::new()
+        } else {
+            format!(" 原始响应: {body}")
+        };
+        return format!(
+            "{status}: 当前服务不支持 OpenAI Audio Transcriptions 端点 {url}。如果正在使用 LM Studio，它的 OpenAI 兼容层通常只覆盖文本生成、模型列表和嵌入等接口；请改用支持 POST /v1/audio/transcriptions 的服务，或切换到本应用内置本地转写引擎。{detail}"
+        );
+    }
+
+    format!("{status}: {body}")
+}
+
+fn should_report_transcriptions_unsupported(status: StatusCode, body: &str) -> bool {
+    if matches!(
+        status,
+        StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+    ) {
+        return true;
+    }
+
+    let body = body.to_ascii_lowercase();
+    body.contains("audio/transcriptions")
+        && (body.contains("unsupported")
+            || body.contains("unsupport")
+            || body.contains("not found")
+            || body.contains("unknown endpoint"))
 }
 
 fn build_transcription_form(
@@ -479,12 +525,56 @@ mod tests {
     }
 
     #[test]
+    fn transcription_endpoint_url_normalizes_explicit_endpoint_paths() {
+        assert_eq!(
+            transcription_endpoint_url("https://api.example.com/v1"),
+            "https://api.example.com/v1/audio/transcriptions"
+        );
+        assert_eq!(
+            transcription_endpoint_url("https://api.example.com/v1/audio/transcriptions"),
+            "https://api.example.com/v1/audio/transcriptions"
+        );
+        assert_eq!(
+            transcription_endpoint_url("http://localhost:1234/v1/chat/completions"),
+            "http://localhost:1234/v1/audio/transcriptions"
+        );
+        assert_eq!(
+            transcription_endpoint_url("http://localhost:1234/v1/responses"),
+            "http://localhost:1234/v1/audio/transcriptions"
+        );
+    }
+
+    #[test]
     fn bad_request_missing_messages_retries_with_chat_completions() {
         let body = r#"{"error":{"message":"missing field `messages`"}}"#;
         assert!(should_retry_with_chat_completions(
             StatusCode::BAD_REQUEST,
             body
         ));
+    }
+
+    #[test]
+    fn transcriptions_unsupported_formats_actionable_error() {
+        let error = format_transcription_error(
+            StatusCode::METHOD_NOT_ALLOWED,
+            r#"{"error":"UNSUPPORT"}"#,
+            "http://localhost:1234/v1/audio/transcriptions",
+        );
+
+        assert!(error.contains("不支持 OpenAI Audio Transcriptions"));
+        assert!(error.contains("LM Studio"));
+        assert!(error.contains("POST /v1/audio/transcriptions"));
+    }
+
+    #[test]
+    fn transcription_error_keeps_regular_server_error() {
+        let error = format_transcription_error(
+            StatusCode::BAD_REQUEST,
+            r#"{"error":"missing model"}"#,
+            "https://api.example.com/v1/audio/transcriptions",
+        );
+
+        assert_eq!(error, r#"400 Bad Request: {"error":"missing model"}"#);
     }
 
     #[test]
