@@ -1,9 +1,10 @@
 use crate::privacy;
 use crate::settings::{OpenAiSettings, Settings, TextSettings};
+use base64::{engine::general_purpose, Engine as _};
 use reqwest::blocking::{multipart, Client};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
@@ -81,7 +82,7 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("recording.wav");
-    let form = build_transcription_form(&settings.openai, file_name, file_bytes)?;
+    let form = build_transcription_form(&settings.openai, file_name, file_bytes.clone())?;
     let client = Client::new();
     let url = transcription_endpoint_url(&settings.openai.api_base);
     let response = client
@@ -93,6 +94,20 @@ pub fn transcribe_audio(settings: &Settings, audio_path: &Path) -> Result<String
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().unwrap_or_default();
+        if should_retry_qwen3_asr_with_chat_completions(&settings.openai, status, &body) {
+            return transcribe_qwen3_asr_with_chat_completions(
+                &client,
+                &settings.openai,
+                file_name,
+                &file_bytes,
+            )
+            .map_err(|err| {
+                OpenAiError::Request(format!(
+                    "{}; Qwen3-ASR Chat Completions fallback failed: {err}",
+                    format_transcription_error(status, &body, &url)
+                ))
+            });
+        }
         return Err(OpenAiError::Request(format_transcription_error(
             status, &body, &url,
         )));
@@ -166,6 +181,27 @@ fn generate_text_with_chat_completions(
         .json()
         .map_err(|err| OpenAiError::Parse(err.to_string()))?;
     extract_chat_completion_text(&value)
+}
+
+fn transcribe_qwen3_asr_with_chat_completions(
+    client: &Client,
+    settings: &OpenAiSettings,
+    file_name: &str,
+    file_bytes: &[u8],
+) -> Result<String, OpenAiError> {
+    let request = build_qwen3_asr_chat_completion_request(settings, file_name, file_bytes);
+    let url = text_endpoint_url(&settings.api_base, TextEndpoint::ChatCompletions);
+    let response = post_json(client, &url, settings.api_key.trim(), &request)?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+        return Err(OpenAiError::Request(format!("{status}: {body}")));
+    }
+    let value: Value = response
+        .json()
+        .map_err(|err| OpenAiError::Parse(err.to_string()))?;
+    let content = extract_chat_completion_text(&value)?;
+    Ok(extract_qwen3_asr_text(&content))
 }
 
 pub fn generate_text_for_settings(
@@ -334,6 +370,70 @@ fn should_report_transcriptions_unsupported(status: StatusCode, body: &str) -> b
             || body.contains("unknown endpoint"))
 }
 
+fn should_retry_qwen3_asr_with_chat_completions(
+    settings: &OpenAiSettings,
+    status: StatusCode,
+    body: &str,
+) -> bool {
+    is_qwen3_asr_model(&settings.speech_to_text.model)
+        && should_report_transcriptions_unsupported(status, body)
+}
+
+fn is_qwen3_asr_model(model: &str) -> bool {
+    model
+        .trim()
+        .to_ascii_lowercase()
+        .replace('_', "-")
+        .contains("qwen3-asr")
+}
+
+fn build_qwen3_asr_chat_completion_request(
+    settings: &OpenAiSettings,
+    file_name: &str,
+    file_bytes: &[u8],
+) -> Value {
+    let data_url = format!(
+        "data:{};base64,{}",
+        audio_mime_type(file_name),
+        general_purpose::STANDARD.encode(file_bytes)
+    );
+
+    json!({
+        "model": settings.speech_to_text.model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "audio_url",
+                        "audio_url": {
+                            "url": data_url
+                        }
+                    }
+                ]
+            }
+        ]
+    })
+}
+
+fn audio_mime_type(file_name: &str) -> &'static str {
+    match Path::new(file_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "flac" => "audio/flac",
+        "m4a" | "mp4" => "audio/mp4",
+        "mp3" => "audio/mpeg",
+        "ogg" | "oga" => "audio/ogg",
+        "webm" => "audio/webm",
+        "wav" | "wave" => "audio/wav",
+        _ => "audio/wav",
+    }
+}
+
 fn build_transcription_form(
     settings: &OpenAiSettings,
     filename: &str,
@@ -418,6 +518,20 @@ fn extract_chat_completion_text(value: &Value) -> Result<String, OpenAiError> {
     Err(OpenAiError::Parse("响应中未找到文本输出".to_string()))
 }
 
+fn extract_qwen3_asr_text(content: &str) -> String {
+    let trimmed = content.trim();
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(text) = value.get("text").and_then(|val| val.as_str()) {
+            return text.trim().to_string();
+        }
+    }
+    if let Some((_, text)) = trimmed.split_once("<asr_text>") {
+        return text.trim().to_string();
+    }
+
+    trimmed.to_string()
+}
+
 fn parse_streamed_text(body: &str) -> Result<String, OpenAiError> {
     let mut output = String::new();
     for line in body.lines() {
@@ -454,6 +568,27 @@ mod tests {
             max_output_tokens: 800,
             top_p: 1.0,
             instructions: String::new(),
+        }
+    }
+
+    fn openai_settings() -> OpenAiSettings {
+        OpenAiSettings {
+            api_base: "https://api.openai.com/v1".to_string(),
+            api_key: "test-key".to_string(),
+            speech_to_text: crate::settings::SpeechToTextSettings {
+                model: "gpt-4o-transcribe".to_string(),
+                language: String::new(),
+                prompt: String::new(),
+                response_format: "json".to_string(),
+                temperature: 0.0,
+                timestamp_granularities: vec![],
+                chunking_strategy: String::new(),
+                include: vec![],
+                stream: false,
+                known_speaker_names: vec![],
+                known_speaker_references: vec![],
+            },
+            legacy_text: None,
         }
     }
 
@@ -575,6 +710,55 @@ mod tests {
         );
 
         assert_eq!(error, r#"400 Bad Request: {"error":"missing model"}"#);
+    }
+
+    #[test]
+    fn qwen3_asr_model_retries_unsupported_transcription_endpoint() {
+        let mut settings = openai_settings();
+        settings.speech_to_text.model = "ggml-org/qwen3-asr-1.7b".to_string();
+
+        assert!(should_retry_qwen3_asr_with_chat_completions(
+            &settings,
+            StatusCode::METHOD_NOT_ALLOWED,
+            r#"{"error":"UNSUPPORT"}"#
+        ));
+
+        settings.speech_to_text.model = "gpt-4o-transcribe".to_string();
+        assert!(!should_retry_qwen3_asr_with_chat_completions(
+            &settings,
+            StatusCode::METHOD_NOT_ALLOWED,
+            r#"{"error":"UNSUPPORT"}"#
+        ));
+    }
+
+    #[test]
+    fn qwen3_asr_chat_request_uses_audio_data_url() {
+        let mut settings = openai_settings();
+        settings.speech_to_text.model = "ggml-org/qwen3-asr-1.7b".to_string();
+        let value = build_qwen3_asr_chat_completion_request(&settings, "recording.wav", b"abc");
+
+        assert_eq!(value["model"], "ggml-org/qwen3-asr-1.7b");
+        assert_eq!(
+            value.pointer("/messages/0/content/0/type"),
+            Some(&json!("audio_url"))
+        );
+        assert_eq!(
+            value.pointer("/messages/0/content/0/audio_url/url"),
+            Some(&json!("data:audio/wav;base64,YWJj"))
+        );
+    }
+
+    #[test]
+    fn qwen3_asr_text_extraction_handles_known_shapes() {
+        assert_eq!(
+            extract_qwen3_asr_text(r#"{"language":"English","text":"Hello world."}"#),
+            "Hello world."
+        );
+        assert_eq!(
+            extract_qwen3_asr_text("language English<asr_text>Hello world."),
+            "Hello world."
+        );
+        assert_eq!(extract_qwen3_asr_text(" Hello world. "), "Hello world.");
     }
 
     #[test]
