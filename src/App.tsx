@@ -156,13 +156,18 @@ function App() {
 
   const {
     sensevoiceStatus,
+    sensevoiceDockerRuntimeStatus,
     sensevoiceProgress,
     sensevoiceLogLines,
     sensevoiceLoading,
     handleSenseVoicePrepare,
     handleSenseVoiceStart,
     handleSenseVoiceStop,
+    handleSenseVoiceRestart,
+    handleSenseVoiceRemoveContainer,
     handleUpdateRuntime,
+    refreshSenseVoiceStatus,
+    refreshSenseVoiceDockerRuntimeStatus,
   } = useSenseVoiceManagement({
     isSenseVoiceActive,
     draft,
@@ -763,6 +768,7 @@ function App() {
               supportsSherpaOnnxSenseVoice={supportsSherpaOnnxSenseVoice}
               sherpaFallbackActive={sherpaFallbackActive}
               sensevoiceStatus={sensevoiceStatus}
+              sensevoiceDockerRuntimeStatus={sensevoiceDockerRuntimeStatus}
               sensevoiceProgress={sensevoiceProgress}
               sensevoiceLogLines={sensevoiceLogLines}
               sensevoiceLogsExpanded={sensevoiceLogsExpanded}
@@ -771,7 +777,11 @@ function App() {
               handleSenseVoicePrepare={handleSenseVoicePrepare}
               handleSenseVoiceStart={handleSenseVoiceStart}
               handleSenseVoiceStop={handleSenseVoiceStop}
+              handleSenseVoiceRestart={handleSenseVoiceRestart}
+              handleSenseVoiceRemoveContainer={handleSenseVoiceRemoveContainer}
               handleUpdateRuntime={handleUpdateRuntime}
+              refreshSenseVoiceStatus={refreshSenseVoiceStatus}
+              refreshSenseVoiceDockerRuntimeStatus={refreshSenseVoiceDockerRuntimeStatus}
               normalizeLocalModel={normalizeLocalModel}
               normalizeSenseVoiceLanguage={normalizeSenseVoiceLanguage}
               normalizeSenseVoiceDevice={normalizeSenseVoiceDevice}

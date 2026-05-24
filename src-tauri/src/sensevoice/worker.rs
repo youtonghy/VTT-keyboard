@@ -1,7 +1,6 @@
 use super::docker_utils::{
-    bind_mount, docker_command, docker_container_running, docker_image_exists, hide_window,
-    normalize_log_line, normalize_publish_host, parse_host_and_port, read_selected_hub,
-    remove_container_if_exists, run_command_streaming,
+    bind_mount, docker_command, docker_image_exists, hide_window, normalize_log_line,
+    run_command_streaming,
 };
 use super::sherpa;
 use serde::{Deserialize, Serialize};
@@ -9,10 +8,8 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::Path;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-const SERVICE_START_TIMEOUT_SECS: u64 = 90;
 const DOCKER_BUILD_TIMEOUT_SECS: u64 = 40 * 60;
 const MODEL_DOWNLOAD_TIMEOUT_SECS: u64 = 60 * 60;
 const IMAGE_STAMP_FILE: &str = "image.stamp";
@@ -27,7 +24,6 @@ const VLLM_IMAGE_TAG: &str = "vllm/vllm-openai:nightly";
 pub struct WorkerJob {
     #[serde(default = "default_local_model")]
     pub local_model: String,
-    pub service_url: String,
     pub model_id: String,
     pub language: String,
     pub device: String,
@@ -35,7 +31,6 @@ pub struct WorkerJob {
     pub models_dir: String,
     pub state_file: String,
     pub image_tag: String,
-    pub container_name: String,
 }
 
 fn default_local_model() -> String {
@@ -213,21 +208,10 @@ fn run_prepare_job(job: &WorkerJob) -> Result<(), String> {
         );
     })?;
 
-    emit_state("validating", "", Some(true), None);
-    emit_progress(
-        "verify",
-        "Starting SenseVoice service",
-        Some(85),
-        None,
-        None,
-        None,
-    );
-    start_service(job)?;
-
     emit_state("ready", "", Some(true), Some(true));
     emit_progress(
         "done",
-        "SenseVoice service started",
+        "SenseVoice runtime prepared",
         Some(100),
         None,
         None,
@@ -411,140 +395,6 @@ where
             }
         },
     )
-}
-
-fn start_service(job: &WorkerJob) -> Result<(), String> {
-    let (host, port) = parse_host_and_port(&job.service_url)?;
-    let publish_host = normalize_publish_host(&host)?;
-    let hub = read_selected_hub(Path::new(&job.state_file)).unwrap_or_else(|| "hf".to_string());
-    let model_dir = Path::new(&job.models_dir);
-
-    let _ = remove_container_if_exists(&job.container_name);
-    run_service_container(
-        &job.container_name,
-        &job.image_tag,
-        &publish_host,
-        port,
-        model_dir,
-        &job.model_id,
-        &job.device,
-        &hub,
-    )?;
-
-    wait_health(
-        &job.container_name,
-        &job.service_url,
-        Duration::from_secs(SERVICE_START_TIMEOUT_SECS),
-    )
-}
-
-fn run_service_container(
-    container_name: &str,
-    image_tag: &str,
-    publish_host: &str,
-    port: u16,
-    model_dir: &Path,
-    model_id: &str,
-    device: &str,
-    hub: &str,
-) -> Result<(), String> {
-    fs::create_dir_all(model_dir).map_err(|err| format!("创建模型目录失败: {err}"))?;
-    let mut command = docker_command();
-    command
-        .arg("run")
-        .arg("-d")
-        .arg("--name")
-        .arg(container_name)
-        .arg("-p")
-        .arg(format!("{publish_host}:{port}:{port}"))
-        .arg("--mount")
-        .arg(bind_mount(model_dir, "/models"))
-        .arg("-e")
-        .arg(format!("SENSEVOICE_MODEL_ID={model_id}"))
-        .arg("-e")
-        .arg("SENSEVOICE_MODEL_DIR=/models")
-        .arg("-e")
-        .arg(format!("SENSEVOICE_DEVICE={device}"))
-        .arg("-e")
-        .arg(format!("SENSEVOICE_HUB={hub}"))
-        .arg("-e")
-        .arg("SENSEVOICE_HOST=0.0.0.0")
-        .arg("-e")
-        .arg(format!("SENSEVOICE_PORT={port}"))
-        .arg(image_tag);
-    hide_window(&mut command);
-    let output = command
-        .output()
-        .map_err(|err| format!("启动 SenseVoice 容器失败: {err}"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let detail = if !stderr.is_empty() { stderr } else { stdout };
-    Err(format!("启动 SenseVoice 容器失败: {detail}"))
-}
-
-fn wait_health(container_name: &str, service_url: &str, timeout: Duration) -> Result<(), String> {
-    let url = format!("{}/health", service_url.trim_end_matches('/'));
-    let client = reqwest::blocking::Client::new();
-    let started = Instant::now();
-    while started.elapsed() < timeout {
-        match docker_container_running(container_name) {
-            Ok(true) => {}
-            Ok(false) => {
-                let logs = docker_logs_tail(container_name, 30);
-                return Err(format!("SenseVoice 服务容器已退出。最近日志: {logs}"));
-            }
-            Err(err) => return Err(format!("读取服务容器状态失败: {err}")),
-        }
-
-        if let Ok(value) = client.get(&url).send() {
-            if value.status().is_success() {
-                let is_ready = value
-                    .json::<serde_json::Value>()
-                    .ok()
-                    .and_then(|body| body.get("ready").and_then(|v| v.as_bool()))
-                    .unwrap_or(false);
-                if is_ready {
-                    return Ok(());
-                }
-            }
-        }
-        thread::sleep(Duration::from_millis(500));
-    }
-    let logs = docker_logs_tail(container_name, 30);
-    Err(format!(
-        "SenseVoice 服务启动超时（{} 秒）。最近日志: {logs}",
-        timeout.as_secs()
-    ))
-}
-
-fn docker_logs_tail(container_name: &str, lines: usize) -> String {
-    let mut command = docker_command();
-    command
-        .arg("logs")
-        .arg("--tail")
-        .arg(lines.to_string())
-        .arg(container_name);
-    hide_window(&mut command);
-    let output = command.output();
-    let Ok(output) = output else {
-        return "（无日志）".to_string();
-    };
-    let mut merged = String::new();
-    merged.push_str(&String::from_utf8_lossy(&output.stdout));
-    merged.push_str(&String::from_utf8_lossy(&output.stderr));
-    let text = merged.trim();
-    if text.is_empty() {
-        "（无日志）".to_string()
-    } else {
-        text.lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>()
-            .join(" || ")
-    }
 }
 
 fn emit_progress(

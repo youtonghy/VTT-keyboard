@@ -167,6 +167,16 @@ pub fn service_start_timeout(value: &str) -> Duration {
     Duration::from_secs(spec_for_local_model(value).startup_timeout_secs)
 }
 
+pub fn resolve_runtime_model_id(local_model: &str, model_id: &str) -> String {
+    match normalize_local_model(local_model) {
+        LOCAL_MODEL_SENSEVOICE => DEFAULT_SENSEVOICE_MODEL_ID.to_string(),
+        LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE => DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID.to_string(),
+        LOCAL_MODEL_VOXTRAL => DEFAULT_VOXTRAL_MODEL_ID.to_string(),
+        LOCAL_MODEL_QWEN3_ASR => normalize_qwen3_asr_model_id(model_id).to_string(),
+        _ => DEFAULT_SENSEVOICE_MODEL_ID.to_string(),
+    }
+}
+
 pub fn resolve_vllm_model_id(local_model: &str, model_id: &str) -> String {
     match normalize_local_model(local_model) {
         LOCAL_MODEL_VOXTRAL => DEFAULT_VOXTRAL_MODEL_ID.to_string(),

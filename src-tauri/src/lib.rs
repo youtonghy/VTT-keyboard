@@ -22,7 +22,7 @@ use recorder::{
 use sensevoice::model::{
     resolve_vllm_model_id, spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind,
 };
-use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
+use sensevoice::{SenseVoiceDockerRuntimeStatus, SenseVoiceManager, SenseVoiceStatus};
 use settings::{
     SenseVoiceSettings, Settings, SettingsStore, TranscriptionHistoryItem, TranscriptionProvider,
 };
@@ -358,6 +358,20 @@ fn stop_sensevoice_service(
 }
 
 #[tauri::command]
+fn stop_sensevoice_service_force(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
+    manager
+        .stop_service_force(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 fn update_sensevoice_runtime(
     app: tauri::AppHandle,
     state: State<AppState>,
@@ -368,6 +382,48 @@ fn update_sensevoice_runtime(
         .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
     manager
         .update_runtime_async(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn restart_sensevoice_service(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
+    manager
+        .restart_service_async(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn remove_sensevoice_runtime_container(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
+    manager
+        .remove_runtime_container(&app, &state.settings_store)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn get_sensevoice_docker_runtime_status(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceDockerRuntimeStatus, String> {
+    let mut manager = state
+        .sensevoice_manager
+        .lock()
+        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
+    manager
+        .refresh_docker_runtime_status(&app, &state.settings_store)
         .map_err(|err| err.to_string())
 }
 
@@ -658,7 +714,11 @@ pub fn run() {
             prepare_sensevoice,
             start_sensevoice_service,
             stop_sensevoice_service,
+            stop_sensevoice_service_force,
             update_sensevoice_runtime,
+            restart_sensevoice_service,
+            remove_sensevoice_runtime_container,
+            get_sensevoice_docker_runtime_status,
             set_tray_menu,
             get_update_status,
             install_downloaded_update,

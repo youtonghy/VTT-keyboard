@@ -6,7 +6,10 @@ pub mod native_runtime;
 pub mod sherpa;
 pub mod worker;
 
-pub use manager::{ensure_service_ready_blocking, SenseVoiceManager, SenseVoiceStatus};
+pub use manager::{
+    ensure_service_ready_blocking, SenseVoiceDockerRuntimeStatus, SenseVoiceManager,
+    SenseVoiceStatus,
+};
 
 use thiserror::Error;
 
