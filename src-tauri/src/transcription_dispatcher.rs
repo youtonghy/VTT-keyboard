@@ -78,9 +78,9 @@ impl TranscriptionDispatcher {
                         // 在真正调用转写引擎前，若当前使用的是本地模型，
                         // 自动检查模型是否已加载并按需加载。
                         // 这样可以在应用重启后自动恢复，无需用户手动点击"加载模型"。
-                        if let Err(err) = ensure_sensevoice_runtime_ready(&dispatcher_app, &store) {
+                        if let Err(_err) = ensure_sensevoice_runtime_ready(&dispatcher_app, &store) {
                             #[cfg(debug_assertions)]
-                            eprintln!("SenseVoice 运行时自动恢复失败: {err}");
+                            eprintln!("SenseVoice 运行时自动恢复失败: {_err}");
                         }
                         let outcome = processing::handle_recording(&store, recording);
                         if !outcome.is_success() {
@@ -280,9 +280,9 @@ fn process_retry_source(
 ) -> processing::ProcessingOutcome {
     match source {
         RetrySource::Recording { recording, .. } => {
-            if let Err(err) = ensure_sensevoice_runtime_ready(app, store) {
+            if let Err(_err) = ensure_sensevoice_runtime_ready(app, store) {
                 #[cfg(debug_assertions)]
-                eprintln!("SenseVoice 运行时自动恢复失败: {err}");
+                eprintln!("SenseVoice 运行时自动恢复失败: {_err}");
             }
             processing::handle_recording_with_options(store, recording, options)
         }

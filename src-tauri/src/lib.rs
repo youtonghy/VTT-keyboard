@@ -603,10 +603,10 @@ pub fn run() {
                     dev_eprintln!("failed to lock SenseVoice manager on startup");
                     return;
                 };
-                if let Err(err) =
+                if let Err(_err) =
                     manager.start_service_async(&startup_app, &state.settings_store)
                 {
-                    dev_eprintln!("failed to auto start SenseVoice on startup: {err}");
+                    dev_eprintln!("failed to auto start SenseVoice on startup: {_err}");
                 }
             });
 
