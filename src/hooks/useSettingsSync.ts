@@ -7,10 +7,8 @@ import type { Settings } from "../types/settings";
 import { normalizeAliyunRegion, toErrorMessage } from "../utils";
 import {
   normalizeLocalModel,
-  normalizeStopMode,
-  normalizeSenseVoiceModelId,
+  getDefaultModelId,
   normalizeSenseVoiceLanguage,
-  normalizeSenseVoiceDevice,
 } from "../utils/sensevoice";
 
 interface UseSettingsSyncParams {
@@ -18,7 +16,6 @@ interface UseSettingsSyncParams {
   setSettings: (s: Settings) => void;
   saveSettings: (s: Settings) => Promise<Settings>;
   syncAutostart: (enabled: boolean) => Promise<boolean>;
-  supportsSherpaOnnxSenseVoice: boolean;
 }
 
 export function useSettingsSync({
@@ -26,7 +23,6 @@ export function useSettingsSync({
   setSettings,
   saveSettings,
   syncAutostart,
-  supportsSherpaOnnxSenseVoice,
 }: UseSettingsSyncParams) {
   const { t } = useTranslation();
   const [draft, setDraftState] = useState<Settings | null>(null);
@@ -36,11 +32,6 @@ export function useSettingsSync({
   const createDraftFromSettings = useCallback(
     (s: Settings): Settings => {
       const normalizedLocalModel = normalizeLocalModel(s.sensevoice.localModel);
-      const effectiveLocalModel =
-        !supportsSherpaOnnxSenseVoice &&
-        normalizedLocalModel === "sherpa-onnx-sensevoice"
-          ? "sensevoice"
-          : normalizedLocalModel;
       const normalizedAliyunRegion = normalizeAliyunRegion(s.aliyun.region);
       const effectiveAliyunRegion =
         s.provider === "aliyun-paraformer" ? "beijing" : normalizedAliyunRegion;
@@ -48,11 +39,12 @@ export function useSettingsSync({
         ...s,
         sensevoice: {
           ...s.sensevoice,
-          localModel: effectiveLocalModel,
-          stopMode: normalizeStopMode(s.sensevoice.stopMode),
-          modelId: normalizeSenseVoiceModelId(effectiveLocalModel, s.sensevoice.modelId),
-          language: normalizeSenseVoiceLanguage(s.sensevoice.language),
-          device: normalizeSenseVoiceDevice(effectiveLocalModel, s.sensevoice.device),
+          localModel: normalizedLocalModel,
+          modelId: getDefaultModelId(normalizedLocalModel),
+          language: normalizeSenseVoiceLanguage(
+            s.sensevoice.language,
+            normalizedLocalModel
+          ),
         },
         aliyun: {
           ...s.aliyun,
@@ -73,7 +65,7 @@ export function useSettingsSync({
         },
       };
     },
-    [supportsSherpaOnnxSenseVoice]
+    []
   );
 
   useEffect(() => {

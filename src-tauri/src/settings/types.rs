@@ -1,26 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 pub const MAX_TRANSCRIPTION_HISTORY_ITEMS: usize = 200;
-pub(crate) const LOCAL_MODEL_SENSEVOICE: &str = "sensevoice";
-pub(crate) const LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE: &str = "sherpa-onnx-sensevoice";
-pub(crate) const LOCAL_MODEL_VOXTRAL: &str = "voxtral";
-pub(crate) const LOCAL_MODEL_QWEN3_ASR: &str = "qwen3-asr";
 pub(crate) const ALIYUN_REGION_BEIJING: &str = "beijing";
 pub(crate) const ALIYUN_REGION_SINGAPORE: &str = "singapore";
-pub(crate) const VOXTRAL_REQUIRED_DEVICE: &str = "cuda";
-pub(crate) const QWEN3_ASR_REQUIRED_DEVICE: &str = "cuda";
-pub(crate) const STOP_MODE_STOP: &str = "stop";
-pub(crate) const STOP_MODE_PAUSE: &str = "pause";
-pub(crate) const DEFAULT_SENSEVOICE_MODEL_ID: &str = "FunAudioLLM/SenseVoiceSmall";
-pub(crate) const DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID: &str =
-    "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09";
-pub(crate) const DEFAULT_VOXTRAL_MODEL_ID: &str = "mistralai/Voxtral-Mini-4B-Realtime-2602";
-pub(crate) const DEFAULT_QWEN3_ASR_MODEL_ID: &str = "Qwen/Qwen3-ASR-1.7B";
-pub(crate) const QWEN3_ASR_ALLOWED_MODEL_IDS: [&str; 3] = [
-    "Qwen/Qwen3-ASR-1.7B",
-    "Qwen/Qwen3-ASR-0.6B",
-    "Qwen/Qwen3-ForcedAligner-0.6B",
-];
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -467,23 +449,15 @@ pub struct SenseVoiceSettings {
     pub installed: bool,
     #[serde(default = "default_local_model")]
     pub local_model: String,
-    #[serde(default = "default_stop_mode")]
-    pub stop_mode: String,
-    pub service_url: String,
     pub model_id: String,
     #[serde(default = "default_sensevoice_language")]
     pub language: String,
-    pub device: String,
     pub download_state: String,
     pub last_error: String,
 }
 
 fn default_local_model() -> String {
-    "sensevoice".to_string()
-}
-
-fn default_stop_mode() -> String {
-    STOP_MODE_PAUSE.to_string()
+    crate::sensevoice::model::DEFAULT_LOCAL_MODEL.to_string()
 }
 
 pub(crate) fn default_sensevoice_language() -> String {
@@ -492,15 +466,13 @@ pub(crate) fn default_sensevoice_language() -> String {
 
 impl Default for SenseVoiceSettings {
     fn default() -> Self {
+        let spec = crate::sensevoice::model::spec_for_local_model(&default_local_model());
         Self {
             enabled: false,
             installed: false,
-            local_model: default_local_model(),
-            stop_mode: default_stop_mode(),
-            service_url: "http://127.0.0.1:28765".to_string(),
-            model_id: DEFAULT_SENSEVOICE_MODEL_ID.to_string(),
+            local_model: spec.model_key.to_string(),
+            model_id: spec.model_id.to_string(),
             language: default_sensevoice_language(),
-            device: "auto".to_string(),
             download_state: "idle".to_string(),
             last_error: String::new(),
         }

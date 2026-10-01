@@ -12,48 +12,34 @@ VTT Keyboard is a desktop voice-to-text keyboard tool built with Tauri. It combi
 
 - Rust toolchain
 - Bun
-- Docker (Docker Desktop on Windows/macOS)
-- NVIDIA GPU and Docker GPU runtime for CUDA-only local models such as Voxtral and Qwen3-ASR
 
-## SenseVoice Local Deployment (Docker)
+## Local Speech Recognition (sherpa-onnx)
 
-SenseVoice local mode runs with Docker only. A Python runtime on the host machine is not required.
+Local mode runs ONNX models in-process via sherpa-onnx. Docker and a Python runtime are not required.
 
-1. Start Docker Desktop or the Docker daemon.
-2. Open the app settings and choose `SenseVoice (Local)`.
-3. Click `Download & Enable`.
-   - The first run builds the `vtt-sensevoice:local` image and downloads the model.
-4. Click `Start Service` to run the containerized service.
+1. Open the app settings and choose `SenseVoice (Local)` as the provider.
+2. Pick a model in the `Local Model` dropdown — the model package is downloaded automatically after selection.
+3. Click `Load Model` to load it into memory, or just start recording: the model is loaded on demand.
 
 ## Local Models
 
-Local mode supports switching between four local model runtimes:
+All local models are pre-packaged ONNX archives published by the sherpa-onnx project (GitHub Releases, with a ModelScope mirror fallback):
 
-- `SenseVoice` (default)
-- `Sherpa-ONNX SenseVoice` (native runtime, disabled on Windows ARM64 builds)
-- `mistralai/Voxtral-Mini-4B-Realtime-2602` (via vLLM Docker image)
-- `Qwen3-ASR` (via vLLM Docker image, default variant `Qwen/Qwen3-ASR-1.7B`)
+- `SenseVoice-Small int8` (default, ~158MB) — Chinese, English, Japanese, Korean, Cantonese
+- `Paraformer-zh-small` (~74MB) — lightest Chinese-focused model
+- `FireRedASR2-CTC` (~497MB) — Chinese/English with dialect support
+- `Fun-ASR-Nano` (~803MB) — newest high-quality Chinese model, slower on CPU
 
-When switching local models while the service is running, the app stops the previous container first, then starts the new one automatically.
+Downloads are stored under the app local data `sensevoice/models` directory. Switching back to a previously downloaded model reuses the local files without re-downloading.
 
-### Voxtral Runtime Notes
+### Upgrading from the Docker-based version
 
-- Docker image: `vllm/vllm-openai:nightly`
-- API endpoint: `POST /v1/audio/transcriptions`
-- Voxtral is CUDA-only via Docker GPU runtime (`--runtime nvidia --gpus all`), with FlashAttention disabled (`--attention-backend TRITON_ATTN`).
-- Service bootstrap installs runtime dependency automatically: `mistral-common[soundfile]>=1.9.0`.
-- CPU fallback is disabled for Voxtral.
-- Model weights are pulled on first service start and cached under the local model directory.
+Older releases ran local models inside Docker containers. The runtime is now fully native, and leftover Docker resources are not removed automatically. You can clean them up manually:
 
-### Qwen3-ASR Runtime Notes
-
-- Docker image: `vllm/vllm-openai:nightly`
-- API endpoint: `POST /v1/audio/transcriptions`
-- Preset model variants:
-  - `Qwen/Qwen3-ASR-1.7B` (default)
-  - `Qwen/Qwen3-ASR-0.6B`
-  - `Qwen/Qwen3-ForcedAligner-0.6B`
-- CUDA GPU is required via Docker GPU runtime (`--runtime nvidia --gpus all`).
+```bash
+docker rm -f vtt-docker-service vtt-sensevoice-service
+docker rmi vtt-sensevoice:local vllm/vllm-openai:nightly
+```
 
 ## Release and Updater Signing
 
@@ -75,10 +61,7 @@ The app links Sherpa-ONNX statically on supported desktop targets, so Windows in
 
 ## Runtime Notes
 
-- Container name: `vtt-sensevoice-service`
-- Image tag: `vtt-sensevoice:local`
 - Model cache directory: app local data `sensevoice/models`
-- Runtime log path: `sensevoice/runtime/server.log`
 
 ## Code Structure
 
@@ -102,7 +85,7 @@ The app links Sherpa-ONNX statically on supported desktop targets, so Windows in
 │  │  ├─ transcription_dispatcher.rs # Transcription routing
 │  │  ├─ openai.rs               # OpenAI provider integration
 │  │  ├─ volcengine.rs           # Volcengine provider integration
-│  │  └─ sensevoice/             # SenseVoice local mode manager/client
+│  │  └─ sensevoice/             # Local ASR model manager/client (sherpa-onnx)
 │  ├─ native/                    # Platform-specific native overlay code
 │  ├─ capabilities/              # Tauri capability definitions
 │  └─ tauri.conf.json            # Tauri app config
@@ -135,48 +118,34 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 
 - Rust toolchain
 - Bun
-- Docker（Windows/macOS 使用 Docker Desktop）
-- 对于 Voxtral、Qwen3-ASR 等仅支持 CUDA 的本地模型，需要 NVIDIA GPU 和 Docker GPU runtime
 
-## SenseVoice 本地部署（Docker）
+## 本地语音识别（sherpa-onnx）
 
-SenseVoice 本地模式仅通过 Docker 运行，不再要求宿主机安装 Python 运行时。
+本地模式通过 sherpa-onnx 在进程内运行 ONNX 模型，不再需要 Docker 或 Python 运行时。
 
-1. 启动 Docker Desktop 或 Docker daemon。
-2. 打开应用设置，选择 `SenseVoice (Local)`。
-3. 点击 `Download & Enable`。
-   - 首次运行会构建 `vtt-sensevoice:local` 镜像并下载模型。
-4. 点击 `Start Service` 启动容器化服务。
+1. 打开应用设置，将转写引擎切换为 `SenseVoice (Local)`。
+2. 在“本地模型”下拉中选择模型 —— 选中后会自动下载对应的模型包。
+3. 点击“加载模型”将其载入内存，或直接开始录音：模型会按需自动加载。
 
 ## 本地模型
 
-本地模式支持在四种本地模型运行时之间切换：
+所有本地模型均为 sherpa-onnx 项目官方预打包的 ONNX 归档（主用 GitHub Releases，失败时回退 ModelScope 镜像）：
 
-- `SenseVoice`（默认）
-- `Sherpa-ONNX SenseVoice`（原生运行时，在 Windows ARM64 构建中禁用）
-- `mistralai/Voxtral-Mini-4B-Realtime-2602`（通过 vLLM Docker 镜像运行）
-- `Qwen3-ASR`（通过 vLLM Docker 镜像运行，默认变体为 `Qwen/Qwen3-ASR-1.7B`）
+- `SenseVoice-Small int8`（默认，约 158MB）——支持中/英/日/韩/粤语
+- `Paraformer-zh-small`（约 74MB）——最轻量的中文模型
+- `FireRedASR2-CTC`（约 497MB）——中英文并支持多种方言
+- `Fun-ASR-Nano`（约 803MB）——最新的高质量中文模型，CPU 上较慢
 
-如果服务正在运行时切换本地模型，应用会先停止之前的容器，再自动启动新的模型服务。
+模型下载后存放在应用本地数据目录的 `sensevoice/models` 下。切换回已下载过的模型会直接复用本地文件，无需重新下载。
 
-### Voxtral 运行说明
+### 从 Docker 版本升级
 
-- Docker 镜像：`vllm/vllm-openai:nightly`
-- API endpoint：`POST /v1/audio/transcriptions`
-- Voxtral 仅支持通过 Docker GPU runtime 使用 CUDA（`--runtime nvidia --gpus all`），并禁用 FlashAttention（`--attention-backend TRITON_ATTN`）。
-- 服务启动流程会自动安装运行时依赖：`mistral-common[soundfile]>=1.9.0`。
-- Voxtral 不启用 CPU fallback。
-- 模型权重会在首次启动服务时拉取，并缓存在本地模型目录下。
+旧版本通过 Docker 容器运行本地模型，现已完全改为原生推理。遗留的 Docker 资源不会自动清理，如有需要可手动删除：
 
-### Qwen3-ASR 运行说明
-
-- Docker 镜像：`vllm/vllm-openai:nightly`
-- API endpoint：`POST /v1/audio/transcriptions`
-- 预设模型变体：
-  - `Qwen/Qwen3-ASR-1.7B`（默认）
-  - `Qwen/Qwen3-ASR-0.6B`
-  - `Qwen/Qwen3-ForcedAligner-0.6B`
-- 必须通过 Docker GPU runtime 使用 CUDA GPU（`--runtime nvidia --gpus all`）。
+```bash
+docker rm -f vtt-docker-service vtt-sensevoice-service
+docker rmi vtt-sensevoice:local vllm/vllm-openai:nightly
+```
 
 ## 发布与更新器签名
 
@@ -198,10 +167,7 @@ GitHub Actions 发布构建需要配置更新器签名密钥：
 
 ## 运行时说明
 
-- 容器名称：`vtt-sensevoice-service`
-- 镜像标签：`vtt-sensevoice:local`
 - 模型缓存目录：应用本地数据目录下的 `sensevoice/models`
-- 运行日志路径：`sensevoice/runtime/server.log`
 
 ## 代码结构
 
@@ -225,7 +191,7 @@ GitHub Actions 发布构建需要配置更新器签名密钥：
 │  │  ├─ transcription_dispatcher.rs # 转写路由
 │  │  ├─ openai.rs               # OpenAI provider 集成
 │  │  ├─ volcengine.rs           # Volcengine provider 集成
-│  │  └─ sensevoice/             # SenseVoice 本地模式管理器/客户端
+│  │  └─ sensevoice/             # 本地 ASR 模型管理器/客户端（sherpa-onnx）
 │  ├─ native/                    # 平台相关原生 overlay 代码
 │  ├─ capabilities/              # Tauri capability 定义
 │  └─ tauri.conf.json            # Tauri 应用配置

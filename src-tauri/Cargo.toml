@@ -47,6 +47,5 @@ arboard = "3"
 tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
 url = "2"
 
-[target.'cfg(not(all(target_os = "windows", target_arch = "aarch64")))'.dependencies]
-sherpa-onnx = { version = "1.12.36", default-features = false, features = ["static"] }
+sherpa-onnx = { version = "1.13.8", default-features = false, features = ["static"] }
 

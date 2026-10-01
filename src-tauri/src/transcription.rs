@@ -1,7 +1,7 @@
 //! 转写引擎统一接口
 //!
-//! 将所有转写引擎（OpenAI, 火山引擎, 阿里云 ASR/Paraformer, SenseVoice）
-//! 抽象为统一的 `TranscriptionEngine` trait，按云端/本地(Docker/Native)分类。
+//! 将所有转写引擎（OpenAI, 火山引擎, 阿里云 ASR/Paraformer, 本地 sherpa-onnx 模型）
+//! 抽象为统一的 `TranscriptionEngine` trait，按云端/本地分类。
 
 use crate::aliyun_realtime::{self, AliyunRealtimeError};
 use crate::openai::{self, OpenAiError};
@@ -45,33 +45,15 @@ pub enum TranscriptionError {
 pub enum EngineEnvironment {
     /// 云端 API（OpenAI, 火山引擎, 阿里云）
     Cloud,
-    /// 本地运行
-    Local { runtime: LocalRuntime },
-}
-
-/// 本地运行时类型
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LocalRuntime {
-    /// Docker 容器（SenseVoice Docker, Voxtral, Qwen3-ASR）
-    Docker,
-    /// 原生二进制（Sherpa-ONNX）
-    Native,
+    /// 本地运行（sherpa-onnx 进程内推理）
+    Local,
 }
 
 impl fmt::Display for EngineEnvironment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Cloud => write!(f, "cloud"),
-            Self::Local { runtime } => write!(f, "local/{runtime}"),
-        }
-    }
-}
-
-impl fmt::Display for LocalRuntime {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Docker => write!(f, "docker"),
-            Self::Native => write!(f, "native"),
+            Self::Local => write!(f, "local"),
         }
     }
 }
@@ -201,9 +183,9 @@ impl TranscriptionEngine for AliyunParaformerEngine {
     }
 }
 
-// ── SenseVoice 引擎（本地）────────────────────────────────────
+// ── SenseVoice 引擎（本地 sherpa-onnx）─────────────────────────
 
-use crate::sensevoice::model::{normalize_local_model, spec_for_local_model, LocalRuntimeKind};
+use crate::sensevoice::model::spec_for_local_model;
 
 pub struct SenseVoiceEngine {
     settings: Settings,
@@ -211,13 +193,7 @@ pub struct SenseVoiceEngine {
 
 impl SenseVoiceEngine {
     fn display_name(&self) -> &'static str {
-        let local_model = normalize_local_model(&self.settings.sensevoice.local_model);
-        match local_model {
-            "sherpa-onnx-sensevoice" => "Sherpa-ONNX SenseVoice",
-            "voxtral" => "Voxtral",
-            "qwen3-asr" => "Qwen3-ASR",
-            _ => "SenseVoice",
-        }
+        spec_for_local_model(&self.settings.sensevoice.local_model).display_name
     }
 }
 
@@ -231,22 +207,11 @@ impl TranscriptionEngine for SenseVoiceEngine {
     }
 
     fn model_group(&self) -> String {
-        let model_id = self.settings.sensevoice.model_id.trim();
-        let display_id = if model_id.is_empty() { "-" } else { model_id };
-        format!("{} / {display_id}", self.display_name())
+        self.display_name().to_string()
     }
 
     fn environment(&self) -> EngineEnvironment {
-        let local_model = normalize_local_model(&self.settings.sensevoice.local_model);
-        let spec = spec_for_local_model(local_model);
-        match spec.runtime_kind {
-            LocalRuntimeKind::Native => EngineEnvironment::Local {
-                runtime: LocalRuntime::Native,
-            },
-            LocalRuntimeKind::Docker => EngineEnvironment::Local {
-                runtime: LocalRuntime::Docker,
-            },
-        }
+        EngineEnvironment::Local
     }
 }
 
@@ -335,12 +300,9 @@ mod tests {
         );
 
         settings.provider = TranscriptionProvider::Sensevoice;
-        settings.sensevoice.local_model = "voxtral".to_string();
-        settings.sensevoice.model_id = "mistralai/Voxtral-Mini-4B-Realtime-2602".to_string();
+        settings.sensevoice.local_model = "sherpa-onnx-paraformer".to_string();
         let engine = create_engine(&settings);
-        assert_eq!(
-            engine.model_group(),
-            "Voxtral / mistralai/Voxtral-Mini-4B-Realtime-2602"
-        );
+        assert_eq!(engine.model_group(), "Paraformer-zh-small");
+        assert_eq!(engine.environment(), EngineEnvironment::Local);
     }
 }

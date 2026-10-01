@@ -39,10 +39,10 @@ VTT Keyboard 内置了对多种业界顶级语音识别引擎的支持：
 我们在 Rust 层（`src-tauri/src/status_native.rs`）调用了操作系统原生图形 API（Windows Win32+GDI / macOS Cocoa / Linux GTK3），在屏幕绘制了一个极简轻量、悬浮且不抢夺光标焦点的状态指示器（显示：正在录音、识别中、已完成、错误）。
 **巧思在于**：绕过了 WebView 的渲染延迟和焦点抢占，做到了真正的“无感提示”，你的打字思路绝不会被打断。
 
-### 🐳 3. Docker 容器化的大模型“傻瓜式”部署
-本地运行大模型（SenseVoice）通常意味着让用户陷入 Python 环境、CUDA 依赖的“配置地狱”。
-**巧思在于**：我们在后台实现了全自动的 Docker 生命周期管理！
-只要用户电脑装有 Docker Desktop，VTT 会自动生成 `Dockerfile`、依赖配置并自动在后台 Build 镜像、拉起 Inference 服务容器、监听健康状态。用户只需在 UI 上点一下“下载并启用”，就能获得开箱即用的本地 AI 语音引擎。
+### 🧩 3. sherpa-onnx 原生推理，本地大模型开箱即用
+本地运行大模型通常意味着让用户陷入 Python 环境、CUDA 依赖的“配置地狱”。
+**巧思在于**：VTT Keyboard 通过 sherpa-onnx 直接在进程内运行 ONNX 模型，完全不需要 Docker 或 Python 环境！
+用户只需在设置里挑选模型——包括 SenseVoice-Small、Paraformer-zh-small、FireRedASR2-CTC、Fun-ASR-Nano 等多款针对中文优化的预打包模型——选中后自动下载，一键加载即可获得完全离线、隐私安全的本地语音引擎。
 
 ### ✂️ 4. 智能键鼠模拟，兼容一切输入框
 文本获取后如何输入到目标软件？如果使用传统的剪贴板容易覆盖用户原有的复制内容，或者在某些不支持粘贴的软件里失效。

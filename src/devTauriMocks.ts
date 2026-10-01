@@ -1,13 +1,7 @@
 import type { TranscriptionHistoryItem } from "./types/history";
 import type { Settings } from "./types/settings";
 import type { UpdateStatusPayload } from "./types/updater";
-import {
-  DEFAULT_QWEN3_ASR_MODEL_ID,
-  DEFAULT_SENSEVOICE_MODEL_ID,
-  DEFAULT_VOXTRAL_MODEL_ID,
-  getDefaultModelId,
-  normalizeLocalModel,
-} from "./utils/sensevoice";
+import { LOCAL_MODEL_SENSEVOICE, getDefaultModelId } from "./utils/sensevoice";
 
 declare global {
   interface Window {
@@ -63,12 +57,9 @@ const createDefaultSettings = (): Settings => ({
   sensevoice: {
     enabled: false,
     installed: true,
-    localModel: "sensevoice",
-    stopMode: "pause",
-    serviceUrl: "http://127.0.0.1:8765",
-    modelId: "FunAudioLLM/SenseVoiceSmall",
+    localModel: LOCAL_MODEL_SENSEVOICE,
+    modelId: getDefaultModelId(LOCAL_MODEL_SENSEVOICE),
     language: "auto",
-    device: "auto",
     downloadState: "ready",
     lastError: "",
   },
@@ -157,7 +148,7 @@ const clone = <T,>(value: T): T =>
 let mockSettings = createDefaultSettings();
 let mockHistoryItems = createHistoryItems();
 let mockAutostartEnabled = false;
-let mockSenseVoiceRuntimeState: "stopped" | "running" | "paused" | "exited" = "exited";
+let mockSenseVoiceRuntimeState: "stopped" | "running" | "starting" = "stopped";
 let mockMacOSPermissions = {
   supported: true,
   microphone: {
@@ -177,63 +168,12 @@ const getSenseVoiceStatus = () => ({
   enabled: mockSettings.sensevoice.enabled,
   running: mockSenseVoiceRuntimeState === "running",
   runtimeState: mockSenseVoiceRuntimeState,
-  runtimeKind:
-    normalizeLocalModel(mockSettings.sensevoice.localModel) === "sherpa-onnx-sensevoice"
-      ? "native"
-      : "docker",
-  supportsPause: true,
   localModel: mockSettings.sensevoice.localModel,
-  serviceUrl: mockSettings.sensevoice.serviceUrl,
   modelId: mockSettings.sensevoice.modelId,
-  device: mockSettings.sensevoice.device,
+  language: mockSettings.sensevoice.language,
   downloadState: mockSettings.sensevoice.downloadState,
   lastError: mockSettings.sensevoice.lastError,
 });
-
-const getRuntimeImageTag = () => {
-  const localModel = normalizeLocalModel(mockSettings.sensevoice.localModel);
-  if (localModel === "voxtral" || localModel === "qwen3-asr") {
-    return "vllm/vllm-openai:nightly";
-  }
-  return "vtt-sensevoice:local";
-};
-
-const getRuntimeModelId = () => {
-  const localModel = normalizeLocalModel(mockSettings.sensevoice.localModel);
-  if (localModel === "voxtral") {
-    return DEFAULT_VOXTRAL_MODEL_ID;
-  }
-  if (localModel === "qwen3-asr") {
-    return mockSettings.sensevoice.modelId || DEFAULT_QWEN3_ASR_MODEL_ID;
-  }
-  if (localModel === "sensevoice") {
-    return DEFAULT_SENSEVOICE_MODEL_ID;
-  }
-  return getDefaultModelId(localModel);
-};
-
-const getSenseVoiceDockerRuntimeStatus = () => {
-  const localModel = normalizeLocalModel(mockSettings.sensevoice.localModel);
-  const isDockerRuntime = localModel !== "sherpa-onnx-sensevoice";
-  const containerExists = isDockerRuntime && mockSenseVoiceRuntimeState !== "stopped";
-  return {
-    available: true,
-    daemonRunning: true,
-    containerName: "vtt-docker-service",
-    containerExists,
-    containerState: isDockerRuntime ? mockSenseVoiceRuntimeState : "stopped",
-    containerModelKey: containerExists ? localModel : "",
-    containerModelId: containerExists ? getRuntimeModelId() : "",
-    expectedModelKey: localModel,
-    expectedModelId: getRuntimeModelId(),
-    imageTag: isDockerRuntime ? getRuntimeImageTag() : "",
-    imageExists: isDockerRuntime,
-    serviceUrl: mockSettings.sensevoice.serviceUrl,
-    runtimeDir: "/tmp/vtt-keyboard/sensevoice/runtime",
-    modelsDir: "/tmp/vtt-keyboard/sensevoice/models",
-    lastError: "",
-  };
-};
 
 const updateStatus: UpdateStatusPayload = {
   status: "idle",
@@ -282,7 +222,6 @@ export async function setupDevTauriMocks() {
             buildDate: "dev-browser",
             platform: "macos",
             arch: "aarch64",
-            supportsSherpaOnnxSenseVoice: true,
           };
         case "list_audio_input_devices":
           return [
@@ -379,11 +318,7 @@ export async function setupDevTauriMocks() {
           };
           return getSenseVoiceStatus();
         case "start_sensevoice_service":
-        case "restart_sensevoice_service":
-          mockSenseVoiceRuntimeState =
-            normalizeLocalModel(mockSettings.sensevoice.localModel) === "sherpa-onnx-sensevoice"
-              ? "running"
-              : "running";
+          mockSenseVoiceRuntimeState = "running";
           mockSettings = {
             ...mockSettings,
             sensevoice: {
@@ -396,24 +331,18 @@ export async function setupDevTauriMocks() {
           };
           return getSenseVoiceStatus();
         case "stop_sensevoice_service":
-          mockSenseVoiceRuntimeState =
-            normalizeLocalModel(mockSettings.sensevoice.localModel) === "sherpa-onnx-sensevoice"
-              ? "stopped"
-              : "paused";
-          return getSenseVoiceStatus();
-        case "stop_sensevoice_service_force":
-          mockSenseVoiceRuntimeState =
-            normalizeLocalModel(mockSettings.sensevoice.localModel) === "sherpa-onnx-sensevoice"
-              ? "stopped"
-              : "stopped";
-          return getSenseVoiceStatus();
-        case "remove_sensevoice_runtime_container":
           mockSenseVoiceRuntimeState = "stopped";
           return getSenseVoiceStatus();
-        case "get_sensevoice_docker_runtime_status":
-          return getSenseVoiceDockerRuntimeStatus();
-        case "update_sensevoice_runtime":
-          mockSenseVoiceRuntimeState = "running";
+        case "remove_sensevoice_model":
+          mockSenseVoiceRuntimeState = "stopped";
+          mockSettings = {
+            ...mockSettings,
+            sensevoice: {
+              ...mockSettings.sensevoice,
+              installed: false,
+              downloadState: "idle",
+            },
+          };
           return getSenseVoiceStatus();
         case "update_sensevoice_settings":
           mockSettings = {

@@ -1,10 +1,7 @@
-use super::{model::LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE, sherpa, SenseVoiceError};
+use super::{model::spec_for_local_model, sherpa, SenseVoiceError};
 use crate::settings::TranscriptionAlignment;
+use std::fs;
 use std::path::{Path, PathBuf};
-
-pub fn supports_local_model(local_model: &str) -> bool {
-    local_model.eq_ignore_ascii_case(LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE)
-}
 
 pub fn set_models_root(models_root: PathBuf) {
     sherpa::set_models_root(models_root);
@@ -14,8 +11,12 @@ pub fn get_models_root() -> Option<PathBuf> {
     sherpa::get_models_root()
 }
 
-pub fn is_loaded(local_model: &str) -> bool {
-    supports_local_model(local_model) && sherpa::runtime_is_loaded()
+/// 指定模型的文件是否已完整下载
+pub fn model_files_ready(local_model: &str) -> bool {
+    let Some(root) = get_models_root() else {
+        return false;
+    };
+    sherpa::model_is_ready(&root, spec_for_local_model(local_model))
 }
 
 pub fn prepare_model<F>(
@@ -26,27 +27,35 @@ pub fn prepare_model<F>(
 where
     F: FnMut(&str, Option<u8>, Option<u64>, Option<u64>),
 {
-    if supports_local_model(local_model) {
-        return sherpa::prepare_model(models_root, on_progress);
-    }
-    Err(SenseVoiceError::Config(format!(
-        "unsupported native local model: {local_model}"
-    )))
+    sherpa::prepare_model(models_root, local_model, on_progress)
 }
 
 pub fn load(local_model: &str, models_root: &Path, language: &str) -> Result<(), SenseVoiceError> {
-    if supports_local_model(local_model) {
-        return sherpa::load_runtime(models_root, language);
-    }
-    Err(SenseVoiceError::Config(format!(
-        "unsupported native local model: {local_model}"
-    )))
+    sherpa::load_runtime(models_root, local_model, language)
 }
 
-pub fn unload(local_model: &str) {
-    if supports_local_model(local_model) {
-        sherpa::unload_runtime();
+pub fn unload(_local_model: &str) {
+    sherpa::unload_runtime();
+}
+
+/// 卸载并删除指定模型的全部文件（模型目录与残留的下载包）
+pub fn remove_model_files(local_model: &str) -> Result<(), SenseVoiceError> {
+    sherpa::unload_runtime();
+    let Some(root) = get_models_root() else {
+        return Ok(());
+    };
+    let spec = spec_for_local_model(local_model);
+    let model_dir = sherpa::runtime_model_dir(&root, spec);
+    if model_dir.exists() {
+        fs::remove_dir_all(&model_dir)
+            .map_err(|err| SenseVoiceError::Io(format!("删除模型目录失败: {err}")))?;
     }
+    let archive_path = root.join(spec.archive_name);
+    if archive_path.exists() {
+        fs::remove_file(&archive_path)
+            .map_err(|err| SenseVoiceError::Io(format!("删除模型包失败: {err}")))?;
+    }
+    Ok(())
 }
 
 pub fn transcribe_wav(
@@ -55,18 +64,13 @@ pub fn transcribe_wav(
     audio_path: &Path,
 ) -> Result<NativeRuntimeTranscription, SenseVoiceError> {
     let models_root = get_models_root().ok_or_else(|| {
-        SenseVoiceError::Config("Native model directory is not initialized".to_string())
+        SenseVoiceError::Config("本地模型目录尚未初始化".to_string())
     })?;
-    if supports_local_model(local_model) {
-        let result = sherpa::transcribe_wav(&models_root, language, audio_path)?;
-        return Ok(NativeRuntimeTranscription {
-            text: result.text,
-            alignment: result.alignment,
-        });
-    }
-    Err(SenseVoiceError::Config(format!(
-        "unsupported native local model: {local_model}"
-    )))
+    let result = sherpa::transcribe_wav(&models_root, local_model, language, audio_path)?;
+    Ok(NativeRuntimeTranscription {
+        text: result.text,
+        alignment: result.alignment,
+    })
 }
 
 pub struct NativeRuntimeTranscription {

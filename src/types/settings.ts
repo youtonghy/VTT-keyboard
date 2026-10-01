@@ -116,11 +116,8 @@ export interface SenseVoiceSettings {
   enabled: boolean;
   installed: boolean;
   localModel: string;
-  stopMode: "stop" | "pause";
-  serviceUrl: string;
   modelId: string;
   language: string;
-  device: string;
   downloadState: string;
   lastError: string;
 }

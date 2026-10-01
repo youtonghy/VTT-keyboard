@@ -1,14 +1,11 @@
 pub mod client;
-pub mod docker_utils;
 pub mod manager;
 pub mod model;
 pub mod native_runtime;
 pub mod sherpa;
-pub mod worker;
 
 pub use manager::{
-    ensure_service_ready_blocking, SenseVoiceDockerRuntimeStatus, SenseVoiceManager,
-    SenseVoiceStatus,
+    ensure_service_ready_blocking, selected_model_ready, SenseVoiceManager, SenseVoiceStatus,
 };
 
 use thiserror::Error;
@@ -25,8 +22,6 @@ pub enum SenseVoiceError {
     Process(String),
     #[error("SenseVoice 文件读写失败: {0}")]
     Io(String),
-    #[error("SenseVoice URL 错误: {0}")]
-    Url(String),
     #[error("SenseVoice 设置读写失败: {0}")]
     Settings(String),
 }

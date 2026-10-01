@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { Button } from "@heroui/react";
-import { RefreshCw, RotateCw, Square, Trash2, Play, Pause } from "lucide-react";
+import { RefreshCw, Download, Square, Trash2, Play } from "lucide-react";
 import { CustomSelect } from "../CustomSelect";
 import { HeroCheckboxField, HeroField, HeroInputField } from "../HeroField";
 import { NumberWheelInput } from "../NumberWheelInput";
@@ -8,39 +8,24 @@ import { SettingsCard } from "../SettingsCard";
 import type { SenseVoiceProgress, SenseVoiceStatus } from "../../hooks/useSenseVoice";
 import type { Settings } from "../../types/settings";
 import { parseList, listToString, normalizeAliyunRegion } from "../../utils";
+import {
+  LOCAL_MODELS,
+  LANGUAGE_OPTIONS,
+  normalizeLocalModel,
+  normalizeSenseVoiceLanguage,
+  languageOptionsFor,
+  getDefaultModelId,
+  formatBytes,
+} from "../../utils/sensevoice";
 
 const isAliyunProvider = (provider: Settings["provider"]) =>
   provider === "aliyun-asr" || provider === "aliyun-paraformer";
-
-interface Option {
-  value: string;
-  label: string;
-}
 
 interface SpeechSettingsSectionProps {
   draft: Settings;
   t: TFunction;
   updateDraft: (updater: (prev: Settings) => Settings) => void;
-  supportsSherpaOnnxSenseVoice: boolean;
-  sherpaFallbackActive: boolean;
   sensevoiceStatus: SenseVoiceStatus;
-  sensevoiceDockerRuntimeStatus: {
-    available: boolean;
-    daemonRunning: boolean;
-    containerName: string;
-    containerExists: boolean;
-    containerState: string;
-    containerModelKey: string;
-    containerModelId: string;
-    expectedModelKey: string;
-    expectedModelId: string;
-    imageTag: string;
-    imageExists: boolean;
-    serviceUrl: string;
-    runtimeDir: string;
-    modelsDir: string;
-    lastError: string;
-  };
   sensevoiceProgress: SenseVoiceProgress | null;
   sensevoiceLogLines: string[];
   sensevoiceLogsExpanded: boolean;
@@ -49,30 +34,22 @@ interface SpeechSettingsSectionProps {
   handleSenseVoicePrepare: () => void;
   handleSenseVoiceStart: () => void;
   handleSenseVoiceStop: () => void;
-  handleSenseVoiceRestart: () => void;
-  handleSenseVoiceRemoveContainer: () => void;
-  handleUpdateRuntime: () => void;
+  handleSenseVoiceRemoveModel: () => void;
+  handleSenseVoiceConfigSave: (patch: {
+    enabled?: boolean;
+    installed?: boolean;
+    localModel?: string;
+    modelId?: string;
+    language?: string;
+  }) => Promise<void>;
   refreshSenseVoiceStatus: () => Promise<unknown>;
-  refreshSenseVoiceDockerRuntimeStatus: () => Promise<unknown>;
-  normalizeLocalModel: (value: string | undefined) => string;
-  normalizeSenseVoiceLanguage: (value: string | undefined) => string;
-  normalizeSenseVoiceDevice: (localModel: string | undefined, device: string | undefined) => string;
-  isCudaOnlyLocalModel: (localModel: string | undefined) => boolean;
-  getDefaultModelId: (localModel: string) => string;
-  getQwenVariantByModelId: (modelId: string | undefined) => string;
-  formatBytes: (value: number | undefined) => string;
-  sherpaLanguageOptions: Option[];
-  qwenVariantOptions: Option[];
 }
 
 export function SpeechSettingsSection({
   draft,
   t,
   updateDraft,
-  supportsSherpaOnnxSenseVoice,
-  sherpaFallbackActive,
   sensevoiceStatus,
-  sensevoiceDockerRuntimeStatus,
   sensevoiceProgress,
   sensevoiceLogLines,
   sensevoiceLogsExpanded,
@@ -81,20 +58,9 @@ export function SpeechSettingsSection({
   handleSenseVoicePrepare,
   handleSenseVoiceStart,
   handleSenseVoiceStop,
-  handleSenseVoiceRestart,
-  handleSenseVoiceRemoveContainer,
-  handleUpdateRuntime,
+  handleSenseVoiceRemoveModel,
+  handleSenseVoiceConfigSave,
   refreshSenseVoiceStatus,
-  refreshSenseVoiceDockerRuntimeStatus,
-  normalizeLocalModel,
-  normalizeSenseVoiceLanguage,
-  normalizeSenseVoiceDevice,
-  isCudaOnlyLocalModel,
-  getDefaultModelId,
-  getQwenVariantByModelId,
-  formatBytes,
-  sherpaLanguageOptions,
-  qwenVariantOptions,
 }: SpeechSettingsSectionProps) {
   const privacyModeEnabled = draft.privacy.enabled;
   const providerGroups = privacyModeEnabled
@@ -119,26 +85,10 @@ export function SpeechSettingsSection({
           options: [{ value: "sensevoice", label: t("speech.sensevoice") }],
         },
       ];
-  const localModelOptions: Option[] = [
-    {
-      value: "sensevoice",
-      label: t("sensevoice.localModelSenseVoice"),
-    },
-    {
-      value: "voxtral",
-      label: t("sensevoice.localModelVoxtral"),
-    },
-    {
-      value: "qwen3-asr",
-      label: t("sensevoice.localModelQwen3Asr"),
-    },
-  ];
-  if (supportsSherpaOnnxSenseVoice) {
-    localModelOptions.splice(1, 0, {
-      value: "sherpa-onnx-sensevoice",
-      label: t("sensevoice.localModelSherpaOnnxSenseVoice"),
-    });
-  }
+  const localModelOptions = LOCAL_MODELS.map((spec) => ({
+    value: spec.key,
+    label: t(spec.labelKey),
+  }));
 
   return (
     <>
@@ -563,97 +513,34 @@ export function SpeechSettingsSection({
           {(() => {
             const installed = sensevoiceStatus.installed;
             const running = sensevoiceStatus.running;
-            const runtimeState = sensevoiceStatus.runtimeState || "stopped";
-            const runtimeKind = sensevoiceStatus.runtimeKind || "docker";
             const state = sensevoiceStatus.downloadState || draft.sensevoice.downloadState;
             const lastError = sensevoiceStatus.lastError || draft.sensevoice.lastError;
             const progressStage = sensevoiceProgress?.stage ?? "";
-            const isReady = state === "ready";
-            const isLoaded = state === "loaded";
-            const isNativeRuntime = runtimeKind === "native";
-            const isWarmupStage =
-              progressStage === "verify" || progressStage === "warmup";
-            const effectiveProgressStage =
-              (isReady || isLoaded) && isWarmupStage ? "done" : progressStage;
-            const isWarming =
-              !isNativeRuntime &&
-              !isReady &&
-              (isWarmupStage || (running && state === "running"));
             const showProgressBar =
               !!sensevoiceProgress &&
-              (effectiveProgressStage === "prepare" ||
-                effectiveProgressStage === "install" ||
-                effectiveProgressStage === "download" ||
-                effectiveProgressStage === "loading");
+              (progressStage === "prepare" ||
+                progressStage === "download" ||
+                progressStage === "loading");
             const stageLabelKey =
-              isNativeRuntime && effectiveProgressStage === "loading"
+              progressStage === "loading"
                 ? "loading"
-                : effectiveProgressStage === "verify"
-                  ? "started"
-                  : effectiveProgressStage === "warmup"
-                    ? "warmup"
-                    : effectiveProgressStage === "resuming"
-                      ? "resuming"
-                      : effectiveProgressStage === "paused"
-                        ? "paused"
-                        : effectiveProgressStage === "done"
-                          ? "ready"
-                          : effectiveProgressStage === "error"
-                            ? "error"
-                            : isNativeRuntime && state === "loaded"
-                              ? "loaded"
-                              : runtimeState === "paused"
-                                ? "paused"
-                                : isWarming
-                                  ? "warmup"
-                                  : "";
-            const prepareBusy =
-              sensevoiceLoading ||
-              effectiveProgressStage === "prepare" ||
-              effectiveProgressStage === "install" ||
-              effectiveProgressStage === "download" ||
-              effectiveProgressStage === "loading";
-            const startBusy =
-              sensevoiceLoading ||
-              effectiveProgressStage === "prepare" ||
-              effectiveProgressStage === "install" ||
-              effectiveProgressStage === "download" ||
-              effectiveProgressStage === "loading" ||
-              (running && !isReady && isWarmupStage);
-            const stopBusy = sensevoiceLoading;
-            const selectedLocalModel = normalizeLocalModel(draft.sensevoice.localModel);
-            const isSherpaSelected = selectedLocalModel === "sherpa-onnx-sensevoice";
-            const isVoxtralSelected = selectedLocalModel === "voxtral";
-            const isQwenSelected = selectedLocalModel === "qwen3-asr";
-            const isCudaOnlySelected = isCudaOnlyLocalModel(selectedLocalModel);
-            const currentDevice = normalizeSenseVoiceDevice(
-              selectedLocalModel,
-              draft.sensevoice.device
-            );
-            const selectedQwenVariant = getQwenVariantByModelId(draft.sensevoice.modelId);
-            const dockerRuntimeReady =
-              sensevoiceDockerRuntimeStatus.available && sensevoiceDockerRuntimeStatus.daemonRunning;
-            const dockerRuntimeState = sensevoiceDockerRuntimeStatus.containerState || "stopped";
-            const dockerRuntimeStateLabel =
-              dockerRuntimeState === "running"
-                ? t("sensevoice.runtimeEnvironmentRunning")
-                : dockerRuntimeState === "paused"
-                  ? t("sensevoice.runtimeEnvironmentPaused")
-                  : dockerRuntimeState === "exited" || dockerRuntimeState === "created"
-                    ? t("sensevoice.runtimeEnvironmentStopped")
-                    : dockerRuntimeReady && !sensevoiceDockerRuntimeStatus.containerExists
-                      ? t("sensevoice.runtimeEnvironmentMissing")
-                      : t("sensevoice.runtimeEnvironmentError");
-            const dockerRuntimeModelLabel =
-              sensevoiceDockerRuntimeStatus.containerModelId ||
-              sensevoiceDockerRuntimeStatus.expectedModelId ||
-              draft.sensevoice.modelId;
-            const runtimePanelBusy =
+                : progressStage === "done"
+                  ? "ready"
+                  : progressStage === "error"
+                    ? "error"
+                    : state === "loaded"
+                      ? "loaded"
+                      : "";
+            const busy =
               sensevoiceLoading ||
               progressStage === "prepare" ||
-              progressStage === "install" ||
               progressStage === "download" ||
               progressStage === "loading";
+            const selectedLocalModel = normalizeLocalModel(draft.sensevoice.localModel);
+            const languageValues = languageOptionsFor(selectedLocalModel);
+            const languageOptions = LANGUAGE_OPTIONS.filter((option) =>
+              languageValues.includes(option.value)
+            ).map((option) => ({ value: option.value, label: t(option.labelKey) }));
 
             return (
               <>
@@ -664,13 +551,7 @@ export function SpeechSettingsSection({
                   </span>
                   <span>
                     {t("sensevoice.running")}:{" "}
-                    {isWarming
-                      ? t("sensevoice.warmingNow")
-                      : runtimeState === "paused"
-                        ? t("sensevoice.pausedNow")
-                        : running
-                          ? t("sensevoice.runningNow")
-                          : t("sensevoice.stopped")}
+                    {running ? t("sensevoice.runningNow") : t("sensevoice.stopped")}
                   </span>
                   <span>
                     {t("sensevoice.state")}:{" "}
@@ -680,217 +561,58 @@ export function SpeechSettingsSection({
 
                 <HeroField label={t("sensevoice.localModel")}><CustomSelect
                     value={selectedLocalModel}
-                    onChange={(value) =>
-                      updateDraft((prev) => {
-                        const nextLocalModel = normalizeLocalModel(value);
-                        const nextDefaultModelId = getDefaultModelId(nextLocalModel);
-                        const nextDevice = normalizeSenseVoiceDevice(
-                          nextLocalModel,
-                          prev.sensevoice.device
-                        );
-                        return {
-                          ...prev,
-                          sensevoice: {
-                            ...prev.sensevoice,
-                            localModel: nextLocalModel,
-                            modelId: nextDefaultModelId,
-                            language: normalizeSenseVoiceLanguage(prev.sensevoice.language),
-                            device: nextDevice,
-                          },
-                        };
-                      })
-                    }
-                    options={localModelOptions}
-                   /></HeroField>
-
-                {sherpaFallbackActive ? (
-                  <div className="sensevoice-hint">
-                    {t("sensevoice.sherpaUnsupportedFallbackHint")}
-                  </div>
-                ) : null}
-
-                {isSherpaSelected ? (
-                  <HeroField label={t("sensevoice.language")}><CustomSelect
-                      value={normalizeSenseVoiceLanguage(draft.sensevoice.language)}
-                      onChange={(value) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          sensevoice: {
-                            ...prev.sensevoice,
-                            language: normalizeSenseVoiceLanguage(value),
-                          },
-                        }))
-                      }
-                      options={sherpaLanguageOptions}
-                     /></HeroField>
-                ) : null}
-
-                {isQwenSelected ? (
-                  <HeroField label={t("sensevoice.qwenVariant")}><CustomSelect
-                      value={selectedQwenVariant}
-                      onChange={(value) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          sensevoice: {
-                            ...prev.sensevoice,
-                            modelId: value,
-                          },
-                        }))
-                      }
-                      options={qwenVariantOptions}
-                     /></HeroField>
-                ) : null}
-
-                {!isSherpaSelected ? (
-                  <HeroInputField
-            label={t("sensevoice.serviceUrl")}
-            value={draft.sensevoice.serviceUrl}
-            onChange={(value) =>
-                        updateDraft((prev) => ({
-                          ...prev,
-                          sensevoice: {
-                            ...prev.sensevoice,
-                            serviceUrl: value,
-                          },
-                        }))
-            }
-          />
-                ) : null}
-
-                <HeroField label={t("sensevoice.device")}><CustomSelect
-                    value={currentDevice}
-                    onChange={(value) =>
+                    disabled={busy}
+                    onChange={(value) => {
+                      const nextLocalModel = normalizeLocalModel(value);
+                      const nextLanguage = normalizeSenseVoiceLanguage(
+                        draft.sensevoice.language,
+                        nextLocalModel
+                      );
+                      const nextModelId = getDefaultModelId(nextLocalModel);
                       updateDraft((prev) => ({
                         ...prev,
                         sensevoice: {
                           ...prev.sensevoice,
-                          device: normalizeSenseVoiceDevice(prev.sensevoice.localModel, value),
+                          localModel: nextLocalModel,
+                          modelId: nextModelId,
+                          language: nextLanguage,
                         },
-                      }))
-                    }
-                    disabled={isCudaOnlySelected || isSherpaSelected}
-                    options={[
-                      { value: "auto", label: t("sensevoice.deviceAuto") },
-                      { value: "cpu", label: t("sensevoice.deviceCpu") },
-                      { value: "cuda", label: t("sensevoice.deviceCuda") },
-                    ]}
+                      }));
+                      // 点击选择后下载：切换模型后立即保存配置并按需下载
+                      void handleSenseVoiceConfigSave({
+                        localModel: nextLocalModel,
+                        modelId: nextModelId,
+                        language: nextLanguage,
+                      });
+                    }}
+                    options={localModelOptions}
                    /></HeroField>
 
-                {isVoxtralSelected ? (
-                  <div className="sensevoice-hint">{t("sensevoice.voxtralCudaOnlyHint")}</div>
+                {languageOptions.length > 0 ? (
+                  <HeroField label={t("sensevoice.language")}><CustomSelect
+                      value={normalizeSenseVoiceLanguage(
+                        draft.sensevoice.language,
+                        selectedLocalModel
+                      )}
+                      onChange={(value) => {
+                        const nextLanguage = normalizeSenseVoiceLanguage(
+                          value,
+                          selectedLocalModel
+                        );
+                        updateDraft((prev) => ({
+                          ...prev,
+                          sensevoice: {
+                            ...prev.sensevoice,
+                            language: nextLanguage,
+                          },
+                        }));
+                        void handleSenseVoiceConfigSave({ language: nextLanguage });
+                      }}
+                      options={languageOptions}
+                     /></HeroField>
                 ) : null}
-                {isSherpaSelected ? (
-                  <div className="sensevoice-hint">{t("sensevoice.sherpaCpuOnlyHint")}</div>
-                ) : null}
-                {isQwenSelected ? (
-                  <div className="sensevoice-hint">{t("sensevoice.qwenCudaOnlyHint")}</div>
-                ) : null}
 
-                {!isNativeRuntime ? (
-                  <div className="sensevoice-runtime-panel">
-                    <div className="sensevoice-runtime-panel-header">
-                      <div>
-                        <div className="sensevoice-runtime-panel-title">
-                          {t("sensevoice.runtimePanelTitle")}
-                        </div>
-                        <div className="sensevoice-runtime-panel-description">
-                          {t("sensevoice.runtimePanelDescription")}
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="tertiary"
-                        isIconOnly
-                        isDisabled={runtimePanelBusy}
-                        onPress={() => {
-                          void refreshSenseVoiceStatus();
-                          void refreshSenseVoiceDockerRuntimeStatus();
-                        }}
-                        aria-label={t("sensevoice.runtimeRefresh")}
-                      >
-                        <RefreshCw size={16} />
-                      </Button>
-                    </div>
-
-                    <div className="sensevoice-runtime-grid">
-                      <div>
-                        <span>{t("sensevoice.runtimeStatus")}</span>
-                        <strong>{dockerRuntimeStateLabel}</strong>
-                      </div>
-                      <div>
-                        <span>{t("sensevoice.runtimeContainer")}</span>
-                        <strong>{sensevoiceDockerRuntimeStatus.containerName || "—"}</strong>
-                      </div>
-                      <div>
-                        <span>{t("sensevoice.runtimeImage")}</span>
-                        <strong>{sensevoiceDockerRuntimeStatus.imageTag || "—"}</strong>
-                      </div>
-                      <div>
-                        <span>{t("sensevoice.runtimeModel")}</span>
-                        <strong>{dockerRuntimeModelLabel}</strong>
-                      </div>
-                    </div>
-
-                    {sensevoiceDockerRuntimeStatus.lastError ? (
-                      <div className="sensevoice-error">
-                        {sensevoiceDockerRuntimeStatus.lastError}
-                      </div>
-                    ) : null}
-
-                    {!dockerRuntimeReady ? (
-                      <div className="sensevoice-hint">
-                        {t("sensevoice.runtimeEnvironmentError")}
-                      </div>
-                    ) : null}
-
-                    <div className="button-row sensevoice-runtime-actions">
-                      {installed && !running ? (
-                        <Button
-                          type="button"
-                          variant="primary"
-                          onPress={handleSenseVoiceStart}
-                          isDisabled={startBusy}
-                        >
-                          <Play size={16} />
-                          {isNativeRuntime ? t("sensevoice.load") : t("sensevoice.runtimeStart")}
-                        </Button>
-                      ) : null}
-                      {running ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onPress={handleSenseVoiceStop}
-                          isDisabled={stopBusy}
-                        >
-                          {draft.sensevoice.stopMode === "pause" ? <Pause size={16} /> : <Square size={16} />}
-                          {isNativeRuntime ? t("sensevoice.unload") : draft.sensevoice.stopMode === "pause" ? t("sensevoice.runtimePause") : t("sensevoice.runtimeStop")}
-                        </Button>
-                      ) : null}
-                      {!isNativeRuntime ? (
-                        <>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onPress={handleSenseVoiceRestart}
-                            isDisabled={runtimePanelBusy || !installed}
-                          >
-                            <RotateCw size={16} />
-                            {t("sensevoice.runtimeRestart")}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onPress={handleSenseVoiceRemoveContainer}
-                            isDisabled={runtimePanelBusy || !installed}
-                          >
-                            <Trash2 size={16} />
-                            {t("sensevoice.runtimeRemove")}
-                          </Button>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
+                <div className="sensevoice-hint">{t("sensevoice.nativeCpuHint")}</div>
 
                 {showProgressBar ? (
                   <div className="sensevoice-progress">
@@ -915,7 +637,7 @@ export function SpeechSettingsSection({
                   </div>
                 ) : null}
 
-                {sensevoiceProgress?.stage === "install" ? (
+                {progressStage === "prepare" || progressStage === "download" ? (
                   <div className="sensevoice-hint">{t("sensevoice.installingHint")}</div>
                 ) : null}
 
@@ -948,12 +670,7 @@ export function SpeechSettingsSection({
                   </div>
                 ) : null}
 
-                {lastError ? (
-                  <>
-                    <div className="sensevoice-error">{lastError}</div>
-                    <div className="sensevoice-hint">{t("sensevoice.serverLogHint")}</div>
-                  </>
-                ) : null}
+                {lastError ? <div className="sensevoice-error">{lastError}</div> : null}
 
                 <div className="button-row">
                   {!installed ? (
@@ -961,21 +678,55 @@ export function SpeechSettingsSection({
                       type="button"
                       variant="primary"
                       onPress={handleSenseVoicePrepare}
-                      isDisabled={prepareBusy}
-                      >
-                        {t("sensevoice.prepare")}
-                      </Button>
+                      isDisabled={busy}
+                    >
+                      <Download size={16} />
+                      {t("sensevoice.prepare")}
+                    </Button>
                   ) : null}
-                  {installed && !running && !isNativeRuntime ? (
+                  {installed && !running ? (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onPress={handleSenseVoiceStart}
+                      isDisabled={busy}
+                    >
+                      <Play size={16} />
+                      {t("sensevoice.load")}
+                    </Button>
+                  ) : null}
+                  {running ? (
                     <Button
                       type="button"
                       variant="secondary"
-                      onPress={handleUpdateRuntime}
+                      onPress={handleSenseVoiceStop}
                       isDisabled={sensevoiceLoading}
                     >
-                      {t("sensevoice.updateRuntime")}
+                      <Square size={16} />
+                      {t("sensevoice.unload")}
                     </Button>
                   ) : null}
+                  {installed && !running ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onPress={handleSenseVoiceRemoveModel}
+                      isDisabled={busy}
+                    >
+                      <Trash2 size={16} />
+                      {t("sensevoice.removeModel")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="tertiary"
+                    isIconOnly
+                    isDisabled={busy}
+                    onPress={() => void refreshSenseVoiceStatus()}
+                    aria-label={t("sensevoice.refresh")}
+                  >
+                    <RefreshCw size={16} />
+                  </Button>
                 </div>
               </>
             );

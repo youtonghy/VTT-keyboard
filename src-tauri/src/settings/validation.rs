@@ -1,5 +1,4 @@
-use crate::sensevoice::model::supports_sherpa_onnx_target;
-use url::Url;
+use crate::sensevoice::model::{spec_for_local_model, LOCAL_MODELS};
 
 use super::storage::SettingsError;
 use super::types::*;
@@ -34,46 +33,10 @@ pub(crate) fn normalize_text_processing_settings(settings: &mut Settings) {
 }
 
 pub(crate) fn normalize_sensevoice_settings(sensevoice: &mut SenseVoiceSettings) {
-    sensevoice.stop_mode = normalize_stop_mode(&sensevoice.stop_mode).to_string();
-    if sensevoice
-        .local_model
-        .eq_ignore_ascii_case(LOCAL_MODEL_VOXTRAL)
-    {
-        sensevoice.local_model = LOCAL_MODEL_VOXTRAL.to_string();
-        sensevoice.device = VOXTRAL_REQUIRED_DEVICE.to_string();
-        sensevoice.model_id = DEFAULT_VOXTRAL_MODEL_ID.to_string();
-        sensevoice.language = default_sensevoice_language();
-        return;
-    }
-    if sensevoice
-        .local_model
-        .eq_ignore_ascii_case(LOCAL_MODEL_QWEN3_ASR)
-    {
-        sensevoice.local_model = LOCAL_MODEL_QWEN3_ASR.to_string();
-        sensevoice.device = QWEN3_ASR_REQUIRED_DEVICE.to_string();
-        sensevoice.model_id = normalize_qwen3_asr_model_id(&sensevoice.model_id).to_string();
-        sensevoice.language = default_sensevoice_language();
-        return;
-    }
-    if sensevoice
-        .local_model
-        .eq_ignore_ascii_case(LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE)
-    {
-        if !supports_sherpa_onnx_target() {
-            sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
-            sensevoice.model_id = DEFAULT_SENSEVOICE_MODEL_ID.to_string();
-            sensevoice.language = default_sensevoice_language();
-            return;
-        }
-        sensevoice.local_model = LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE.to_string();
-        sensevoice.device = "cpu".to_string();
-        sensevoice.model_id = DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID.to_string();
-        sensevoice.language = normalize_sensevoice_language(&sensevoice.language).to_string();
-        return;
-    }
-    sensevoice.local_model = LOCAL_MODEL_SENSEVOICE.to_string();
-    sensevoice.model_id = DEFAULT_SENSEVOICE_MODEL_ID.to_string();
-    sensevoice.language = default_sensevoice_language();
+    let spec = spec_for_local_model(&sensevoice.local_model);
+    sensevoice.local_model = spec.model_key.to_string();
+    sensevoice.model_id = spec.model_id.to_string();
+    sensevoice.language = normalize_sensevoice_language(&sensevoice.language).to_string();
 }
 
 fn normalize_aliyun_settings(aliyun: &mut AliyunSettings, provider: &TranscriptionProvider) {
@@ -101,23 +64,6 @@ fn normalize_aliyun_region(region: &str) -> &str {
     } else {
         ALIYUN_REGION_BEIJING
     }
-}
-
-fn normalize_stop_mode(mode: &str) -> &str {
-    if mode.eq_ignore_ascii_case(STOP_MODE_PAUSE) {
-        STOP_MODE_PAUSE
-    } else {
-        STOP_MODE_STOP
-    }
-}
-
-fn normalize_qwen3_asr_model_id(model_id: &str) -> &str {
-    let trimmed = model_id.trim();
-    QWEN3_ASR_ALLOWED_MODEL_IDS
-        .iter()
-        .copied()
-        .find(|candidate| *candidate == trimmed)
-        .unwrap_or(DEFAULT_QWEN3_ASR_MODEL_ID)
 }
 
 fn normalize_sensevoice_language(language: &str) -> &str {
@@ -188,76 +134,20 @@ pub(crate) fn validate_settings(settings: &Settings) -> Result<(), SettingsError
 pub(crate) fn validate_sensevoice_settings(
     sensevoice: &SenseVoiceSettings,
 ) -> Result<(), SettingsError> {
-    if !matches!(
-        sensevoice.local_model.as_str(),
-        LOCAL_MODEL_SENSEVOICE
-            | LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE
-            | LOCAL_MODEL_VOXTRAL
-            | LOCAL_MODEL_QWEN3_ASR
-    ) {
-        return Err(SettingsError::Serde(
-            "SenseVoice local model must be one of: sensevoice/sherpa-onnx-sensevoice/voxtral/qwen3-asr".to_string(),
-        ));
-    }
-    if sensevoice.local_model != LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE {
-        if sensevoice.service_url.trim().is_empty() {
-            return Err(SettingsError::Serde(
-                "SenseVoice service URL cannot be empty".to_string(),
-            ));
-        }
-        let parsed = Url::parse(sensevoice.service_url.trim()).map_err(|err| {
-            SettingsError::Serde(format!(
-                "SenseVoice 闂佸搫鐗嗙粔瀛樻叏閻旂厧鎹堕柡澶嬪缁插鏌￠崘顏勎ｉ柡? {err}"
-            ))
-        })?;
-        if parsed.host_str().is_none() {
-            return Err(SettingsError::Serde(
-                "SenseVoice service URL must include a host".to_string(),
-            ));
-        }
-        if parsed.port_or_known_default().is_none() {
-            return Err(SettingsError::Serde(
-                "SenseVoice service URL must include a port".to_string(),
-            ));
-        }
-        if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(SettingsError::Serde(
-                "SenseVoice 闂佸搫鐗嗙粔瀛樻叏閻旂厧鎹堕柡澶嬪缁插鐓崶褎鍤囬柕鍡楃箲閹峰懐鎹勯妸锔芥 http 闂?https".to_string(),
-            ));
-        }
-    }
-    if sensevoice.model_id.trim().is_empty() {
-        return Err(SettingsError::Serde(
-            "SenseVoice model ID cannot be empty".to_string(),
-        ));
-    }
-    if sensevoice.local_model == LOCAL_MODEL_SENSEVOICE
-        && sensevoice.model_id != DEFAULT_SENSEVOICE_MODEL_ID
-    {
-        return Err(SettingsError::Serde(
-            "SenseVoice model ID must use the default value".to_string(),
-        ));
-    }
-    if sensevoice.local_model == LOCAL_MODEL_VOXTRAL
-        && sensevoice.model_id != DEFAULT_VOXTRAL_MODEL_ID
-    {
-        return Err(SettingsError::Serde(
-            "Voxtral model ID must use the default value".to_string(),
-        ));
-    }
-    if sensevoice.local_model == LOCAL_MODEL_QWEN3_ASR
-        && !QWEN3_ASR_ALLOWED_MODEL_IDS.contains(&sensevoice.model_id.as_str())
-    {
-        return Err(SettingsError::Serde(
-            "Qwen3-ASR model ID only supports preset values".to_string(),
-        ));
-    }
-    if sensevoice.local_model == LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE
-        && sensevoice.model_id != DEFAULT_SHERPA_ONNX_SENSEVOICE_MODEL_ID
-    {
-        return Err(SettingsError::Serde(
-            "Sherpa-ONNX SenseVoice model ID must use the default value".to_string(),
-        ));
+    let Some(spec) = LOCAL_MODELS
+        .iter()
+        .find(|spec| spec.model_key == sensevoice.local_model)
+    else {
+        return Err(SettingsError::Serde(format!(
+            "SenseVoice local model must be one of a known sherpa-onnx model, got: {}",
+            sensevoice.local_model
+        )));
+    };
+    if sensevoice.model_id != spec.model_id {
+        return Err(SettingsError::Serde(format!(
+            "model ID for {} must use the default value",
+            spec.display_name
+        )));
     }
     if !matches!(
         sensevoice.language.as_str(),
@@ -265,39 +155,6 @@ pub(crate) fn validate_sensevoice_settings(
     ) {
         return Err(SettingsError::Serde(
             "SenseVoice language only supports auto/zh/en/ja/ko/yue".to_string(),
-        ));
-    }
-    if !matches!(sensevoice.device.as_str(), "auto" | "cpu" | "cuda") {
-        return Err(SettingsError::Serde(
-            "SenseVoice 闂佽浜介崝搴ㄥ箖婵犲嫭濯奸柟顖嗗本校婵炲濮撮幊蹇涘极椤曗偓楠?auto/cpu/cuda"
-                .to_string(),
-        ));
-    }
-    if !matches!(
-        sensevoice.stop_mode.as_str(),
-        STOP_MODE_STOP | STOP_MODE_PAUSE
-    ) {
-        return Err(SettingsError::Serde(
-            "SenseVoice 闂佺顑嗙划宥夘敆濞戞鐔煎灳瀹曞洨顢呮繛瀵稿Т閹冲繘寮鈧獮?stop/pause"
-                .to_string(),
-        ));
-    }
-    if sensevoice.local_model == LOCAL_MODEL_VOXTRAL && sensevoice.device != VOXTRAL_REQUIRED_DEVICE
-    {
-        return Err(SettingsError::Serde(
-            "Voxtral only supports CUDA devices".to_string(),
-        ));
-    }
-    if sensevoice.local_model == LOCAL_MODEL_QWEN3_ASR
-        && sensevoice.device != QWEN3_ASR_REQUIRED_DEVICE
-    {
-        return Err(SettingsError::Serde(
-            "Qwen3-ASR only supports CUDA devices".to_string(),
-        ));
-    }
-    if sensevoice.local_model == LOCAL_MODEL_SHERPA_ONNX_SENSEVOICE && sensevoice.device != "cpu" {
-        return Err(SettingsError::Serde(
-            "Sherpa-ONNX SenseVoice currently runs on CPU only".to_string(),
         ));
     }
     Ok(())

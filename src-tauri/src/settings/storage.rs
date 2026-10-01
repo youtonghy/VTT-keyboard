@@ -122,14 +122,30 @@ impl SettingsStore {
     ) -> Result<(), SettingsError> {
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut settings = self.load()?;
+        let previous_local_model = settings.sensevoice.local_model.clone();
         let mut merged = settings.sensevoice.clone();
         merged.local_model = sensevoice.local_model.clone();
-        merged.stop_mode = sensevoice.stop_mode.clone();
-        merged.service_url = sensevoice.service_url.clone();
         merged.model_id = sensevoice.model_id.clone();
         merged.language = sensevoice.language.clone();
-        merged.device = sensevoice.device.clone();
         normalize_sensevoice_settings(&mut merged);
+        // 切换模型后按磁盘上的实际文件重算安装/下载状态
+        if merged.local_model != previous_local_model {
+            let ready = self
+                .app
+                .path()
+                .app_local_data_dir()
+                .map(|dir| {
+                    let models_dir = dir.join("sensevoice").join("models");
+                    crate::sensevoice::sherpa::model_is_ready(
+                        &models_dir,
+                        crate::sensevoice::model::spec_for_local_model(&merged.local_model),
+                    )
+                })
+                .unwrap_or(false);
+            merged.installed = ready;
+            merged.download_state = if ready { "ready" } else { "idle" }.to_string();
+            merged.last_error = String::new();
+        }
         validate_sensevoice_settings(&merged)?;
         // Runtime-managed fields are preserved from the persisted settings and must not
         // be overwritten by the editable settings payload coming from the UI.

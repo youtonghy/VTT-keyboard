@@ -13,9 +13,8 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
-/// 本地 SenseVoice 服务（包括 vLLM）冷启动最长等待时间。
-/// vLLM 模型装载可能耗时数分钟，给足 8 分钟的上限以便在系统重启后自动恢复。
-const SENSEVOICE_READY_TIMEOUT: Duration = Duration::from_secs(8 * 60);
+/// 本地 sherpa-onnx 模型加载最长等待时间。
+const SENSEVOICE_READY_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const RETRY_SOURCE_CACHE_LIMIT: usize = 20;
 
 enum DispatchMessage {
@@ -76,9 +75,9 @@ impl TranscriptionDispatcher {
                     DispatchMessage::Process(recording) => {
                         active_retry = None;
                         let recording_for_retry = recording.clone();
-                        // 在真正调用转写引擎前，若当前使用的是 SenseVoice 本地服务，
-                        // 自动检查 Docker 容器/原生模型状态并按需创建/恢复/启动。
-                        // 这样可以在系统重启等情况下自动恢复容器，无需用户手动点击"启动服务"。
+                        // 在真正调用转写引擎前，若当前使用的是本地模型，
+                        // 自动检查模型是否已加载并按需加载。
+                        // 这样可以在应用重启后自动恢复，无需用户手动点击"加载模型"。
                         if let Err(err) = ensure_sensevoice_runtime_ready(&dispatcher_app, &store) {
                             #[cfg(debug_assertions)]
                             eprintln!("SenseVoice 运行时自动恢复失败: {err}");

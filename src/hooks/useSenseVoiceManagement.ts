@@ -1,275 +1,189 @@
-import { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { useSenseVoice } from "./useSenseVoice";
+import { ask } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 import type { Settings } from "../types/settings";
+import { useSenseVoice } from "./useSenseVoice";
 import { toErrorMessage } from "../utils";
-import { normalizeLocalModel } from "../utils/sensevoice";
 
-interface UseSenseVoiceManagementParams {
+interface UseSenseVoiceManagementOptions {
   isSenseVoiceActive: boolean;
   draft: Settings | null;
-  supportsSherpaOnnxSenseVoice: boolean;
 }
 
 export function useSenseVoiceManagement({
   isSenseVoiceActive,
   draft,
-  supportsSherpaOnnxSenseVoice,
-}: UseSenseVoiceManagementParams) {
+}: UseSenseVoiceManagementOptions) {
   const { t } = useTranslation();
-
   const {
     status: sensevoiceStatus,
-    dockerRuntimeStatus: sensevoiceDockerRuntimeStatus,
     progress: sensevoiceProgress,
     logLines: sensevoiceLogLines,
     loading: sensevoiceLoading,
     refreshStatus: refreshSenseVoiceStatus,
-    refreshDockerRuntimeStatus: refreshSenseVoiceDockerRuntimeStatus,
     prepare: prepareSenseVoice,
     updateSettings: updateSenseVoiceSettings,
     startService: startSenseVoiceService,
     stopService: stopSenseVoiceService,
-    stopServiceForce: stopSenseVoiceServiceForce,
-    restartService: restartSenseVoiceService,
-    removeRuntimeContainer: removeSenseVoiceRuntimeContainer,
-    updateRuntime: updateSenseVoiceRuntime,
+    removeModel: removeSenseVoiceModel,
   } = useSenseVoice(isSenseVoiceActive);
 
-  const [pendingSherpaAutoStart, setPendingSherpaAutoStart] = useState(false);
-
-  const buildPersistedSenseVoiceSettings = useCallback(() => {
-    if (!draft) {
-      return null;
-    }
-    return {
-      ...draft.sensevoice,
-      enabled: sensevoiceStatus.enabled,
-      installed: sensevoiceStatus.installed,
-      downloadState: sensevoiceStatus.downloadState,
-      lastError: sensevoiceStatus.lastError,
-    };
-  }, [draft, sensevoiceStatus]);
-
-  const handleSenseVoicePrepare = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings) {
-      return;
-    }
-    try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
-    }
+  const handleSenseVoicePrepare = useCallback(async () => {
     try {
       await prepareSenseVoice();
-      await Promise.all([
-        refreshSenseVoiceStatus(),
-        refreshSenseVoiceDockerRuntimeStatus(),
-      ]);
       toast.success(t("sensevoice.prepareQueued"));
-    } catch (error) {
-      toast.error(t("sensevoice.prepareError", { error: toErrorMessage(error) }));
+      void refreshSenseVoiceStatus().catch(() => {});
+    } catch (err) {
+      toast.error(t("sensevoice.prepareError", { error: toErrorMessage(err) }));
     }
-  };
+  }, [prepareSenseVoice, refreshSenseVoiceStatus, t]);
 
-  const handleSenseVoiceStart = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings) {
-      return;
-    }
-    try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
-    }
+  const handleSenseVoiceStart = useCallback(async () => {
     try {
       await startSenseVoiceService();
-      await Promise.all([
-        refreshSenseVoiceStatus(),
-        refreshSenseVoiceDockerRuntimeStatus(),
-      ]);
       toast.success(t("sensevoice.startQueued"));
-    } catch (error) {
-      toast.error(t("sensevoice.startError", { error: toErrorMessage(error) }));
+      void refreshSenseVoiceStatus().catch(() => {});
+    } catch (err) {
+      toast.error(t("sensevoice.startError", { error: toErrorMessage(err) }));
     }
-  };
+  }, [startSenseVoiceService, refreshSenseVoiceStatus, t]);
 
-  const handleSenseVoiceStop = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings || !draft) {
-      return;
-    }
+  const handleSenseVoiceStop = useCallback(async () => {
     try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
+      await stopSenseVoiceService();
+      toast.success(t("sensevoice.stopSuccess"));
+      void refreshSenseVoiceStatus().catch(() => {});
+    } catch (err) {
+      toast.error(t("sensevoice.stopError", { error: toErrorMessage(err) }));
     }
-    try {
-      if (draft.sensevoice.stopMode === "pause") {
-        await stopSenseVoiceService();
-      } else {
-        await stopSenseVoiceServiceForce();
-      }
-      await Promise.all([
-        refreshSenseVoiceStatus(),
-        refreshSenseVoiceDockerRuntimeStatus(),
-      ]);
-      const runtimeKind = sensevoiceStatus.runtimeKind;
-      if (runtimeKind === "native") {
-        toast.success(t("sensevoice.unloadSuccess"));
-      } else if (draft.sensevoice.stopMode === "pause") {
-        toast.success(t("sensevoice.pauseSuccess"));
-      } else {
-        toast.success(t("sensevoice.stopSuccess"));
-      }
-    } catch (error) {
-      toast.error(t("sensevoice.stopError", { error: toErrorMessage(error) }));
-    }
-  };
+  }, [stopSenseVoiceService, refreshSenseVoiceStatus, t]);
 
-  const handleSenseVoiceRestart = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings) {
+  const handleSenseVoiceRemoveModel = useCallback(async () => {
+    const ok = await ask(t("sensevoice.removeModelConfirm"), {
+      title: t("sensevoice.removeModel"),
+      kind: "warning",
+    });
+    if (!ok) {
       return;
     }
     try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
+      await removeSenseVoiceModel();
+      toast.success(t("sensevoice.removeModelSuccess"));
+      void refreshSenseVoiceStatus().catch(() => {});
+    } catch (err) {
+      toast.error(t("sensevoice.removeModelError", { error: toErrorMessage(err) }));
     }
-    try {
-      await restartSenseVoiceService();
-      await Promise.all([
-        refreshSenseVoiceStatus(),
-        refreshSenseVoiceDockerRuntimeStatus(),
-      ]);
-      toast.success(t("sensevoice.restartQueued"));
-    } catch (error) {
-      toast.error(t("sensevoice.restartError", { error: toErrorMessage(error) }));
-    }
-  };
+  }, [removeSenseVoiceModel, refreshSenseVoiceStatus, t]);
 
-  const handleSenseVoiceRemoveContainer = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings) {
-      return;
-    }
-    const confirmed = window.confirm(t("sensevoice.removeRuntimeConfirm"));
-    if (!confirmed) {
-      return;
-    }
-    try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
-    }
-    try {
-      await removeSenseVoiceRuntimeContainer();
-      await Promise.all([
-        refreshSenseVoiceStatus(),
-        refreshSenseVoiceDockerRuntimeStatus(),
-      ]);
-      toast.success(t("sensevoice.removeRuntimeSuccess"));
-    } catch (error) {
-      toast.error(t("sensevoice.removeRuntimeError", { error: toErrorMessage(error) }));
-    }
-  };
-
-  const handleUpdateRuntime = async () => {
-    const nextSenseVoiceSettings = buildPersistedSenseVoiceSettings();
-    if (!nextSenseVoiceSettings) {
-      return;
-    }
-    try {
-      await updateSenseVoiceSettings(nextSenseVoiceSettings);
-    } catch (error) {
-      toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(error) }));
-      return;
-    }
-    try {
-      await updateSenseVoiceRuntime();
-      await Promise.all([
-        refreshSenseVoiceStatus(),
-        refreshSenseVoiceDockerRuntimeStatus(),
-      ]);
-      toast.success(t("sensevoice.updateRuntimeQueued"));
-    } catch (error) {
-      toast.error(t("sensevoice.updateRuntimeError", { error: toErrorMessage(error) }));
-    }
-  };
-
-  useEffect(() => {
-    if (!isSenseVoiceActive) {
-      return;
-    }
-    void Promise.all([
-      refreshSenseVoiceStatus(),
-      refreshSenseVoiceDockerRuntimeStatus(),
-    ]).catch(() => {});
-  }, [isSenseVoiceActive, refreshSenseVoiceDockerRuntimeStatus, refreshSenseVoiceStatus]);
-
-  useEffect(() => {
-    const unlisten = listen("sensevoice-startup-download-required", async () => {
-      const confirmed = window.confirm(t("sensevoice.startupDownloadPrompt"));
-      if (!confirmed) {
+  const handleSenseVoiceConfigSave = useCallback(
+    async (patch: {
+      enabled?: boolean;
+      installed?: boolean;
+      localModel?: string;
+      modelId?: string;
+      language?: string;
+    }) => {
+      if (!draft) {
         return;
       }
-      setPendingSherpaAutoStart(true);
-      await handleSenseVoicePrepare();
-    });
-    return () => {
-      void unlisten.then((dispose) => dispose());
-    };
-  }, [t, handleSenseVoicePrepare]);
-
-  useEffect(() => {
-    if (!pendingSherpaAutoStart || !draft || !supportsSherpaOnnxSenseVoice) {
-      if (!supportsSherpaOnnxSenseVoice) {
-        setPendingSherpaAutoStart(false);
+      const next = {
+        enabled: patch.enabled ?? draft.sensevoice.enabled,
+        installed: patch.installed ?? draft.sensevoice.installed,
+        localModel: patch.localModel ?? draft.sensevoice.localModel,
+        modelId: patch.modelId ?? draft.sensevoice.modelId,
+        language: patch.language ?? draft.sensevoice.language,
+      };
+      try {
+        await updateSenseVoiceSettings({
+          ...draft.sensevoice,
+          ...next,
+        });
+        const status = await refreshSenseVoiceStatus();
+        // 点击选择后下载：模型切换后若本地缺失则自动开始下载
+        if (!status.installed && status.downloadState !== "downloading") {
+          void handleSenseVoicePrepare();
+        }
+      } catch (err) {
+        toast.error(t("sensevoice.configSaveError", { error: toErrorMessage(err) }));
       }
+    },
+    [
+      draft,
+      updateSenseVoiceSettings,
+      refreshSenseVoiceStatus,
+      handleSenseVoicePrepare,
+      t,
+    ]
+  );
+
+  // 本地模型已下载且启用时自动加载
+  const pendingAutoStartRef = useRef(false);
+  useEffect(() => {
+    if (!isSenseVoiceActive || !sensevoiceStatus) {
+      pendingAutoStartRef.current = false;
       return;
     }
-    if (normalizeLocalModel(draft.sensevoice.localModel) !== "sherpa-onnx-sensevoice") {
-      setPendingSherpaAutoStart(false);
+    const installed = sensevoiceStatus.installed;
+    const enabled = sensevoiceStatus.enabled;
+    const ready = sensevoiceStatus.downloadState === "ready";
+    const busy =
+      sensevoiceStatus.runtimeState === "starting" ||
+      sensevoiceStatus.downloadState === "downloading" ||
+      sensevoiceStatus.downloadState === "loading";
+    if (installed && enabled && ready && !sensevoiceStatus.running && !busy) {
+      if (!pendingAutoStartRef.current) {
+        pendingAutoStartRef.current = true;
+        void handleSenseVoiceStart();
+      }
+    } else {
+      pendingAutoStartRef.current = false;
+    }
+  }, [isSenseVoiceActive, sensevoiceStatus, handleSenseVoiceStart]);
+
+  // 设置里启用本地转写但模型未下载时提示下载
+  const autoPromptedForDownloadRef = useRef(false);
+  useEffect(() => {
+    const enabled = draft?.sensevoice.enabled;
+    const installed = sensevoiceStatus.installed;
+    const downloading = sensevoiceStatus.downloadState === "downloading";
+    if (!(isSenseVoiceActive && enabled && !installed && !downloading)) {
+      autoPromptedForDownloadRef.current = false;
       return;
     }
-    if (!sensevoiceStatus.installed || sensevoiceStatus.running) {
+    if (autoPromptedForDownloadRef.current) {
       return;
     }
-    if (sensevoiceStatus.downloadState !== "ready") {
-      return;
-    }
-    setPendingSherpaAutoStart(false);
-    void handleSenseVoiceStart();
+    autoPromptedForDownloadRef.current = true;
+    void (async () => {
+      const ok = await ask(t("sensevoice.startupDownloadPrompt"), {
+        title: t("common.appName"),
+        kind: "info",
+      });
+      if (!ok) {
+        return;
+      }
+      await handleSenseVoicePrepare();
+    })();
   }, [
-    draft,
-    handleSenseVoiceStart,
-    pendingSherpaAutoStart,
-    sensevoiceStatus,
-    supportsSherpaOnnxSenseVoice,
+    isSenseVoiceActive,
+    draft?.sensevoice.enabled,
+    sensevoiceStatus.installed,
+    sensevoiceStatus.downloadState,
+    handleSenseVoicePrepare,
+    t,
   ]);
 
   return {
     sensevoiceStatus,
-    sensevoiceDockerRuntimeStatus,
     sensevoiceProgress,
     sensevoiceLogLines,
     sensevoiceLoading,
-    refreshSenseVoiceStatus,
-    refreshSenseVoiceDockerRuntimeStatus,
     handleSenseVoicePrepare,
     handleSenseVoiceStart,
     handleSenseVoiceStop,
-    handleSenseVoiceRestart,
-    handleSenseVoiceRemoveContainer,
-    handleUpdateRuntime,
+    handleSenseVoiceRemoveModel,
+    handleSenseVoiceConfigSave,
+    refreshSenseVoiceStatus,
   };
 }

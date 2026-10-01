@@ -40,17 +40,6 @@ import type { Settings } from "./types/settings";
 
 import { parseList, toErrorMessage } from "./utils";
 import {
-  normalizeLocalModel,
-  normalizeSenseVoiceLanguage,
-  normalizeSenseVoiceDevice,
-  isCudaOnlyLocalModel,
-  getDefaultModelId,
-  getQwenVariantByModelId,
-  formatBytes,
-  SHERPA_LANGUAGE_OPTIONS,
-  QWEN3_ASR_MODEL_VARIANTS,
-} from "./utils/sensevoice";
-import {
   canStartMicrophoneTest,
   unsupportedMacOSPermissionStatus,
 } from "./utils/permissions";
@@ -67,7 +56,6 @@ interface AppInfoPayload {
   buildDate: string;
   platform: string;
   arch: string;
-  supportsSherpaOnnxSenseVoice: boolean;
 }
 
 const formatHistoryTime = (timestampMs: number) => {
@@ -117,22 +105,16 @@ function App() {
   const [historyRetryingId, setHistoryRetryingId] = useState<string | null>(null);
   const [inputTestActive, setInputTestActive] = useState(false);
   const [inputTestResult, setInputTestResult] = useState<AudioInputTestResult | null>(null);
-  const supportsSherpaOnnxSenseVoice =
-    appInfo?.supportsSherpaOnnxSenseVoice ?? true;
   const isMacOS = appInfo?.platform
     ? appInfo.platform === "macos"
     : navigator.userAgent.includes("Mac OS X");
   const showCustomTitleBar = !isMacOS;
-  const sherpaFallbackActive =
-    !supportsSherpaOnnxSenseVoice &&
-    normalizeLocalModel(settings?.sensevoice.localModel) === "sherpa-onnx-sensevoice";
 
   const { draft, updateDraft, handleImport, handleExport } = useSettingsSync({
     settings,
     setSettings,
     saveSettings,
     syncAutostart,
-    supportsSherpaOnnxSenseVoice,
   });
 
   const isSenseVoiceActive = activeSection === "speech" && draft?.provider === "sensevoice";
@@ -156,22 +138,18 @@ function App() {
 
   const {
     sensevoiceStatus,
-    sensevoiceDockerRuntimeStatus,
     sensevoiceProgress,
     sensevoiceLogLines,
     sensevoiceLoading,
     handleSenseVoicePrepare,
     handleSenseVoiceStart,
     handleSenseVoiceStop,
-    handleSenseVoiceRestart,
-    handleSenseVoiceRemoveContainer,
-    handleUpdateRuntime,
+    handleSenseVoiceRemoveModel,
+    handleSenseVoiceConfigSave,
     refreshSenseVoiceStatus,
-    refreshSenseVoiceDockerRuntimeStatus,
   } = useSenseVoiceManagement({
     isSenseVoiceActive,
     draft,
-    supportsSherpaOnnxSenseVoice,
   });
 
   const onShortcutCaptured = useCallback(
@@ -783,10 +761,7 @@ function App() {
               draft={draft}
               t={t}
               updateDraft={updateDraft}
-              supportsSherpaOnnxSenseVoice={supportsSherpaOnnxSenseVoice}
-              sherpaFallbackActive={sherpaFallbackActive}
               sensevoiceStatus={sensevoiceStatus}
-              sensevoiceDockerRuntimeStatus={sensevoiceDockerRuntimeStatus}
               sensevoiceProgress={sensevoiceProgress}
               sensevoiceLogLines={sensevoiceLogLines}
               sensevoiceLogsExpanded={sensevoiceLogsExpanded}
@@ -795,26 +770,9 @@ function App() {
               handleSenseVoicePrepare={handleSenseVoicePrepare}
               handleSenseVoiceStart={handleSenseVoiceStart}
               handleSenseVoiceStop={handleSenseVoiceStop}
-              handleSenseVoiceRestart={handleSenseVoiceRestart}
-              handleSenseVoiceRemoveContainer={handleSenseVoiceRemoveContainer}
-              handleUpdateRuntime={handleUpdateRuntime}
+              handleSenseVoiceRemoveModel={handleSenseVoiceRemoveModel}
+              handleSenseVoiceConfigSave={handleSenseVoiceConfigSave}
               refreshSenseVoiceStatus={refreshSenseVoiceStatus}
-              refreshSenseVoiceDockerRuntimeStatus={refreshSenseVoiceDockerRuntimeStatus}
-              normalizeLocalModel={normalizeLocalModel}
-              normalizeSenseVoiceLanguage={normalizeSenseVoiceLanguage}
-              normalizeSenseVoiceDevice={normalizeSenseVoiceDevice}
-              isCudaOnlyLocalModel={isCudaOnlyLocalModel}
-              getDefaultModelId={getDefaultModelId}
-              getQwenVariantByModelId={getQwenVariantByModelId}
-              formatBytes={formatBytes}
-              sherpaLanguageOptions={SHERPA_LANGUAGE_OPTIONS.map((option) => ({
-                value: option.value,
-                label: t(option.labelKey),
-              }))}
-              qwenVariantOptions={QWEN3_ASR_MODEL_VARIANTS.map((option) => ({
-                value: option.value,
-                label: t(option.labelKey),
-              }))}
             />
           ) : null}
 

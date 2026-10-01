@@ -20,10 +20,7 @@ use permissions::MacosPermissionStatus;
 use recorder::{
     AudioInputDevice, AudioInputTestResult, MicrophonePermissionStatus, RecorderService,
 };
-use sensevoice::model::{
-    resolve_vllm_model_id, spec_for_local_model, supports_sherpa_onnx_target, LocalRuntimeKind,
-};
-use sensevoice::{SenseVoiceDockerRuntimeStatus, SenseVoiceManager, SenseVoiceStatus};
+use sensevoice::{SenseVoiceManager, SenseVoiceStatus};
 use settings::{
     SenseVoiceSettings, Settings, SettingsStore, TranscriptionHistoryItem, TranscriptionProvider,
 };
@@ -80,7 +77,6 @@ fn update_settings(
 ) -> Result<Settings, String> {
     let previous = state.settings_store.load().map_err(|err| err.to_string())?;
     let previous_local_model = previous.sensevoice.local_model.clone();
-    let previous_model_id = previous.sensevoice.model_id.clone();
 
     let persisted = state
         .settings_store
@@ -94,9 +90,7 @@ fn update_settings(
         &app,
         &state,
         &previous_local_model,
-        &previous_model_id,
         &persisted.sensevoice.local_model,
-        &persisted.sensevoice.model_id,
     )?;
 
     Ok(persisted)
@@ -135,7 +129,6 @@ fn update_sensevoice_settings(
         .load_sensevoice()
         .map_err(|err| err.to_string())?;
     let previous_local_model = previous.local_model.clone();
-    let previous_model_id = previous.model_id.clone();
 
     state
         .settings_store
@@ -146,9 +139,7 @@ fn update_sensevoice_settings(
         &app,
         &state,
         &previous_local_model,
-        &previous_model_id,
         &sensevoice.local_model,
-        &sensevoice.model_id,
     )
 }
 
@@ -156,16 +147,11 @@ fn maybe_restart_local_runtime_if_switched(
     app: &tauri::AppHandle,
     state: &State<AppState>,
     previous_local_model: &str,
-    previous_model_id: &str,
     next_local_model: &str,
-    next_model_id: &str,
 ) -> Result<(), String> {
-    let previous = spec_for_local_model(previous_local_model);
-    let next = spec_for_local_model(next_local_model);
-    // 比较模型系列和具体变体 ID（解析后的完整 model ID）
-    let prev_resolved = resolve_vllm_model_id(previous_local_model, previous_model_id);
-    let next_resolved = resolve_vllm_model_id(next_local_model, next_model_id);
-    if previous.model_key == next.model_key && prev_resolved == next_resolved {
+    if sensevoice::model::normalize_local_model(previous_local_model)
+        == sensevoice::model::normalize_local_model(next_local_model)
+    {
         return Ok(());
     }
 
@@ -179,8 +165,12 @@ fn maybe_restart_local_runtime_if_switched(
     }
 
     manager
-        .stop_service_force(app, &state.settings_store)
+        .stop_service(app, &state.settings_store)
         .map_err(|err| err.to_string())?;
+    // 新模型文件尚未下载时不再自动加载，交由 UI 引导用户下载
+    if !sensevoice::selected_model_ready(app, &state.settings_store) {
+        return Ok(());
+    }
     manager
         .start_service_async(app, &state.settings_store)
         .map_err(|err| err.to_string())?;
@@ -306,13 +296,16 @@ fn retry_transcription_history_item(
 }
 
 #[tauri::command]
-fn get_sensevoice_status(state: State<AppState>) -> Result<SenseVoiceStatus, String> {
+fn get_sensevoice_status(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<SenseVoiceStatus, String> {
     let mut manager = state
         .sensevoice_manager
         .lock()
         .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
     manager
-        .status(&state.settings_store)
+        .status(&app, &state.settings_store)
         .map_err(|err| err.to_string())
 }
 
@@ -362,7 +355,7 @@ fn stop_sensevoice_service(
 }
 
 #[tauri::command]
-fn stop_sensevoice_service_force(
+fn remove_sensevoice_model(
     app: tauri::AppHandle,
     state: State<AppState>,
 ) -> Result<SenseVoiceStatus, String> {
@@ -371,66 +364,7 @@ fn stop_sensevoice_service_force(
         .lock()
         .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
     manager
-        .stop_service_force(&app, &state.settings_store)
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-fn update_sensevoice_runtime(
-    app: tauri::AppHandle,
-    state: State<AppState>,
-) -> Result<SenseVoiceStatus, String> {
-    let settings = state.settings_store.load().map_err(|err| err.to_string())?;
-    privacy::ensure_external_network_allowed(&settings.privacy, "更新本地模型运行时")
-        .map_err(|err| err.to_string())?;
-    let mut manager = state
-        .sensevoice_manager
-        .lock()
-        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
-    manager
-        .update_runtime_async(&app, &state.settings_store)
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-fn restart_sensevoice_service(
-    app: tauri::AppHandle,
-    state: State<AppState>,
-) -> Result<SenseVoiceStatus, String> {
-    let mut manager = state
-        .sensevoice_manager
-        .lock()
-        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
-    manager
-        .restart_service_async(&app, &state.settings_store)
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-fn remove_sensevoice_runtime_container(
-    app: tauri::AppHandle,
-    state: State<AppState>,
-) -> Result<SenseVoiceStatus, String> {
-    let mut manager = state
-        .sensevoice_manager
-        .lock()
-        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
-    manager
-        .remove_runtime_container(&app, &state.settings_store)
-        .map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-fn get_sensevoice_docker_runtime_status(
-    app: tauri::AppHandle,
-    state: State<AppState>,
-) -> Result<SenseVoiceDockerRuntimeStatus, String> {
-    let mut manager = state
-        .sensevoice_manager
-        .lock()
-        .map_err(|_| "failed to lock SenseVoice manager".to_string())?;
-    manager
-        .refresh_docker_runtime_status(&app, &state.settings_store)
+        .remove_model(&app, &state.settings_store)
         .map_err(|err| err.to_string())
 }
 
@@ -537,7 +471,6 @@ fn get_app_info() -> serde_json::Value {
         "buildDate": env!("BUILD_DATE"),
         "platform": std::env::consts::OS,
         "arch": std::env::consts::ARCH,
-        "supportsSherpaOnnxSenseVoice": supports_sherpa_onnx_target(),
     })
 }
 
@@ -653,46 +586,27 @@ pub fn run() {
                 if settings.provider != TranscriptionProvider::Sensevoice {
                     return;
                 }
-                let runtime_kind =
-                    spec_for_local_model(&settings.sensevoice.local_model).runtime_kind;
-                if !is_autostart_launch
-                    && runtime_kind == LocalRuntimeKind::Native
-                    && !settings.sensevoice.installed
-                {
-                    let _ = startup_app.emit("sensevoice-startup-download-required", ());
-                    return;
-                }
-                if !settings.sensevoice.installed {
-                    return;
-                }
-                // Docker Desktop 在系统重启后可能需要一段时间才能就绪；若首次 start_service_async
-                // 因 Docker 尚未可用等原因失败，重试 10 次，每次间隔 6s，总计约 1 分钟。
-                // 原生模型不存在该问题，一次调用即可。
-                let max_attempts = if runtime_kind == LocalRuntimeKind::Docker {
-                    10
-                } else {
-                    1
-                };
-                for attempt in 0..max_attempts {
-                    let state = startup_app.state::<AppState>();
-                    let Ok(mut manager) = state.sensevoice_manager.lock() else {
-                        dev_eprintln!("failed to lock SenseVoice manager on startup");
-                        return;
-                    };
-                    match manager.start_service_async(&startup_app, &state.settings_store) {
-                        Ok(_) => break,
-                        Err(err) => {
-                            dev_eprintln!(
-                                "failed to auto start SenseVoice on startup (attempt {}/{}): {err}",
-                                attempt + 1,
-                                max_attempts
-                            );
-                            drop(manager);
-                            if attempt + 1 < max_attempts {
-                                std::thread::sleep(std::time::Duration::from_secs(6));
-                            }
-                        }
+                let model_ready =
+                    sensevoice::selected_model_ready(&startup_app, &startup_store);
+                if !model_ready {
+                    if !is_autostart_launch {
+                        let _ = startup_app.emit("sensevoice-startup-download-required", ());
                     }
+                    return;
+                }
+                if !settings.sensevoice.enabled {
+                    return;
+                }
+                // 原生模型一次调用即可触发后台加载，无需 Docker 时代的重试循环
+                let state = startup_app.state::<AppState>();
+                let Ok(mut manager) = state.sensevoice_manager.lock() else {
+                    dev_eprintln!("failed to lock SenseVoice manager on startup");
+                    return;
+                };
+                if let Err(err) =
+                    manager.start_service_async(&startup_app, &state.settings_store)
+                {
+                    dev_eprintln!("failed to auto start SenseVoice on startup: {err}");
                 }
             });
 
@@ -721,11 +635,7 @@ pub fn run() {
             prepare_sensevoice,
             start_sensevoice_service,
             stop_sensevoice_service,
-            stop_sensevoice_service_force,
-            update_sensevoice_runtime,
-            restart_sensevoice_service,
-            remove_sensevoice_runtime_container,
-            get_sensevoice_docker_runtime_status,
+            remove_sensevoice_model,
             set_tray_menu,
             get_update_status,
             install_downloaded_update,
@@ -737,18 +647,6 @@ pub fn run() {
         .expect("error while running tauri application");
 
     status_native::cleanup();
-}
-
-pub fn parse_sensevoice_worker_job_file_arg(args: &[String]) -> Option<String> {
-    sensevoice::worker::parse_job_file_arg(args)
-}
-
-pub fn run_sensevoice_worker(job_file: Option<&str>) -> i32 {
-    let Some(path) = job_file else {
-        dev_eprintln!("missing --job-file <path>");
-        return 2;
-    };
-    sensevoice::worker::run_worker(path)
 }
 
 #[cfg(test)]
