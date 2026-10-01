@@ -62,6 +62,8 @@ export interface TextProcessingSettings {
   openai: TextSettings;
 }
 
+export type ThinkingMode = "default" | "on" | "off";
+
 export interface TextSettings {
   apiBase: string;
   apiKey: string;
@@ -70,6 +72,7 @@ export interface TextSettings {
   maxOutputTokens: number;
   topP: number;
   instructions: string;
+  thinking: ThinkingMode;
 }
 
 export interface TriggerCard {

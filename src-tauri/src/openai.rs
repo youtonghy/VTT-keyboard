@@ -1,5 +1,5 @@
 use crate::privacy;
-use crate::settings::{OpenAiSettings, Settings, TextSettings};
+use crate::settings::{OpenAiSettings, Settings, TextSettings, ThinkingMode};
 use reqwest::blocking::{multipart, Client};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,13 @@ struct ResponseRequest<'a> {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<ReasoningConfig<'a>>,
+}
+
+#[derive(Serialize)]
+struct ReasoningConfig<'a> {
+    effort: &'a str,
 }
 
 #[derive(Serialize)]
@@ -44,6 +51,17 @@ struct ChatCompletionRequest<'a> {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enable_thinking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_template_kwargs: Option<ChatTemplateKwargs>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct ChatTemplateKwargs {
+    enable_thinking: bool,
 }
 
 #[derive(Serialize)]
@@ -196,12 +214,21 @@ fn ensure_text_auth(settings: &TextSettings) -> Result<(), OpenAiError> {
     Ok(())
 }
 
+fn thinking_wire_params(mode: ThinkingMode) -> (Option<bool>, Option<&'static str>) {
+    match mode {
+        ThinkingMode::Default => (None, None),
+        ThinkingMode::On => (Some(true), Some("high")),
+        ThinkingMode::Off => (Some(false), Some("none")),
+    }
+}
+
 fn build_response_request<'a>(
     settings: &'a TextSettings,
     input: &'a str,
     instructions: &'a str,
 ) -> ResponseRequest<'a> {
     let instructions = instructions.trim();
+    let (_, reasoning_effort) = thinking_wire_params(settings.thinking);
     ResponseRequest {
         model: &settings.model,
         input,
@@ -213,6 +240,7 @@ fn build_response_request<'a>(
         max_output_tokens: Some(settings.max_output_tokens),
         temperature: Some(settings.temperature),
         top_p: Some(settings.top_p),
+        reasoning: reasoning_effort.map(|effort| ReasoningConfig { effort }),
     }
 }
 
@@ -234,12 +262,18 @@ fn build_chat_completion_request<'a>(
         content: input,
     });
 
+    let (enable_thinking, reasoning_effort) = thinking_wire_params(settings.thinking);
     ChatCompletionRequest {
         model: &settings.model,
         messages,
         max_tokens: Some(settings.max_output_tokens),
         temperature: Some(settings.temperature),
         top_p: Some(settings.top_p),
+        enable_thinking,
+        chat_template_kwargs: enable_thinking.map(|enabled| ChatTemplateKwargs {
+            enable_thinking: enabled,
+        }),
+        reasoning_effort,
     }
 }
 
@@ -454,6 +488,7 @@ mod tests {
             max_output_tokens: 800,
             top_p: 1.0,
             instructions: String::new(),
+            thinking: ThinkingMode::Default,
         }
     }
 
@@ -504,6 +539,55 @@ mod tests {
                 "top_p": 1.0
             })
         );
+    }
+
+    #[test]
+    fn response_request_includes_reasoning_when_thinking_toggled() {
+        let mut settings = text_settings();
+        settings.thinking = ThinkingMode::Off;
+        let value = serde_json::to_value(build_response_request(&settings, "hello", ""))
+            .expect("serialize response request");
+        assert_eq!(value["reasoning"]["effort"], json!("none"));
+
+        settings.thinking = ThinkingMode::On;
+        let value = serde_json::to_value(build_response_request(&settings, "hello", ""))
+            .expect("serialize response request");
+        assert_eq!(value["reasoning"]["effort"], json!("high"));
+    }
+
+    #[test]
+    fn chat_completion_request_omits_thinking_params_by_default() {
+        let settings = text_settings();
+        let value = serde_json::to_value(build_chat_completion_request(&settings, "hello", ""))
+            .expect("serialize chat request");
+
+        assert!(value.get("enable_thinking").is_none());
+        assert!(value.get("chat_template_kwargs").is_none());
+        assert!(value.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn chat_completion_request_includes_thinking_overrides() {
+        let mut settings = text_settings();
+        settings.thinking = ThinkingMode::Off;
+        let value = serde_json::to_value(build_chat_completion_request(&settings, "hello", ""))
+            .expect("serialize chat request");
+        assert_eq!(value["enable_thinking"], json!(false));
+        assert_eq!(
+            value["chat_template_kwargs"]["enable_thinking"],
+            json!(false)
+        );
+        assert_eq!(value["reasoning_effort"], json!("none"));
+
+        settings.thinking = ThinkingMode::On;
+        let value = serde_json::to_value(build_chat_completion_request(&settings, "hello", ""))
+            .expect("serialize chat request");
+        assert_eq!(value["enable_thinking"], json!(true));
+        assert_eq!(
+            value["chat_template_kwargs"]["enable_thinking"],
+            json!(true)
+        );
+        assert_eq!(value["reasoning_effort"], json!("high"));
     }
 
     #[test]

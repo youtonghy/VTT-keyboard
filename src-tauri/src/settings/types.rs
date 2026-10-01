@@ -228,6 +228,8 @@ pub struct TextSettings {
     pub top_p: f32,
     #[serde(default)]
     pub instructions: String,
+    #[serde(default)]
+    pub thinking: ThinkingMode,
 }
 
 impl Default for TextSettings {
@@ -240,8 +242,18 @@ impl Default for TextSettings {
             max_output_tokens: 800,
             top_p: 1.0,
             instructions: String::new(),
+            thinking: ThinkingMode::Default,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ThinkingMode {
+    #[default]
+    Default,
+    On,
+    Off,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

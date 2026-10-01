@@ -102,6 +102,28 @@ export function TextProcessingSettingsSection({
               }))
           }
         />
+        <HeroField label={t("text.thinking")}>
+          <CustomSelect
+            value={draft.textProcessing.openai.thinking}
+            onChange={(value) =>
+              updateDraft((prev) => ({
+                ...prev,
+                textProcessing: {
+                  ...prev.textProcessing,
+                  openai: {
+                    ...prev.textProcessing.openai,
+                    thinking: value as Settings["textProcessing"]["openai"]["thinking"],
+                  },
+                },
+              }))
+            }
+            options={[
+              { value: "default", label: t("text.thinkingDefault") },
+              { value: "on", label: t("text.thinkingOn") },
+              { value: "off", label: t("text.thinkingOff") },
+            ]}
+          />
+        </HeroField>
         <HeroField label={t("text.temperature")}>
           <NumberWheelInput
             step={0.1}

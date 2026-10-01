@@ -295,6 +295,10 @@
     "openaiTitle": "OpenAI Text Processing",
     "model": "Model",
     "instructions": "Instructions",
+    "thinking": "Thinking",
+    "thinkingDefault": "Model default",
+    "thinkingOn": "On",
+    "thinkingOff": "Off",
     "temperature": "Temperature",
     "maxOutputTokens": "Max Output Tokens",
     "topP": "Top P"

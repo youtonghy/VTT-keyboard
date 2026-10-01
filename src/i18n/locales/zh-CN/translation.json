@@ -295,6 +295,10 @@
                   "openaiTitle":  "OpenAI 文本处理",
                   "model":  "文本模型",
                   "instructions":  "系统指令",
+                  "thinking":  "思考模式",
+                  "thinkingDefault":  "跟随模型",
+                  "thinkingOn":  "开启",
+                  "thinkingOff":  "关闭",
                   "temperature":  "温度",
                  "maxOutputTokens":  "最大输出 Tokens",
                  "topP":  "Top P"

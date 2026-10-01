@@ -50,6 +50,7 @@ const createDefaultSettings = (): Settings => ({
       maxOutputTokens: 800,
       topP: 1,
       instructions: "",
+      thinking: "default",
     },
   },
   volcengine: {

@@ -29,6 +29,7 @@ pub(crate) fn normalize_text_processing_settings(settings: &mut Settings) {
         settings.text_processing.openai.max_output_tokens = legacy_text.max_output_tokens;
         settings.text_processing.openai.top_p = legacy_text.top_p;
         settings.text_processing.openai.instructions = legacy_text.instructions;
+        settings.text_processing.openai.thinking = legacy_text.thinking;
     }
 }
 
@@ -374,6 +375,7 @@ mod tests {
                 max_output_tokens: 256,
                 top_p: 0.8,
                 instructions: "Rewrite the text".to_string(),
+                thinking: ThinkingMode::Off,
             }),
         };
 
@@ -396,6 +398,7 @@ mod tests {
             settings.text_processing.openai.instructions,
             "Rewrite the text"
         );
+        assert_eq!(settings.text_processing.openai.thinking, ThinkingMode::Off);
         assert!(settings.openai.legacy_text.is_none());
     }
 
