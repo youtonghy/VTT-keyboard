@@ -1,6 +1,7 @@
 import { useRef } from "react";
-import { Button } from "@heroui/react";
-import { HeroTextAreaField } from "./HeroField";
+import { useTranslation } from "react-i18next";
+import { Button } from "@/components/motion/button/base";
+import { TextAreaField } from "./FormFields";
 
 interface PromptTemplateEditorProps {
   value: string;
@@ -11,6 +12,7 @@ export function PromptTemplateEditor({
   value,
   onChange,
 }: PromptTemplateEditorProps) {
+  const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const insertVariable = (varName: string) => {
@@ -32,8 +34,8 @@ export function PromptTemplateEditor({
   };
 
   return (
-    <div className="prompt-template-container">
-      <HeroTextAreaField
+    <div className="grid gap-2">
+      <TextAreaField
         label=""
         textareaRef={textareaRef}
         value={value}
@@ -41,16 +43,17 @@ export function PromptTemplateEditor({
         rows={3}
         spellCheck={false}
       />
-      <div className="prompt-variables-bar">
-        <span className="prompt-variables-hint">插入占位符:</span>
-        <div className="prompt-variables-list">
+      <div className="flex items-center gap-2 text-muted-foreground text-xs">
+        <span>{t("triggers.insertPlaceholder")}</span>
+        <div className="flex flex-wrap gap-1.5">
           <Button
             type="button"
-            className="prompt-variable-btn"
             variant="secondary"
+            size="sm"
+            className="font-mono"
             onMouseDown={(e) => e.preventDefault()}
-            onPress={() => insertVariable("value")}
-            aria-label="点击插入 {value}"
+            onClick={() => insertVariable("value")}
+            aria-label={t("triggers.insertPlaceholderAria", { placeholder: "{value}" })}
           >
             {"{value}"}
           </Button>

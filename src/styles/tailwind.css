@@ -1,15 +1,13 @@
 @import "tailwindcss";
-@import "@heroui/styles";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-@custom-variant dark (&:is(.dark *));
+/* 应用通过 <html data-theme="dark|light"> 切换主题（见 App.tsx），dark 变体跟随该属性。 */
+@custom-variant dark (&:is([data-theme="dark"] *));
 
+/* 品牌色阶：作为 beui 的 accent（开关、强调态）使用。 */
 @theme {
-  --font-sans:
-    "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-
   --color-mist-50: oklch(0.985 0.008 214);
   --color-mist-100: oklch(0.966 0.014 214);
   --color-mist-200: oklch(0.93 0.024 214);
@@ -24,138 +22,99 @@
 }
 
 :root {
-  --color-bg: var(--color-mist-100);
-  --color-surface: #f6f8fb;
-  --color-surface-elevated: #ffffff;
-  --color-border: color-mix(in oklab, var(--color-mist-500) 28%, #ffffff);
-  --color-accent: var(--color-mist-700);
-  --color-accent-strong: var(--color-mist-800);
-  --color-text-primary: #132033;
-  --color-text-secondary: #516078;
-  --background:
-    oklch(1 0 0);
-  --foreground:
-    oklch(0.145 0 0);
-  --surface: var(--color-surface-elevated);
-  --surface-foreground: var(--color-text-primary);
-  --surface-secondary: var(--color-surface);
-  --surface-tertiary: color-mix(in oklab, var(--color-surface) 88%, var(--color-border));
-  --overlay: var(--color-surface-elevated);
-  --overlay-foreground: var(--color-text-primary);
-  --muted:
-    oklch(0.97 0 0);
-  --default: color-mix(in oklab, var(--color-surface) 88%, var(--color-border));
-  --default-foreground: var(--color-text-primary);
-  --accent:
-    oklch(0.97 0 0);
-  --accent-foreground:
-    oklch(0.205 0 0);
-  --segment: var(--color-surface-elevated);
-  --segment-foreground: var(--color-text-primary);
-  --border:
-    oklch(0.922 0 0);
-  --separator: var(--color-border);
-  --focus: var(--color-accent);
-  --link: var(--color-accent-strong);
-  --field-background: color-mix(in oklab, var(--color-surface-elevated) 88%, var(--color-bg));
-  --field-foreground: var(--color-text-primary);
-  --field-placeholder: var(--color-text-secondary);
-  --field-border: var(--color-border);
-  --field-border-width: 1px;
-  --field-radius: 0.75rem;
-  --radius:
-    0.625rem;
   color-scheme: light;
-  --card:
-    oklch(1 0 0);
-  --card-foreground:
-    oklch(0.145 0 0);
-  --popover:
-    oklch(1 0 0);
-  --popover-foreground:
-    oklch(0.145 0 0);
-  --primary:
-    oklch(0.205 0 0);
-  --primary-foreground:
-    oklch(0.985 0 0);
-  --secondary:
-    oklch(0.97 0 0);
-  --secondary-foreground:
-    oklch(0.205 0 0);
-  --muted-foreground:
-    oklch(0.556 0 0);
-  --destructive:
-    oklch(0.577 0.245 27.325);
-  --input:
-    oklch(0.922 0 0);
-  --ring:
-    oklch(0.708 0 0);
-  --chart-1:
-    oklch(0.87 0 0);
-  --chart-2:
-    oklch(0.556 0 0);
-  --chart-3:
-    oklch(0.439 0 0);
-  --chart-4:
-    oklch(0.371 0 0);
-  --chart-5:
-    oklch(0.269 0 0);
-  --sidebar:
-    oklch(0.985 0 0);
-  --sidebar-foreground:
-    oklch(0.145 0 0);
-  --sidebar-primary:
-    oklch(0.205 0 0);
-  --sidebar-primary-foreground:
-    oklch(0.985 0 0);
-  --sidebar-accent:
-    oklch(0.97 0 0);
-  --sidebar-accent-foreground:
-    oklch(0.205 0 0);
-  --sidebar-border:
-    oklch(0.922 0 0);
-  --sidebar-ring:
-    oklch(0.708 0 0);
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.003 214);
+  --foreground: oklch(0.2 0.02 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.02 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.02 250);
+  --primary: oklch(0.24 0.02 250);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.965 0.006 214);
+  --secondary-foreground: oklch(0.24 0.02 250);
+  --muted: oklch(0.955 0.008 214);
+  --muted-foreground: oklch(0.52 0.025 250);
+  --accent: var(--color-mist-700);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.6 0.13 155);
+  --warning: oklch(0.72 0.15 70);
+  --border: oklch(0.915 0.01 230);
+  --border-strong: oklch(0.82 0.015 230);
+  --input: oklch(0.915 0.01 230);
+  --ring: var(--color-mist-500);
+  --sidebar: oklch(0.97 0.006 214);
+  --sidebar-foreground: oklch(0.2 0.02 250);
+  --sidebar-border: oklch(0.915 0.01 230);
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #101725;
-  --color-surface: #141d2d;
-  --color-surface-elevated: #1a2436;
-  --color-border: color-mix(in oklab, var(--color-mist-500) 30%, #0b111d);
-  --color-accent: var(--color-mist-300);
-  --color-accent-strong: var(--color-mist-200);
-  --color-text-primary: #e9f0fa;
-  --color-text-secondary: #9aa9bf;
-  --background: var(--color-bg);
-  --foreground: var(--color-text-primary);
-  --surface: var(--color-surface-elevated);
-  --surface-foreground: var(--color-text-primary);
-  --surface-secondary: var(--color-surface);
-  --surface-tertiary: color-mix(in oklab, var(--color-surface) 88%, var(--color-border));
-  --overlay: var(--color-surface-elevated);
-  --overlay-foreground: var(--color-text-primary);
-  --muted: var(--color-text-secondary);
-  --default: color-mix(in oklab, var(--color-surface) 82%, var(--color-border));
-  --default-foreground: var(--color-text-primary);
-  --accent: var(--color-accent);
-  --accent-foreground: #101725;
-  --segment: color-mix(in oklab, var(--color-surface-elevated) 82%, var(--color-accent) 10%);
-  --segment-foreground: var(--color-text-primary);
-  --border: var(--color-border);
-  --separator: var(--color-border);
-  --focus: var(--color-accent);
-  --link: var(--color-accent-strong);
-  --field-background: color-mix(in oklab, var(--color-surface-elevated) 88%, var(--color-bg));
-  --field-foreground: var(--color-text-primary);
-  --field-placeholder: var(--color-text-secondary);
-  --field-border: var(--color-border);
   color-scheme: dark;
+  --background: oklch(0.17 0.012 250);
+  --foreground: oklch(0.95 0.008 230);
+  --card: oklch(0.205 0.014 250);
+  --card-foreground: oklch(0.95 0.008 230);
+  --popover: oklch(0.22 0.014 250);
+  --popover-foreground: oklch(0.95 0.008 230);
+  --primary: oklch(0.94 0.008 230);
+  --primary-foreground: oklch(0.2 0.015 250);
+  --secondary: oklch(0.25 0.014 250);
+  --secondary-foreground: oklch(0.95 0.008 230);
+  --muted: oklch(0.25 0.014 250);
+  --muted-foreground: oklch(0.7 0.02 240);
+  --accent: var(--color-mist-400);
+  --accent-foreground: oklch(0.17 0.012 250);
+  --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.72 0.13 155);
+  --warning: oklch(0.8 0.13 75);
+  --border: oklch(1 0 0 / 9%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: var(--color-mist-400);
+  --sidebar: oklch(0.145 0.012 250);
+  --sidebar-foreground: oklch(0.95 0.008 230);
+  --sidebar-border: oklch(1 0 0 / 8%);
+}
+
+@theme inline {
+  --font-sans: "Geist Variable", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-heading: var(--font-sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
 }
 
 @layer base {
   * {
-    box-sizing: border-box;
     @apply border-border outline-ring/50;
   }
 
@@ -166,29 +125,17 @@
   html,
   body,
   #root {
-    min-height: 100%;
-  }
-
-  html {
-    overflow-y: scroll;
-    scrollbar-gutter: stable both-edges;
-    @apply font-sans;
+    height: 100%;
   }
 
   body {
-    @apply m-0 antialiased bg-background text-foreground;
-    color: var(--color-text-primary);
-    background:
-      radial-gradient(circle at 15% -10%, color-mix(in oklab, var(--color-mist-200) 45%, transparent), transparent 52%),
-      radial-gradient(circle at 92% 0%, color-mix(in oklab, var(--color-mist-300) 36%, transparent), transparent 47%),
-      var(--color-bg);
+    @apply m-0 overflow-hidden bg-background font-sans text-foreground antialiased;
   }
 
   a {
-    color: var(--color-accent);
+    @apply text-accent underline-offset-4 hover:underline;
   }
 
-  /* Custom Scrollbar Styles */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -199,20 +146,14 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full;
-    background: color-mix(in oklab, var(--color-mist-400) 60%, transparent);
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklab, var(--color-mist-500) 80%, transparent);
+    @apply rounded-full bg-border-strong;
   }
 }
 
+/* 少量非 beui 组件（自绘标题栏、历史详情弹窗、Tooltip）的样式，统一使用 beui 设计 token。 */
 @layer components {
   .titlebar {
-    @apply fixed inset-x-0 top-0 z-50 flex h-10 items-center border-b px-3 backdrop-blur-sm;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface) 86%, transparent);
+    @apply fixed inset-x-0 top-0 z-50 flex h-10 items-center border-b bg-sidebar/85 px-3 backdrop-blur-sm;
   }
 
   .titlebar-drag-region {
@@ -220,8 +161,7 @@
   }
 
   .titlebar-title {
-    @apply truncate text-xs font-medium tracking-wide;
-    color: var(--color-text-secondary);
+    @apply truncate text-xs font-medium tracking-wide text-muted-foreground;
   }
 
   .titlebar-controls {
@@ -235,612 +175,51 @@
   .titlebar-update-chip,
   .titlebar-update-action,
   .titlebar-update-dismiss {
-    @apply flex h-7 items-center justify-center rounded-md px-2 text-xs font-medium;
-    border: 1px solid transparent;
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 92%, transparent);
-    color: var(--color-text-secondary);
+    @apply flex h-7 items-center justify-center rounded-full border border-transparent bg-card px-2.5 text-xs font-medium text-muted-foreground;
   }
 
   .titlebar-update-chip {
-    @apply max-w-[220px] truncate;
-    border-color: var(--color-border);
+    @apply max-w-[220px] truncate border-border;
   }
 
   .titlebar-update-chip.error {
-    border-color: color-mix(in oklab, #cc334f 45%, var(--color-border));
-    color: #cc334f;
-    background-color: color-mix(in oklab, #cc334f 10%, transparent);
+    @apply border-destructive/40 bg-destructive/10 text-destructive;
   }
 
   .titlebar-update-action {
-    @apply border-0 cursor-pointer;
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 12%, var(--color-surface-elevated));
-  }
-
-  .titlebar-update-action:hover,
-  .titlebar-update-dismiss:hover {
-    color: var(--color-text-primary);
-    background-color: color-mix(in oklab, var(--color-accent) 18%, transparent);
+    @apply cursor-pointer bg-accent/12 text-accent hover:bg-accent/20;
   }
 
   .titlebar-update-dismiss {
-    @apply w-7 border-0 cursor-pointer p-0;
+    @apply w-7 cursor-pointer p-0 hover:bg-muted hover:text-foreground;
   }
 
   .native-update-banner {
-    @apply mr-0 flex-wrap self-end;
+    @apply mr-0 flex-wrap;
   }
 
   .titlebar-button {
-    @apply flex h-7 w-7 items-center justify-center rounded-md border-0 p-0;
-    color: var(--color-text-secondary);
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .titlebar-button:hover {
-    background-color: color-mix(in oklab, var(--color-accent) 12%, transparent);
-    color: var(--color-text-primary);
+    @apply flex h-7 w-7 items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground;
   }
 
   .titlebar-button.close:hover {
-    background-color: #cc334f;
-    color: #fff;
-  }
-
-  .container {
-    @apply mx-auto flex min-h-screen max-w-[1180px] flex-col gap-5 px-4 pb-6 pt-6 md:px-8;
-  }
-
-  .container.has-custom-titlebar {
-    @apply pt-14;
-  }
-
-  .container.loading {
-    @apply items-center justify-center text-sm;
-    color: var(--color-text-secondary);
-  }
-
-  .settings-hero {
-    @apply flex flex-col gap-4 pt-1 md:flex-row md:items-end md:justify-between;
-  }
-
-  .settings-hero-eyebrow {
-    @apply m-0 text-xs font-semibold uppercase;
-    color: var(--color-accent-strong);
-  }
-
-  .settings-hero h1 {
-    @apply m-0 mt-1 text-2xl font-semibold md:text-3xl;
-    color: var(--color-text-primary);
-  }
-
-  .settings-hero p:not(.settings-hero-eyebrow) {
-    @apply m-0 mt-2 max-w-2xl text-sm leading-6;
-    color: var(--color-text-secondary);
-  }
-
-  .settings-version-card {
-    @apply hidden min-w-[150px] rounded-lg border p-0 md:block;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 82%, transparent);
-  }
-
-  .settings-version-card [data-slot="card-content"] {
-    @apply flex flex-col gap-1 px-4 py-3;
-  }
-
-  .settings-version-card span {
-    @apply text-sm font-semibold;
-    color: var(--color-text-primary);
-  }
-
-  .settings-version-card strong {
-    @apply text-xs font-medium uppercase;
-    color: var(--color-text-secondary);
-  }
-
-  .settings-tabs {
-    @apply min-w-0 gap-0;
-    isolation: isolate;
-  }
-
-  .settings-tabs-list-container {
-    @apply sticky top-0 z-30 -mx-4 border-b px-4 py-3 backdrop-blur md:-mx-8 md:px-8;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-bg) 88%, transparent);
-    min-height: 4.5rem;
-  }
-
-  .container.has-custom-titlebar .settings-tabs-list-container {
-    @apply top-10;
-  }
-
-  .settings-tabs-list {
-    @apply w-full gap-1 overflow-x-auto p-1;
-    align-items: stretch;
-    display: flex;
-    border: 1px solid var(--color-border);
-    border-radius: 0.5rem;
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 82%, transparent);
-    min-height: 3rem;
-    scrollbar-width: none;
-  }
-
-  .settings-tabs-list::-webkit-scrollbar {
-    display: none;
-  }
-
-  .settings-tabs-tab {
-    @apply h-10 min-w-max shrink-0 flex-none rounded-md px-3 text-sm font-medium md:flex-1;
-    width: auto;
-    color: var(--color-text-secondary);
-    line-height: 1;
-  }
-
-  .settings-tabs-tab[data-selected="true"] {
-    color: var(--color-text-primary);
-  }
-
-  .settings-tabs-tab .tabs__indicator {
-    border-radius: 0.5rem;
-    background-color: color-mix(in oklab, var(--color-accent) 18%, var(--color-surface-elevated));
-    box-shadow: none;
-  }
-
-  .settings-content {
-    @apply m-0 flex min-w-0 flex-1 flex-col gap-5 p-0 pt-4 outline-none;
-    min-height: max(24rem, calc(100vh - 17rem));
-  }
-
-  .settings-card {
-    @apply min-w-0 rounded-lg border p-0 shadow-sm;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 94%, transparent);
-    overflow: visible;
-  }
-
-  .settings-card-header {
-    @apply mb-0 px-5 pb-3 pt-5 md:px-6 md:pt-6;
-  }
-
-  .settings-card-title {
-    @apply m-0 text-lg font-semibold tracking-tight;
-    color: var(--color-text-primary);
-  }
-
-  .settings-card-header p {
-    @apply mt-2 text-sm;
-    color: var(--color-text-secondary);
-  }
-
-  .settings-card-body {
-    @apply grid min-w-0 items-start gap-4 px-5 pb-5 md:px-6 md:pb-6;
-    overflow: visible;
-  }
-
-  .field {
-    @apply flex min-w-0 flex-col gap-2 text-sm;
-  }
-
-  .field > span:first-child,
-  .field [data-slot="label"] {
-    @apply text-sm font-medium;
-    color: var(--color-text-secondary);
-  }
-
-  .field > span + span {
-    @apply text-base font-semibold;
-    color: var(--color-text-primary);
-    overflow-wrap: anywhere;
-  }
-
-  .hero-input,
-  .hero-textarea {
-    @apply min-w-0 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition;
-    border-color: var(--color-border);
-    color: var(--color-text-primary);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 88%, var(--color-bg));
-  }
-
-  .hero-textarea {
-    @apply min-h-24;
-  }
-
-  .hero-input:focus,
-  .hero-textarea:focus {
-    border-color: color-mix(in oklab, var(--color-accent) 52%, var(--color-border));
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 15%, transparent);
-  }
-
-  .hero-checkbox {
-    @apply inline-flex min-w-0 max-w-full cursor-pointer select-none items-center justify-start gap-2.5 justify-self-start rounded-lg border px-3 py-2 text-sm;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 82%, transparent);
-    width: fit-content;
-  }
-
-  .hero-checkbox [data-slot="checkbox-control"] {
-    @apply h-5 w-5 rounded-md;
-  }
-
-  .hero-checkbox [data-slot="checkbox-content"] {
-    @apply flex min-w-0 flex-row items-center gap-2 whitespace-nowrap leading-5;
-    width: max-content;
-  }
-
-  .hero-checkbox .tooltip-wrapper,
-  .hero-checkbox .hint-icon {
-    @apply h-4 w-4 shrink-0;
-  }
-
-  .hero-checkbox [data-slot="checkbox-content"] span {
-    @apply text-sm font-medium;
-    color: var(--color-text-primary);
-  }
-
-  .hint-icon {
-    @apply flex cursor-help items-center transition-colors;
-    color: var(--color-text-secondary);
-  }
-
-  .hint-icon:hover {
-    color: var(--color-accent-strong);
-  }
-
-  .shortcut-actions {
-    @apply flex flex-wrap items-center gap-3 text-sm;
-    color: var(--color-text-secondary);
-  }
-
-  .recording-device-panel {
-    @apply grid gap-3 rounded-lg border p-3;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface) 78%, transparent);
-  }
-
-  .recording-device-header {
-    @apply flex min-w-0 items-start justify-between gap-3;
-  }
-
-  .recording-device-header h4 {
-    @apply m-0 text-sm font-semibold;
-    color: var(--color-text-primary);
-  }
-
-  .recording-device-header p {
-    @apply mt-1 text-sm;
-    color: var(--color-text-secondary);
-    overflow-wrap: anywhere;
-  }
-
-  .recording-device-option {
-    @apply flex min-w-0 flex-col gap-0.5;
-  }
-
-  .recording-device-option span {
-    @apply min-w-0 truncate;
-  }
-
-  .recording-device-option small {
-    @apply text-xs font-normal;
-    color: var(--color-text-secondary);
-  }
-
-  .recording-device-error {
-    @apply m-0 rounded-lg border px-3 py-2 text-sm;
-    border-color: #cc334f;
-    color: #cc334f;
-    background-color: color-mix(in oklab, #cc334f 10%, transparent);
-    overflow-wrap: anywhere;
-  }
-
-  .recording-permission-status {
-    @apply m-0 rounded-lg border px-3 py-2 text-sm;
-    border-color: #b57614;
-    color: #8a560f;
-    background-color: color-mix(in oklab, #f5b84b 16%, transparent);
-    overflow-wrap: anywhere;
-  }
-
-  .recording-test-row {
-    @apply grid gap-3 md:grid-cols-[auto_minmax(12rem,1fr)] md:items-center;
-  }
-
-  .recording-level {
-    @apply min-w-0;
-  }
-
-  .macos-permissions-panel {
-    @apply grid gap-4;
-  }
-
-  .macos-permissions-alert {
-    @apply rounded-lg;
-  }
-
-  .macos-permissions-list {
-    @apply grid gap-3;
-  }
-
-  .macos-permission-row {
-    @apply grid min-w-0 gap-3 rounded-lg border p-3 md:grid-cols-[auto_minmax(0,1fr)_auto_auto] md:items-center;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface) 78%, transparent);
-  }
-
-  .macos-permission-icon {
-    @apply flex h-9 w-9 items-center justify-center rounded-lg;
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 12%, transparent);
-  }
-
-  .macos-permission-copy {
-    @apply min-w-0;
-  }
-
-  .macos-permission-copy h4 {
-    @apply m-0 text-sm font-semibold;
-    color: var(--color-text-primary);
-  }
-
-  .macos-permission-copy p {
-    @apply m-0 mt-1 text-sm leading-5;
-    color: var(--color-text-secondary);
-    overflow-wrap: anywhere;
-  }
-
-  .macos-permission-chip {
-    @apply justify-self-start md:justify-self-end;
-  }
-
-  .macos-permissions-actions {
-    @apply flex flex-wrap gap-3;
-  }
-
-  .button-row {
-    @apply flex flex-wrap gap-3;
-  }
-
-  .sensevoice-summary {
-    @apply grid gap-1 text-sm;
-    color: var(--color-text-secondary);
-  }
-
-  .sensevoice-progress {
-    @apply flex items-center justify-between rounded-xl border px-3 py-2 text-sm;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface) 85%, #fff);
-  }
-
-  .sensevoice-error {
-    @apply rounded-xl border px-3 py-2 text-sm;
-    border-color: #cc334f;
-    color: #cc334f;
-    background-color: color-mix(in oklab, #cc334f 10%, transparent);
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .sensevoice-hint {
-    @apply text-sm;
-    color: var(--color-text-secondary);
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .sensevoice-runtime-panel {
-    @apply grid min-w-0 gap-3 rounded-lg border p-3;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface) 80%, transparent);
-  }
-
-  .sensevoice-runtime-panel-header {
-    @apply flex min-w-0 items-start justify-between gap-3;
-  }
-
-  .sensevoice-runtime-panel-title {
-    @apply text-sm font-semibold;
-    color: var(--color-text-primary);
-  }
-
-  .sensevoice-runtime-panel-description {
-    @apply mt-1 text-sm leading-5;
-    color: var(--color-text-secondary);
-    overflow-wrap: anywhere;
-  }
-
-  .sensevoice-runtime-grid {
-    @apply grid min-w-0 gap-2 md:grid-cols-2;
-  }
-
-  .sensevoice-runtime-grid > div {
-    @apply min-w-0 rounded-lg border px-3 py-2;
-    border-color: color-mix(in oklab, var(--color-border) 82%, transparent);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 72%, transparent);
-  }
-
-  .sensevoice-runtime-grid span {
-    @apply block text-xs font-medium;
-    color: var(--color-text-secondary);
-  }
-
-  .sensevoice-runtime-grid strong {
-    @apply mt-1 block text-sm font-semibold;
-    color: var(--color-text-primary);
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .sensevoice-runtime-actions {
-    @apply gap-2;
-  }
-
-  .sensevoice-runtime-actions [data-slot="button"] {
-    @apply min-h-9 gap-2;
-  }
-
-  .sensevoice-log {
-    @apply min-w-0 overflow-hidden rounded-xl border px-3 py-2;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
-  }
-
-  .sensevoice-log-title {
-    @apply text-sm font-semibold;
-    color: var(--color-text-primary);
-  }
-
-  .sensevoice-log-header {
-    @apply flex items-center justify-between gap-3;
-  }
-
-  .sensevoice-log-toggle {
-    @apply rounded-md border px-2 py-1 text-xs transition-colors;
-    border-color: var(--color-border);
-    color: var(--color-text-secondary);
-    background-color: transparent;
-  }
-
-  .sensevoice-log-toggle:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent-strong);
-  }
-
-  .sensevoice-log-toggle:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-  }
-
-  .sensevoice-log pre {
-    @apply mt-2 mb-0 max-h-44 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed;
-    color: var(--color-text-secondary);
-  }
-
-  .trigger-list {
-    @apply flex flex-col gap-4;
-  }
-
-  .trigger-card {
-    @apply min-w-0 rounded-lg border p-0;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 86%, var(--color-bg));
-    overflow: visible;
-  }
-
-  .trigger-card-header {
-    @apply mb-0 flex flex-wrap items-start justify-between gap-3 px-4 pb-3 pt-4;
-  }
-
-  .trigger-title-input {
-    @apply min-w-[220px] flex-1 rounded-lg border px-3 py-2 text-sm font-semibold outline-none;
-    border-color: var(--color-border);
-    color: var(--color-text-primary);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 86%, transparent);
-  }
-
-  .trigger-title-input:focus {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 14%, transparent);
-  }
-
-  .trigger-card-actions {
-    @apply flex flex-wrap gap-2;
-  }
-
-  .trigger-card-actions button {
-    @apply px-3 py-1.5 text-xs;
-  }
-
-  .trigger-card-body {
-    @apply grid min-w-0 gap-3 px-4 pb-4 md:grid-cols-2;
-    overflow: visible;
-  }
-
-  .trigger-card-body .field:last-child {
-    @apply md:col-span-2;
-  }
-
-  .history-list {
-    @apply flex flex-col gap-2;
-  }
-
-  .history-item {
-    @apply flex h-auto w-full items-start justify-between gap-3 rounded-lg border px-3 py-2 text-left;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 88%, transparent);
-  }
-
-  .history-item-content {
-    @apply min-w-0 flex-1 whitespace-normal text-sm font-medium;
-    overflow-wrap: anywhere;
-    color: var(--color-text-primary);
-  }
-
-  .history-item-time {
-    @apply shrink-0 text-xs;
-    color: var(--color-text-secondary);
-  }
-
-  .history-item.failed .history-item-content {
-    color: #cc334f;
-  }
-
-  .history-item.triggered .history-item-content {
-    color: var(--color-accent-strong);
-  }
-
-  .history-empty {
-    @apply rounded-xl border px-3 py-2 text-sm;
-    border-color: var(--color-border);
-    color: var(--color-text-secondary);
-    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
-  }
-
-  .history-actions {
-    @apply pt-2;
-  }
-
-  .settings-actions {
-    @apply flex min-h-8 items-center;
-  }
-
-  .status-message {
-    @apply rounded-full border px-3 py-1 text-xs font-medium;
-  }
-
-  .status-message.success {
-    border-color: #0b8f58;
-    color: #0b8f58;
-    background-color: color-mix(in oklab, #0b8f58 10%, transparent);
-  }
-
-  .status-message.error {
-    border-color: #cc334f;
-    color: #cc334f;
-    background-color: color-mix(in oklab, #cc334f 10%, transparent);
-  }
-
-  main [data-slot="button"] {
-    @apply rounded-lg text-sm font-medium;
+    @apply bg-destructive text-white;
   }
 
   .history-dialog-backdrop {
-    @apply fixed inset-0 z-[70] flex items-center justify-center p-4;
-    background-color: color-mix(in oklab, #0a1220 45%, transparent);
-    backdrop-filter: blur(2px);
+    @apply fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px];
   }
 
   .history-dialog {
-    @apply w-full max-w-2xl rounded-2xl border p-4 md:p-5;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 98%, transparent);
-    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
+    @apply w-full max-w-2xl rounded-3xl border bg-popover p-5 text-popover-foreground shadow-2xl;
   }
 
   .history-dialog-header {
     @apply mb-4 flex items-center justify-between gap-2;
+  }
+
+  .history-dialog-header h4 {
+    @apply m-0 text-base font-semibold;
   }
 
   .history-dialog-header-actions {
@@ -848,46 +227,19 @@
   }
 
   .history-status-badge {
-    @apply rounded-md px-2 py-0.5 text-xs font-medium;
+    @apply rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
 
   .history-status-failed {
-    color: var(--color-error, #dc2626);
-    background-color: color-mix(in oklab, var(--color-error, #dc2626) 12%, transparent);
-  }
-
-  .history-dialog-header h4 {
-    @apply m-0 text-base font-semibold;
-    color: var(--color-text-primary);
+    @apply bg-destructive/10 text-destructive;
   }
 
   .history-dialog-close {
-    @apply h-8 w-8 rounded-lg border p-0;
-    border-color: var(--color-border);
-    color: var(--color-text-secondary);
-    background-color: transparent;
+    @apply grid h-8 w-8 place-items-center rounded-full border bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground;
   }
 
   .history-dialog-retry {
-    @apply inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium;
-    border-color: color-mix(in oklab, var(--color-accent) 38%, var(--color-border));
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
-  }
-
-  .history-dialog-retry:hover:not(:disabled) {
-    border-color: color-mix(in oklab, var(--color-accent) 56%, var(--color-border));
-    background-color: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-elevated));
-  }
-
-  .history-dialog-retry:disabled {
-    @apply cursor-not-allowed opacity-60;
-  }
-
-  .history-dialog-close:hover {
-    border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
+    @apply inline-flex h-8 items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 text-xs font-medium text-accent hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60;
   }
 
   .history-dialog-body {
@@ -895,32 +247,24 @@
   }
 
   .history-detail-row {
-    @apply rounded-xl border p-3;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface) 90%, #fff);
+    @apply rounded-2xl border bg-muted/40 p-3;
   }
 
   .history-detail-row > span {
-    @apply mb-1 block text-xs font-medium;
-    color: var(--color-text-secondary);
+    @apply mb-1 block text-xs font-medium text-muted-foreground;
   }
 
   .history-detail-row > strong {
-    @apply block text-sm font-medium;
-    color: var(--color-text-primary);
+    @apply block text-sm font-medium break-words;
     overflow-wrap: anywhere;
-    word-break: break-word;
   }
 
   .history-trigger-chips {
-    @apply flex flex-wrap gap-1.5 mt-1;
+    @apply mt-1 flex flex-wrap gap-1.5;
   }
 
   .history-trigger-chip {
-    @apply inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs;
-    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface));
-    border: 1px solid color-mix(in oklab, var(--color-accent) 20%, var(--color-border));
-    color: var(--color-text-primary);
+    @apply inline-flex items-center gap-1 rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-xs;
   }
 
   .history-trigger-chip strong {
@@ -928,159 +272,35 @@
   }
 
   .history-trigger-chip-sep {
-    color: var(--color-text-secondary);
-    opacity: 0.5;
+    @apply text-muted-foreground opacity-50;
   }
 
   .history-trigger-chip-mode {
-    @apply rounded px-1.5 py-0 text-[10px] font-medium;
-    background-color: color-mix(in oklab, var(--color-accent) 18%, transparent);
-    color: var(--color-accent-strong, var(--color-accent));
+    @apply rounded-full bg-accent/20 px-1.5 text-[10px] font-medium text-accent;
   }
 
   .history-detail-meta {
-    @apply flex flex-wrap items-center gap-1.5 rounded-xl px-3 py-2.5 text-xs;
-    color: var(--color-text-secondary);
-    background-color: color-mix(in oklab, var(--color-surface) 80%, var(--color-border));
+    @apply flex flex-wrap items-center gap-1.5 rounded-2xl bg-muted px-3 py-2.5 text-xs text-muted-foreground;
   }
 
   .history-detail-meta > span {
     overflow-wrap: anywhere;
-    word-break: break-word;
   }
 
   .history-detail-meta-sep {
-    opacity: 0.4;
+    @apply opacity-40;
   }
 
   .history-error-text {
-    color: #cc334f !important;
+    @apply text-destructive;
   }
 
-  .language-switcher {
-    @apply flex flex-wrap items-center gap-2;
-  }
-
-  .language-switcher-label {
-    @apply mr-2 text-sm;
-    color: var(--color-text-secondary);
-  }
-
-  .language-switcher-button[aria-disabled="true"],
-  .language-switcher-button[data-disabled="true"] {
-    border-color: color-mix(in oklab, var(--color-accent) 50%, var(--color-border));
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-elevated));
-    opacity: 1;
-  }
-
-  .field a {
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .hero-select-trigger {
-    @apply min-h-10 w-full rounded-xl border px-3 py-2.5;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 88%, var(--color-bg));
-  }
-
-  .hero-select-trigger:focus-visible {
-    border-color: color-mix(in oklab, var(--color-accent) 52%, var(--color-border));
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 15%, transparent);
-  }
-
-  .hero-select-popover {
-    @apply z-[80] max-h-72 rounded-xl border shadow-xl;
-    border-color: var(--color-border);
-    background-color: var(--color-surface-elevated);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  .hero-select-popover [data-slot="list-box-item"] {
-    @apply rounded-lg;
-  }
-
-  .hero-select-group-label {
-    @apply px-2.5 pb-1 pt-2 text-xs font-semibold uppercase;
-    color: var(--color-text-secondary);
-  }
-
-  .hero-select-popover [data-slot="list-box-item-indicator"] {
-    color: var(--color-accent-strong);
-  }
-
-  /* Segmented Control Styles */
-  .segmented-control {
-    @apply flex w-full items-center gap-1.5 rounded-xl border p-1 md:w-fit;
-    border-color: var(--color-border);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 80%, transparent);
-  }
-
-  .segmented-control.disabled {
-    @apply opacity-50 cursor-not-allowed;
-  }
-
-  .segmented-control-button {
-    @apply m-0 flex flex-1 items-center justify-center rounded-lg border-0 px-4 py-2 text-sm font-medium transition-colors md:flex-none;
-    color: var(--color-text-secondary);
-    background: transparent;
-  }
-
-  .segmented-control-button:hover:not(.active):not(:disabled) {
-    color: var(--color-text-primary);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 50%, transparent);
-  }
-
-  .segmented-control-button.active {
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-elevated));
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    border: 1px solid var(--color-border);
-  }
-
-  /* Prompt Template Editor Styles */
-  .prompt-template-container {
-    @apply flex flex-col gap-2 w-full;
-  }
-
-  .prompt-variables-bar {
-    @apply flex flex-wrap items-center gap-2;
-  }
-
-  .prompt-variables-hint {
-    @apply text-xs font-medium;
-    color: var(--color-text-secondary);
-  }
-
-  .prompt-variables-list {
-    @apply flex flex-wrap gap-1.5;
-  }
-
-  .prompt-variable-btn {
-    @apply inline-flex cursor-pointer items-center justify-center rounded-md border px-2 py-1 text-xs font-medium transition;
-    border-color: var(--color-border);
-    color: var(--color-text-primary);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 96%, transparent);
-  }
-
-  .prompt-variable-btn:hover {
-    border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
-    color: var(--color-accent-strong);
-    background-color: color-mix(in oklab, var(--color-accent) 10%, var(--color-surface-elevated));
-  }
-
-  /* Tooltip Styles */
   .tooltip-wrapper {
     @apply relative inline-flex items-center justify-center;
   }
 
   .tooltip-content {
-    @apply fixed z-[90] w-max max-w-[280px] rounded-lg px-3 py-2 text-xs font-medium shadow-lg backdrop-blur-md opacity-0 whitespace-normal break-words pointer-events-none;
-    color: var(--color-text-primary);
-    background-color: color-mix(in oklab, var(--color-surface-elevated) 90%, transparent);
-    border: 1px solid var(--color-border);
+    @apply pointer-events-none fixed z-[90] w-max max-w-[280px] rounded-xl border bg-popover/95 px-3 py-2 text-xs font-medium whitespace-normal break-words text-popover-foreground opacity-0 shadow-lg backdrop-blur-md;
     animation: tooltip-fade-in 0.15s ease-out forwards;
   }
 
@@ -1092,154 +312,4 @@
       opacity: 1;
     }
   }
-
-  /* End of components layer */
-}
-
-@theme inline {
-  --font-heading:
-    var(--font-sans);
-  --font-sans:
-    'Geist Variable', sans-serif;
-  --color-sidebar-ring:
-    var(--sidebar-ring);
-  --color-sidebar-border:
-    var(--sidebar-border);
-  --color-sidebar-accent-foreground:
-    var(--sidebar-accent-foreground);
-  --color-sidebar-accent:
-    var(--sidebar-accent);
-  --color-sidebar-primary-foreground:
-    var(--sidebar-primary-foreground);
-  --color-sidebar-primary:
-    var(--sidebar-primary);
-  --color-sidebar-foreground:
-    var(--sidebar-foreground);
-  --color-sidebar:
-    var(--sidebar);
-  --color-chart-5:
-    var(--chart-5);
-  --color-chart-4:
-    var(--chart-4);
-  --color-chart-3:
-    var(--chart-3);
-  --color-chart-2:
-    var(--chart-2);
-  --color-chart-1:
-    var(--chart-1);
-  --color-ring:
-    var(--ring);
-  --color-input:
-    var(--input);
-  --color-border:
-    var(--border);
-  --color-destructive:
-    var(--destructive);
-  --color-accent-foreground:
-    var(--accent-foreground);
-  --color-accent:
-    var(--accent);
-  --color-muted-foreground:
-    var(--muted-foreground);
-  --color-muted:
-    var(--muted);
-  --color-secondary-foreground:
-    var(--secondary-foreground);
-  --color-secondary:
-    var(--secondary);
-  --color-primary-foreground:
-    var(--primary-foreground);
-  --color-primary:
-    var(--primary);
-  --color-popover-foreground:
-    var(--popover-foreground);
-  --color-popover:
-    var(--popover);
-  --color-card-foreground:
-    var(--card-foreground);
-  --color-card:
-    var(--card);
-  --color-foreground:
-    var(--foreground);
-  --color-background:
-    var(--background);
-  --radius-sm:
-    calc(var(--radius) * 0.6);
-  --radius-md:
-    calc(var(--radius) * 0.8);
-  --radius-lg:
-    var(--radius);
-  --radius-xl:
-    calc(var(--radius) * 1.4);
-  --radius-2xl:
-    calc(var(--radius) * 1.8);
-  --radius-3xl:
-    calc(var(--radius) * 2.2);
-  --radius-4xl:
-    calc(var(--radius) * 2.6);
-}
-
-.dark {
-  --background:
-    oklch(0.145 0 0);
-  --foreground:
-    oklch(0.985 0 0);
-  --card:
-    oklch(0.205 0 0);
-  --card-foreground:
-    oklch(0.985 0 0);
-  --popover:
-    oklch(0.205 0 0);
-  --popover-foreground:
-    oklch(0.985 0 0);
-  --primary:
-    oklch(0.922 0 0);
-  --primary-foreground:
-    oklch(0.205 0 0);
-  --secondary:
-    oklch(0.269 0 0);
-  --secondary-foreground:
-    oklch(0.985 0 0);
-  --muted:
-    oklch(0.269 0 0);
-  --muted-foreground:
-    oklch(0.708 0 0);
-  --accent:
-    oklch(0.269 0 0);
-  --accent-foreground:
-    oklch(0.985 0 0);
-  --destructive:
-    oklch(0.704 0.191 22.216);
-  --border:
-    oklch(1 0 0 / 10%);
-  --input:
-    oklch(1 0 0 / 15%);
-  --ring:
-    oklch(0.556 0 0);
-  --chart-1:
-    oklch(0.87 0 0);
-  --chart-2:
-    oklch(0.556 0 0);
-  --chart-3:
-    oklch(0.439 0 0);
-  --chart-4:
-    oklch(0.371 0 0);
-  --chart-5:
-    oklch(0.269 0 0);
-  --sidebar:
-    oklch(0.205 0 0);
-  --sidebar-foreground:
-    oklch(0.985 0 0);
-  --sidebar-primary:
-    oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground:
-    oklch(0.985 0 0);
-  --sidebar-accent:
-    oklch(0.269 0 0);
-  --sidebar-accent-foreground:
-    oklch(0.985 0 0);
-  --sidebar-border:
-    oklch(1 0 0 / 10%);
-  --sidebar-ring:
-    oklch(0.556 0 0);
 }

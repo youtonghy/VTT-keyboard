@@ -257,6 +257,8 @@
                      "variables":  "变量范围",
                      "variablesPlaceholder":  "用中英文逗号分隔，例如：英文, 日文, 韩文",
                      "promptTemplate":  "提示词模板",
+                     "insertPlaceholder":  "插入占位符：",
+                     "insertPlaceholderAria":  "点击插入 {{placeholder}}",
                      "add":  "新增触发词",
                      "remove":  "删除",
                      "moveUp":  "上移",

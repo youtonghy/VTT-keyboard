@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Card } from "@heroui/react";
 import { Info } from "lucide-react";
 import { Tooltip } from "./Tooltip";
 
@@ -11,20 +10,21 @@ interface SettingsCardProps {
 
 export function SettingsCard({ title, description, children }: SettingsCardProps) {
   return (
-    <Card className="settings-card">
-      <Card.Header className="settings-card-header !mb-4">
-        <div className="flex items-center gap-2">
-          <Card.Title className="settings-card-title">{title}</Card.Title>
-          {description && (
-            <Tooltip content={<div className="text-[13px] leading-relaxed max-w-[240px]">{description}</div>} position="top">
-              <span className="flex items-center justify-center cursor-help text-[var(--color-text-secondary)] hover:text-[var(--color-accent-strong)] transition-colors p-1 -m-1">
-                <Info size={16} />
-              </span>
-            </Tooltip>
-          )}
-        </div>
-      </Card.Header>
-      <Card.Content className="settings-card-body">{children}</Card.Content>
-    </Card>
+    <section className="rounded-3xl border border-border bg-card p-5 sm:p-6">
+      <header className="mb-5 flex items-center gap-2">
+        <h2 className="font-semibold text-base text-card-foreground tracking-tight">{title}</h2>
+        {description ? (
+          <Tooltip
+            content={<div className="max-w-[240px] text-[13px] leading-relaxed">{description}</div>}
+            position="top"
+          >
+            <span className="-m-1 flex cursor-help items-center p-1 text-muted-foreground transition-colors hover:text-foreground">
+              <Info size={15} />
+            </span>
+          </Tooltip>
+        ) : null}
+      </header>
+      <div className="grid gap-5">{children}</div>
+    </section>
   );
 }

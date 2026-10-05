@@ -1,5 +1,16 @@
-import { Alert, Button, Chip } from "@heroui/react";
-import { CheckCircle2, Keyboard, Mic, RefreshCw, ShieldAlert } from "lucide-react";
+import type { ReactNode } from "react";
+import {
+  CheckCircle2,
+  CircleAlert,
+  Info,
+  Keyboard,
+  Mic,
+  RefreshCw,
+  ShieldAlert,
+  type LucideIcon,
+} from "lucide-react";
+import { Button } from "@/components/motion/button/base";
+import { cn } from "@/lib/utils";
 import type { TFunction } from "i18next";
 import type {
   MacOSPermissionId,
@@ -28,6 +39,28 @@ const permissionItems = [
   },
 ];
 
+type NoticeTone = "success" | "warning" | "danger" | "info";
+
+const noticeStyles: Record<NoticeTone, { className: string; Icon: LucideIcon }> = {
+  success: { className: "border-success/25 bg-success/10 text-success", Icon: CheckCircle2 },
+  warning: { className: "border-warning/30 bg-warning/10 text-warning", Icon: ShieldAlert },
+  danger: { className: "border-destructive/25 bg-destructive/10 text-destructive", Icon: CircleAlert },
+  info: { className: "border-border bg-muted/50 text-muted-foreground", Icon: Info },
+};
+
+function Notice({ tone, title, children }: { tone: NoticeTone; title: string; children: ReactNode }) {
+  const { className, Icon } = noticeStyles[tone];
+  return (
+    <div role="status" className={cn("flex gap-3 rounded-2xl border px-4 py-3", className)}>
+      <Icon size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="font-medium text-foreground text-sm">{title}</p>
+        <p className="mt-0.5 text-muted-foreground text-xs leading-5">{children}</p>
+      </div>
+    </div>
+  );
+}
+
 export function MacOSPermissionsSection({
   microphone,
   accessibility,
@@ -49,50 +82,33 @@ export function MacOSPermissionsSection({
     accessibility.required && !isMacOSPermissionApproved(accessibility.status);
 
   return (
-    <div className="macos-permissions-panel">
+    <div className="grid gap-4">
       {hasMissingPermission ? (
-        <Alert status="warning" className="macos-permissions-alert">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>{t("permissions.missingTitle")}</Alert.Title>
-            <Alert.Description>{t("permissions.missingDescription")}</Alert.Description>
-          </Alert.Content>
-        </Alert>
+        <Notice tone="warning" title={t("permissions.missingTitle")}>
+          {t("permissions.missingDescription")}
+        </Notice>
       ) : (
-        <Alert status="success" className="macos-permissions-alert">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>{t("permissions.readyTitle")}</Alert.Title>
-            <Alert.Description>{t("permissions.readyDescription")}</Alert.Description>
-          </Alert.Content>
-        </Alert>
+        <Notice tone="success" title={t("permissions.readyTitle")}>
+          {t("permissions.readyDescription")}
+        </Notice>
       )}
 
       {error ? (
-        <Alert status="danger" className="macos-permissions-alert">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>{t("permissions.refreshErrorTitle")}</Alert.Title>
-            <Alert.Description>{error}</Alert.Description>
-          </Alert.Content>
-        </Alert>
+        <Notice tone="danger" title={t("permissions.refreshErrorTitle")}>
+          {error}
+        </Notice>
       ) : null}
 
       {accessibilityMissing ? (
-        <Alert status="default" className="macos-permissions-alert">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>{t("permissions.accessibilityHelpTitle")}</Alert.Title>
-            <Alert.Description>{t("permissions.accessibilityHelpDescription")}</Alert.Description>
-          </Alert.Content>
-        </Alert>
+        <Notice tone="info" title={t("permissions.accessibilityHelpTitle")}>
+          {t("permissions.accessibilityHelpDescription")}
+        </Notice>
       ) : null}
 
-      <div className="macos-permissions-list">
+      <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
         {permissionItems.map(({ id, Icon }) => {
           const item = permissions[id];
           const approved = isMacOSPermissionApproved(item.status);
-          const chipColor = approved ? "success" : "warning";
           const chipLabel = approved
             ? t("permissions.status.approved")
             : t(`permissions.status.${item.status}`, {
@@ -100,29 +116,33 @@ export function MacOSPermissionsSection({
               });
 
           return (
-            <div key={id} className="macos-permission-row">
-              <span className="macos-permission-icon" aria-hidden="true">
+            <div key={id} className="flex flex-wrap items-center gap-3 p-4">
+              <span
+                className="grid size-9 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
+                aria-hidden="true"
+              >
                 <Icon size={18} />
               </span>
-              <div className="macos-permission-copy">
-                <h4>{t(`permissions.items.${id}.title`)}</h4>
-                <p>{t(`permissions.items.${id}.description`)}</p>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-medium text-sm">{t(`permissions.items.${id}.title`)}</h3>
+                <p className="mt-0.5 text-muted-foreground text-xs leading-5">
+                  {t(`permissions.items.${id}.description`)}
+                </p>
               </div>
-              <Chip
-                color={chipColor}
-                variant="soft"
-                size="sm"
-                className="macos-permission-chip"
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium text-xs",
+                  approved ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
+                )}
               >
                 {approved ? <CheckCircle2 size={13} /> : <ShieldAlert size={13} />}
-                <Chip.Label>{chipLabel}</Chip.Label>
-              </Chip>
+                {chipLabel}
+              </span>
               <Button
-                type="button"
-                variant={approved ? "tertiary" : "secondary"}
+                variant={approved ? "ghost" : "secondary"}
                 size="sm"
-                onPress={() => onRequestPermission(id)}
-                isDisabled={loading}
+                onClick={() => onRequestPermission(id)}
+                disabled={loading}
               >
                 {approved ? t("permissions.checkAgain") : t("permissions.allow")}
               </Button>
@@ -131,14 +151,9 @@ export function MacOSPermissionsSection({
         })}
       </div>
 
-      <div className="macos-permissions-actions">
-        <Button
-          type="button"
-          variant="secondary"
-          onPress={onRefresh}
-          isPending={loading}
-        >
-          <RefreshCw size={16} />
+      <div>
+        <Button variant="secondary" onClick={onRefresh} disabled={loading}>
+          <RefreshCw size={16} className={cn(loading && "animate-spin")} />
           {t("permissions.refresh")}
         </Button>
       </div>

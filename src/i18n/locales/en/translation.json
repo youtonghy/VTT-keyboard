@@ -257,6 +257,8 @@
     "variables": "Variable Range",
     "variablesPlaceholder": "Separate with commas (`,` or `，`), e.g., English, Japanese",
     "promptTemplate": "Prompt Template",
+    "insertPlaceholder": "Insert placeholder:",
+    "insertPlaceholderAria": "Insert {{placeholder}}",
     "add": "Add Trigger",
     "remove": "Remove",
     "moveUp": "Move Up",

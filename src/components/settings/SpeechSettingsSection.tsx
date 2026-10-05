@@ -1,8 +1,8 @@
 import type { TFunction } from "i18next";
-import { Button } from "@heroui/react";
+import { Button } from "@/components/motion/button/base";
 import { RefreshCw, Download, Square, Trash2, Play } from "lucide-react";
 import { CustomSelect } from "../CustomSelect";
-import { HeroCheckboxField, HeroField, HeroInputField } from "../HeroField";
+import { ToggleField, Field, InputField } from "../FormFields";
 import { NumberWheelInput } from "../NumberWheelInput";
 import { SettingsCard } from "../SettingsCard";
 import type { SenseVoiceProgress, SenseVoiceStatus } from "../../hooks/useSenseVoice";
@@ -96,7 +96,7 @@ export function SpeechSettingsSection({
         title={t("speech.title")}
         description={t("speech.description")}
       >
-        <HeroField label={t("speech.provider")}><CustomSelect
+        <Field label={t("speech.provider")}><CustomSelect
             value={draft.provider}
             onChange={(value) =>
               updateDraft((prev) => ({
@@ -116,15 +116,15 @@ export function SpeechSettingsSection({
               }))
             }
             groups={providerGroups}
-           /></HeroField>
+           /></Field>
         {privacyModeEnabled ? (
-          <div className="sensevoice-hint">{t("speech.privacyModeLocalOnly")}</div>
+          <div className="text-muted-foreground text-xs leading-5">{t("speech.privacyModeLocalOnly")}</div>
         ) : null}
       </SettingsCard>
 
       {draft.provider === "openai" ? (
         <SettingsCard title="OpenAI">
-          <HeroInputField
+          <InputField
             label={t("openai.apiBase")}
             value={draft.openai.apiBase}
             onChange={(value) =>
@@ -134,7 +134,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("openai.apiKey")}
             value={draft.openai.apiKey}
             type="password"
@@ -145,7 +145,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.model")}
             value={draft.openai.speechToText.model}
             onChange={(value) =>
@@ -161,7 +161,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.language")}
             value={draft.openai.speechToText.language}
             onChange={(value) =>
@@ -177,7 +177,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.prompt")}
             value={draft.openai.speechToText.prompt}
             onChange={(value) =>
@@ -193,7 +193,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.responseFormat")}
             value={draft.openai.speechToText.responseFormat}
             onChange={(value) =>
@@ -209,7 +209,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroField label={t("speech.temperature")}><NumberWheelInput
+          <Field label={t("speech.temperature")}><NumberWheelInput
               step={0.1}
               value={draft.openai.speechToText.temperature}
               onChange={(value) =>
@@ -224,8 +224,8 @@ export function SpeechSettingsSection({
                   },
                 }))
               }
-             /></HeroField>
-          <HeroInputField
+             /></Field>
+          <InputField
             label={t("speech.chunkingStrategy")}
             value={draft.openai.speechToText.chunkingStrategy}
             onChange={(value) =>
@@ -241,7 +241,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.timestampGranularities")}
             value={listToString(draft.openai.speechToText.timestampGranularities)}
             onChange={(value) =>
@@ -257,7 +257,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.include")}
             value={listToString(draft.openai.speechToText.include)}
             onChange={(value) =>
@@ -273,7 +273,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.knownSpeakerNames")}
             value={listToString(draft.openai.speechToText.knownSpeakerNames)}
             onChange={(value) =>
@@ -289,7 +289,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("speech.knownSpeakerReferences")}
             value={listToString(draft.openai.speechToText.knownSpeakerReferences)}
             onChange={(value) =>
@@ -305,7 +305,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroCheckboxField
+          <ToggleField
             label={t("speech.stream")}
             isSelected={draft.openai.speechToText.stream}
             onChange={(value) =>
@@ -326,7 +326,7 @@ export function SpeechSettingsSection({
 
       {draft.provider === "volcengine" ? (
         <SettingsCard title={t("speech.volcengine")}>
-          <HeroInputField
+          <InputField
             label={t("volcengine.appId")}
             value={draft.volcengine.appId}
             onChange={(value) =>
@@ -336,7 +336,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroInputField
+          <InputField
             label={t("volcengine.accessToken")}
             value={draft.volcengine.accessToken}
             type="password"
@@ -347,7 +347,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroField label={t("volcengine.language")}><CustomSelect
+          <Field label={t("volcengine.language")}><CustomSelect
               value={draft.volcengine.language}
               onChange={(value) =>
                 updateDraft((prev) => ({
@@ -362,8 +362,8 @@ export function SpeechSettingsSection({
                 { value: "ja-JP", label: t("volcengine.langJaJP") },
                 { value: "ko-KR", label: t("volcengine.langKoKR") },
               ]}
-             /></HeroField>
-          <HeroCheckboxField
+             /></Field>
+          <ToggleField
             label={t("volcengine.useStreaming")}
             isSelected={draft.volcengine.useStreaming}
             onChange={(value) =>
@@ -373,7 +373,7 @@ export function SpeechSettingsSection({
                 }))
             }
           />
-          <HeroCheckboxField
+          <ToggleField
             label={t("volcengine.useFast")}
             isSelected={draft.volcengine.useFast}
             onChange={(value) =>
@@ -405,7 +405,7 @@ export function SpeechSettingsSection({
                 : draft.aliyun.apiKeys.beijing;
             return (
               <>
-                <HeroField label={t("speech.region")}><CustomSelect
+                <Field label={t("speech.region")}><CustomSelect
                     value={selectedRegion}
                     onChange={(value) =>
                       updateDraft((prev) => ({
@@ -423,11 +423,11 @@ export function SpeechSettingsSection({
                       { value: "beijing", label: t("aliyun.regionBeijing") },
                       { value: "singapore", label: t("aliyun.regionSingapore") },
                     ]}
-                   /></HeroField>
+                   /></Field>
                 {isParaformer ? (
-                  <div className="sensevoice-hint">{t("aliyun.paraformerRegionHint")}</div>
+                  <div className="text-muted-foreground text-xs leading-5">{t("aliyun.paraformerRegionHint")}</div>
                 ) : null}
-                <HeroInputField
+                <InputField
             label={t("aliyun.apiKey")}
             value={regionApiKey}
             type="password"
@@ -451,7 +451,7 @@ export function SpeechSettingsSection({
           />
                 {isParaformer ? (
                   <>
-                    <HeroInputField
+                    <InputField
             label={t("aliyun.languageHints")}
             value={listToString(draft.aliyun.paraformer.languageHints)}
             onChange={(value) =>
@@ -467,7 +467,7 @@ export function SpeechSettingsSection({
                           }))
             }
           />
-                    <HeroInputField
+                    <InputField
             label={t("aliyun.vocabularyId")}
             value={draft.aliyun.paraformer.vocabularyId}
             onChange={(value) =>
@@ -485,7 +485,7 @@ export function SpeechSettingsSection({
           />
                   </>
                 ) : (
-                  <HeroInputField
+                  <InputField
             label={t("aliyun.vocabularyId")}
             value={draft.aliyun.asr.vocabularyId}
             onChange={(value) =>
@@ -544,7 +544,7 @@ export function SpeechSettingsSection({
 
             return (
               <>
-                <div className="sensevoice-summary">
+                <div className="flex flex-wrap gap-2 text-xs [&>span]:rounded-full [&>span]:bg-muted [&>span]:px-3 [&>span]:py-1.5 [&>span]:text-muted-foreground">
                   <span>
                     {t("sensevoice.installed")}:{" "}
                     {installed ? t("sensevoice.yes") : t("sensevoice.no")}
@@ -559,7 +559,7 @@ export function SpeechSettingsSection({
                   </span>
                 </div>
 
-                <HeroField label={t("sensevoice.localModel")}><CustomSelect
+                <Field label={t("sensevoice.localModel")}><CustomSelect
                     value={selectedLocalModel}
                     disabled={busy}
                     onChange={(value) => {
@@ -586,10 +586,10 @@ export function SpeechSettingsSection({
                       });
                     }}
                     options={localModelOptions}
-                   /></HeroField>
+                   /></Field>
 
                 {languageOptions.length > 0 ? (
-                  <HeroField label={t("sensevoice.language")}><CustomSelect
+                  <Field label={t("sensevoice.language")}><CustomSelect
                       value={normalizeSenseVoiceLanguage(
                         draft.sensevoice.language,
                         selectedLocalModel
@@ -609,13 +609,13 @@ export function SpeechSettingsSection({
                         void handleSenseVoiceConfigSave({ language: nextLanguage });
                       }}
                       options={languageOptions}
-                     /></HeroField>
+                     /></Field>
                 ) : null}
 
-                <div className="sensevoice-hint">{t("sensevoice.nativeCpuHint")}</div>
+                <div className="text-muted-foreground text-xs leading-5">{t("sensevoice.nativeCpuHint")}</div>
 
                 {showProgressBar ? (
-                  <div className="sensevoice-progress">
+                  <div className="flex items-center justify-between gap-3 rounded-2xl bg-muted px-4 py-3 text-sm">
                     <span>{sensevoiceProgress?.message}</span>
                     <span>
                       {sensevoiceProgress?.percent !== undefined
@@ -628,7 +628,7 @@ export function SpeechSettingsSection({
                 {showProgressBar &&
                 (sensevoiceProgress?.downloadedBytes !== undefined ||
                   sensevoiceProgress?.totalBytes !== undefined) ? (
-                  <div className="sensevoice-hint">
+                  <div className="text-muted-foreground text-xs leading-5">
                     {sensevoiceProgress?.totalBytes !== undefined
                       ? `${formatBytes(sensevoiceProgress?.downloadedBytes)} / ${formatBytes(
                           sensevoiceProgress?.totalBytes
@@ -638,47 +638,47 @@ export function SpeechSettingsSection({
                 ) : null}
 
                 {progressStage === "prepare" || progressStage === "download" ? (
-                  <div className="sensevoice-hint">{t("sensevoice.installingHint")}</div>
+                  <div className="text-muted-foreground text-xs leading-5">{t("sensevoice.installingHint")}</div>
                 ) : null}
 
                 {stageLabelKey ? (
-                  <div className="sensevoice-hint">
+                  <div className="text-muted-foreground text-xs leading-5">
                     {t(`sensevoice.stageStatus.${stageLabelKey}`)}
                   </div>
                 ) : null}
 
                 {import.meta.env.DEV ? (
-                  <div className="sensevoice-hint">{t("sensevoice.devConsoleHint")}</div>
+                  <div className="text-muted-foreground text-xs leading-5">{t("sensevoice.devConsoleHint")}</div>
                 ) : null}
 
                 {sensevoiceLogLines.length > 0 ? (
-                  <div className="sensevoice-log">
-                    <div className="sensevoice-log-header">
-                      <div className="sensevoice-log-title">{t("sensevoice.logTitle")}</div>
+                  <div className="grid gap-2 rounded-2xl border border-border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-medium text-sm">{t("sensevoice.logTitle")}</div>
                       <Button
                         type="button"
-                        className="sensevoice-log-toggle"
                         variant="secondary"
-                        onPress={() => setSensevoiceLogsExpanded((prev) => !prev)}
+                        size="sm"
+                        onClick={() => setSensevoiceLogsExpanded((prev) => !prev)}
                       >
                         {sensevoiceLogsExpanded
                           ? t("sensevoice.logCollapse")
                           : t("sensevoice.logExpand")}
                       </Button>
                     </div>
-                    {sensevoiceLogsExpanded ? <pre>{sensevoiceLogLines.join("\n")}</pre> : null}
+                    {sensevoiceLogsExpanded ? <pre className="max-h-60 overflow-auto rounded-xl bg-muted p-3 font-mono text-[11px] leading-5 whitespace-pre-wrap">{sensevoiceLogLines.join("\n")}</pre> : null}
                   </div>
                 ) : null}
 
-                {lastError ? <div className="sensevoice-error">{lastError}</div> : null}
+                {lastError ? <div className="rounded-2xl bg-destructive/10 px-4 py-3 text-destructive text-sm">{lastError}</div> : null}
 
-                <div className="button-row">
+                <div className="flex flex-wrap items-center gap-2">
                   {!installed ? (
                     <Button
                       type="button"
                       variant="primary"
-                      onPress={handleSenseVoicePrepare}
-                      isDisabled={busy}
+                      onClick={handleSenseVoicePrepare}
+                      disabled={busy}
                     >
                       <Download size={16} />
                       {t("sensevoice.prepare")}
@@ -688,8 +688,8 @@ export function SpeechSettingsSection({
                     <Button
                       type="button"
                       variant="primary"
-                      onPress={handleSenseVoiceStart}
-                      isDisabled={busy}
+                      onClick={handleSenseVoiceStart}
+                      disabled={busy}
                     >
                       <Play size={16} />
                       {t("sensevoice.load")}
@@ -699,8 +699,8 @@ export function SpeechSettingsSection({
                     <Button
                       type="button"
                       variant="secondary"
-                      onPress={handleSenseVoiceStop}
-                      isDisabled={sensevoiceLoading}
+                      onClick={handleSenseVoiceStop}
+                      disabled={sensevoiceLoading}
                     >
                       <Square size={16} />
                       {t("sensevoice.unload")}
@@ -710,8 +710,8 @@ export function SpeechSettingsSection({
                     <Button
                       type="button"
                       variant="secondary"
-                      onPress={handleSenseVoiceRemoveModel}
-                      isDisabled={busy}
+                      onClick={handleSenseVoiceRemoveModel}
+                      disabled={busy}
                     >
                       <Trash2 size={16} />
                       {t("sensevoice.removeModel")}
@@ -719,10 +719,11 @@ export function SpeechSettingsSection({
                   ) : null}
                   <Button
                     type="button"
-                    variant="tertiary"
-                    isIconOnly
-                    isDisabled={busy}
-                    onPress={() => void refreshSenseVoiceStatus()}
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    disabled={busy}
+                    onClick={() => void refreshSenseVoiceStatus()}
                     aria-label={t("sensevoice.refresh")}
                   >
                     <RefreshCw size={16} />

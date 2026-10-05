@@ -1,6 +1,14 @@
-import { Info } from "lucide-react";
-import { Button, Card, Input } from "@heroui/react";
+import { ArrowDown, ArrowUp, PanelLeft, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/motion/button/base";
+import {
+  AnimatedSidebarInset,
+  AnimatedSidebarProvider,
+  AnimatedSidebarTrigger,
+} from "@/components/motion/animated-sidebar";
+import { cn } from "@/lib/utils";
 import { Tooltip } from "./components/Tooltip";
+import { HintIcon } from "./components/HintIcon";
+import { AppSidebar } from "./components/AppSidebar";
 import { PromptTemplateEditor } from "./components/PromptTemplateEditor";
 import { SegmentedControl } from "./components/SegmentedControl";
 import { Toaster, toast } from "sonner";
@@ -12,9 +20,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
-import { SettingsTabsNav } from "./components/SettingsTabsNav";
 import { SettingsCard } from "./components/SettingsCard";
-import { HeroCheckboxField, HeroField, HeroInputField } from "./components/HeroField";
+import { Field, InputField, ToggleField, inputClassName } from "./components/FormFields";
 import { SpeechSettingsSection } from "./components/settings/SpeechSettingsSection";
 import { TextProcessingSettingsSection } from "./components/settings/TextProcessingSettingsSection";
 import { RecordingSettingsSection } from "./components/settings/RecordingSettingsSection";
@@ -504,81 +511,88 @@ function App() {
     }
   };
 
+  const toasterTheme =
+    draft?.appearance?.theme === "dark"
+      ? "dark"
+      : draft?.appearance?.theme === "light"
+        ? "light"
+        : "system";
+
+  const titleBar = showCustomTitleBar ? (
+    <TitleBar
+      updateStatus={updater.status}
+      onInstallUpdate={updater.installUpdate}
+      onRetryUpdateCheck={updater.retryUpdateCheck}
+      onDismissUpdateError={updater.dismissUpdateError}
+    />
+  ) : null;
+
+  const nativeUpdateStatus = !showCustomTitleBar ? (
+    <UpdateStatusControl
+      className="native-update-banner"
+      updateStatus={updater.status}
+      onInstallUpdate={updater.installUpdate}
+      onRetryUpdateCheck={updater.retryUpdateCheck}
+      onDismissUpdateError={updater.dismissUpdateError}
+    />
+  ) : null;
+
   if (loading || !draft) {
     return (
       <>
-
-        <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
-
-        {showCustomTitleBar ? (
-          <TitleBar
-            updateStatus={updater.status}
-            onInstallUpdate={updater.installUpdate}
-            onRetryUpdateCheck={updater.retryUpdateCheck}
-            onDismissUpdateError={updater.dismissUpdateError}
-          />
-        ) : null}
-        <main className={`container loading ${showCustomTitleBar ? "has-custom-titlebar" : ""}`}>
-          {!showCustomTitleBar ? (
-            <UpdateStatusControl
-              className="native-update-banner"
-              updateStatus={updater.status}
-              onInstallUpdate={updater.installUpdate}
-              onRetryUpdateCheck={updater.retryUpdateCheck}
-              onDismissUpdateError={updater.dismissUpdateError}
-            />
-          ) : null}
+        <Toaster position="top-center" expand={false} theme={toasterTheme} />
+        {titleBar}
+        <main
+          className={cn(
+            "flex h-full flex-col items-center justify-center gap-3 text-muted-foreground text-sm",
+            showCustomTitleBar && "pt-10",
+          )}
+        >
+          {nativeUpdateStatus}
           <p>{t("app.loading")}</p>
         </main>
       </>
     );
   }
 
+  const activeLabel = navItems.find((item) => item.id === activeSection)?.label ?? "";
+
   return (
     <>
-
-      <Toaster position="top-center" expand={false} theme={draft?.appearance?.theme === "dark" ? "dark" : draft?.appearance?.theme === "light" ? "light" : "system"} />
-
-      {showCustomTitleBar ? (
-        <TitleBar
-          updateStatus={updater.status}
-          onInstallUpdate={updater.installUpdate}
-          onRetryUpdateCheck={updater.retryUpdateCheck}
-          onDismissUpdateError={updater.dismissUpdateError}
-        />
-      ) : null}
-      <main className={`container ${showCustomTitleBar ? "has-custom-titlebar" : ""}`}>
-        {!showCustomTitleBar ? (
-          <UpdateStatusControl
-            className="native-update-banner"
-            updateStatus={updater.status}
-            onInstallUpdate={updater.installUpdate}
-            onRetryUpdateCheck={updater.retryUpdateCheck}
-            onDismissUpdateError={updater.dismissUpdateError}
-          />
-        ) : null}
-        <header className="settings-hero">
-          <div>
-            <p className="settings-hero-eyebrow">VTT Keyboard</p>
-            <h1>{t("app.title")}</h1>
-            <p>{t("app.subtitle")}</p>
-          </div>
-        </header>
-        <SettingsTabsNav
+      <Toaster position="top-center" expand={false} theme={toasterTheme} />
+      {titleBar}
+      <AnimatedSidebarProvider
+        className={cn("h-full min-h-0 overflow-hidden", showCustomTitleBar && "pt-10")}
+      >
+        <AppSidebar
           items={navItems}
-          activeKey={activeSection}
-          ariaLabel={t("nav.sectionsAria")}
-          onActiveKeyChange={setActiveSection}
+          activeId={activeSection}
+          onSelect={setActiveSection}
+          version={appInfo?.version}
         />
-
-        <section className="settings-content" aria-live="polite">
+        <AnimatedSidebarInset className="min-h-0">
+          <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
+            <AnimatedSidebarTrigger className="text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <PanelLeft aria-hidden="true" className="size-4" />
+            </AnimatedSidebarTrigger>
+            <div className="h-5 w-px bg-border" />
+            <h1 className="min-w-0 flex-1 truncate font-medium text-foreground text-sm">
+              {activeLabel}
+            </h1>
+            {nativeUpdateStatus}
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+        <section
+          className="mx-auto grid w-full max-w-3xl gap-5 px-5 py-6 sm:px-8"
+          aria-live="polite"
+        >
           {activeSection === "general" ? (
             <>
             <SettingsCard
               title={t("general.title")}
               description={t("general.description")}
             >
-              <HeroField label={t("general.theme")}>
+              <Field label={t("general.theme")}>
                 <SegmentedControl
                   value={draft.appearance.theme}
                   onChange={(value) =>
@@ -593,11 +607,11 @@ function App() {
                     { value: "dark", label: t("general.themeDark") },
                   ]}
                 />
-              </HeroField>
-              <HeroField label={t("general.language")}>
+              </Field>
+              <Field label={t("general.language")}>
                 <LanguageSwitcher />
-              </HeroField>
-              <HeroCheckboxField
+              </Field>
+              <ToggleField
                 label={t("general.privacyMode")}
                 isSelected={draft.privacy.enabled}
                 onChange={(value) =>
@@ -611,12 +625,10 @@ function App() {
                   }))
                 }
               >
-                <Tooltip content={t("general.privacyModeHint")}>
-                  <span className="hint-icon"><Info size={14} /></span>
-                </Tooltip>
-              </HeroCheckboxField>
+                <HintIcon content={t("general.privacyModeHint")} />
+              </ToggleField>
               {isMacOS ? (
-                <HeroCheckboxField
+                <ToggleField
                   label={t("general.hideDockIcon")}
                   isSelected={draft.startup.hideDockIcon}
                   onChange={(value) =>
@@ -626,12 +638,10 @@ function App() {
                     }))
                   }
                 >
-                  <Tooltip content={t("general.hideDockIconHint")}>
-                    <span className="hint-icon"><Info size={14} /></span>
-                  </Tooltip>
-                </HeroCheckboxField>
+                  <HintIcon content={t("general.hideDockIconHint")} />
+                </ToggleField>
               ) : null}
-              <HeroCheckboxField
+              <ToggleField
                 label={t("general.launchOnBoot")}
                 isSelected={draft.startup.launchOnBoot}
                 onChange={(value) =>
@@ -641,11 +651,9 @@ function App() {
                   }))
                 }
               >
-                <Tooltip content={t("general.launchOnBootHint")}>
-                  <span className="hint-icon"><Info size={14} /></span>
-                </Tooltip>
-              </HeroCheckboxField>
-              <HeroCheckboxField
+                <HintIcon content={t("general.launchOnBootHint")} />
+              </ToggleField>
+              <ToggleField
                 label={t("general.autoCheckUpdates")}
                 isSelected={draft.startup.autoCheckUpdates}
                 onChange={(value) =>
@@ -655,11 +663,9 @@ function App() {
                   }))
                 }
               >
-                <Tooltip content={t("general.autoCheckUpdatesHint")}>
-                  <span className="hint-icon"><Info size={14} /></span>
-                </Tooltip>
-              </HeroCheckboxField>
-              <HeroCheckboxField
+                <HintIcon content={t("general.autoCheckUpdatesHint")} />
+              </ToggleField>
+              <ToggleField
                 label={t("general.removeNewlines")}
                 isSelected={draft.output.removeNewlines}
                 onChange={(value) =>
@@ -669,17 +675,15 @@ function App() {
                   }))
                 }
               >
-                <Tooltip content={t("general.removeNewlinesHint")}>
-                  <span className="hint-icon"><Info size={14} /></span>
-                </Tooltip>
-              </HeroCheckboxField>
+                <HintIcon content={t("general.removeNewlinesHint")} />
+              </ToggleField>
             </SettingsCard>
             <SettingsCard title={t("data.title")} description={t("data.description")}>
-              <div className="button-row">
-                <Button type="button" variant="secondary" onPress={handleImport}>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={handleImport}>
                   {t("data.import")}
                 </Button>
-                <Button type="button" variant="secondary" onPress={handleExport}>
+                <Button type="button" variant="secondary" onClick={handleExport}>
                   {t("data.export")}
                 </Button>
               </div>
@@ -692,7 +696,7 @@ function App() {
               title={t("shortcut.title")}
               description={t("shortcut.description")}
             >
-              <HeroInputField
+              <InputField
                 label={t("shortcut.key")}
                 value={draft.shortcut.key}
                 onChange={(value) =>
@@ -702,18 +706,16 @@ function App() {
                   }))
                 }
               />
-              <div className="shortcut-actions">
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
                   variant="primary"
-                  onPress={() => setIsCapturing(true)}
-                  isDisabled={isCapturing}
+                  onClick={() => setIsCapturing(true)}
+                  disabled={isCapturing}
                 >
                   {isCapturing ? t("shortcut.capturing") : t("shortcut.capture")}
                 </Button>
-                <Tooltip content={t("shortcut.captureHint")}>
-                  <span className="hint-icon"><Info size={16} /></span>
-                </Tooltip>
+                <HintIcon content={t("shortcut.captureHint")} size={16} />
               </div>
             </SettingsCard>
           ) : null}
@@ -789,12 +791,13 @@ function App() {
               title={t("triggers.title")}
               description={t("triggers.description")}
             >
-              <div className="trigger-list">
+              <div className="grid gap-4">
                 {draft.triggers.map((card, index) => (
-                  <Card key={card.id} className="trigger-card">
-                    <Card.Header className="trigger-card-header">
-                      <Input
-                        className="trigger-title-input"
+                  <div key={card.id} className="grid gap-4 rounded-2xl border border-border bg-muted/30 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        className={cn(inputClassName, "min-w-40 flex-1 font-medium")}
+                        aria-label={t("triggers.title")}
                         value={card.title}
                         onChange={(event) =>
                           updateTrigger(card.id, (prev) => ({
@@ -803,35 +806,47 @@ function App() {
                           }))
                         }
                       />
-                      <div className="trigger-card-actions">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onPress={() => moveTrigger(index, index - 1)}
-                          isDisabled={index === 0}
-                        >
-                          {t("triggers.moveUp")}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onPress={() => moveTrigger(index, index + 1)}
-                          isDisabled={index === draft.triggers.length - 1}
-                        >
-                          {t("triggers.moveDown")}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="danger"
-                          onPress={() => removeTrigger(card.id)}
-                          isDisabled={card.locked}
-                        >
-                          {t("triggers.remove")}
-                        </Button>
+                      <div className="flex items-center gap-1">
+                        <Tooltip content={t("triggers.moveUp")}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-full"
+                            aria-label={t("triggers.moveUp")}
+                            onClick={() => moveTrigger(index, index - 1)}
+                            disabled={index === 0}
+                          >
+                            <ArrowUp size={16} />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip content={t("triggers.moveDown")}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-full"
+                            aria-label={t("triggers.moveDown")}
+                            onClick={() => moveTrigger(index, index + 1)}
+                            disabled={index === draft.triggers.length - 1}
+                          >
+                            <ArrowDown size={16} />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip content={t("triggers.remove")}>
+                          <Button
+                            variant="danger"
+                            size="icon"
+                            className="rounded-full"
+                            aria-label={t("triggers.remove")}
+                            onClick={() => removeTrigger(card.id)}
+                            disabled={card.locked}
+                          >
+                            <Trash2 size={16} />
+                          </Button>
+                        </Tooltip>
                       </div>
-                    </Card.Header>
-                    <Card.Content className="trigger-card-body">
-                      <HeroCheckboxField
+                    </div>
+                    <div className="grid gap-4">
+                      <ToggleField
                         label={t("triggers.enabled")}
                         isSelected={card.enabled}
                         onChange={(value) =>
@@ -841,7 +856,7 @@ function App() {
                           }))
                         }
                       />
-                      <HeroCheckboxField
+                      <ToggleField
                         label={t("triggers.autoApply")}
                         isSelected={card.autoApply}
                         onChange={(value) =>
@@ -851,7 +866,7 @@ function App() {
                           }))
                         }
                       />
-                      <HeroInputField
+                      <InputField
                         label={t("triggers.keyword")}
                         value={card.keyword}
                         onChange={(value) =>
@@ -861,7 +876,7 @@ function App() {
                           }))
                         }
                       />
-                      <HeroField label={t("triggers.variables")}>
+                      <Field label={t("triggers.variables")}>
                         <TagInput
                           values={card.variables}
                           placeholder={t("triggers.variablesPlaceholder")}
@@ -872,8 +887,8 @@ function App() {
                             }))
                           }
                         />
-                      </HeroField>
-                      <HeroField label={t("triggers.promptTemplate")}>
+                      </Field>
+                      <Field label={t("triggers.promptTemplate")}>
                         <PromptTemplateEditor
                           value={card.promptTemplate}
                           onChange={(value) =>
@@ -883,14 +898,17 @@ function App() {
                             }))
                           }
                         />
-                      </HeroField>
-                    </Card.Content>
-                  </Card>
+                      </Field>
+                    </div>
+                  </div>
                 ))}
               </div>
-              <Button type="button" variant="secondary" onPress={addTrigger}>
-                {t("triggers.add")}
-              </Button>
+              <div>
+                <Button type="button" variant="secondary" onClick={addTrigger}>
+                  <Plus size={16} />
+                  {t("triggers.add")}
+                </Button>
+              </div>
             </SettingsCard>
           ) : null}
 
@@ -899,7 +917,7 @@ function App() {
               title={t("history.title")}
               description={t("history.description")}
             >
-              <HeroCheckboxField
+              <ToggleField
                 label={t("history.enabled")}
                 isSelected={draft.history.enabled}
                 onChange={(value) =>
@@ -911,11 +929,11 @@ function App() {
               />
 
               {historyLoading ? (
-                <div className="history-empty">{t("history.loading")}</div>
+                <div className="rounded-2xl border border-dashed border-border py-10 text-center text-muted-foreground text-sm">{t("history.loading")}</div>
               ) : historyItems.length === 0 ? (
-                <div className="history-empty">{t("history.empty")}</div>
+                <div className="rounded-2xl border border-dashed border-border py-10 text-center text-muted-foreground text-sm">{t("history.empty")}</div>
               ) : (
-                <div className="history-list">
+                <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
                   {historyItems.map((item) => {
                     const isFailed = item.status === "failed";
                     const isKeywordTriggered = !isFailed && item.triggeredByKeyword;
@@ -931,34 +949,43 @@ function App() {
                     );
 
                     return (
-                      <Button
+                      <button
                         key={item.id}
                         type="button"
-                        className={`history-item ${isFailed ? "failed" : ""} ${isKeywordTriggered ? "triggered" : ""}`}
-                        variant="secondary"
-                        onPress={() => setSelectedHistoryItem(item)}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+                        onClick={() => setSelectedHistoryItem(item)}
                       >
                         <span
-                          className="history-item-content"
+                          aria-hidden="true"
+                          className={cn(
+                            "size-1.5 shrink-0 rounded-full",
+                            isFailed ? "bg-destructive" : isKeywordTriggered ? "bg-accent" : "bg-border-strong",
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            "min-w-0 flex-1 truncate text-sm",
+                            isFailed && "text-destructive",
+                          )}
                           title={truncated ? mainText : undefined}
                         >
                           {preview}
                         </span>
-                        <span className="history-item-time">
+                        <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
                           {formatHistoryTime(item.timestampMs)}
                         </span>
-                      </Button>
+                      </button>
                     );
                   })}
                 </div>
               )}
 
-              <div className="history-actions">
+              <div className="flex justify-end">
                 <Button
                   type="button"
                   variant="danger"
-                  onPress={handleClearHistory}
-                  isDisabled={historyItems.length === 0}
+                  onClick={handleClearHistory}
+                  disabled={historyItems.length === 0}
                 >
                   {t("history.clear")}
                 </Button>
@@ -972,37 +999,38 @@ function App() {
                 title={t("about.title")}
                 description={t("about.description")}
               >
-                <div className="field">
-                  <span>{t("about.appName")}</span>
-                  <span>{appInfo.name}</span>
-                </div>
-                <div className="field">
-                  <span>{t("about.version")}</span>
-                  <span>{appInfo.version}</span>
-                </div>
-                <div className="field">
-                  <span>{t("about.buildDate")}</span>
-                  <span>{appInfo.buildDate}</span>
-                </div>
-                <div className="field">
-                  <span>{t("about.author")}</span>
-                  <span>youtonghy</span>
-                </div>
-                <div className="field">
-                  <span>{t("about.website")}</span>
-                  <a
-                    href="https://vtt.tokisantike.net/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    https://vtt.tokisantike.net/
-                  </a>
-                </div>
+                <dl className="divide-y divide-border overflow-hidden rounded-2xl border border-border text-sm">
+                  {[
+                    { label: t("about.appName"), value: appInfo.name },
+                    { label: t("about.version"), value: appInfo.version },
+                    { label: t("about.buildDate"), value: appInfo.buildDate },
+                    { label: t("about.author"), value: "youtonghy" },
+                    {
+                      label: t("about.website"),
+                      value: (
+                        <a
+                          href="https://vtt.tokisantike.net/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          https://vtt.tokisantike.net/
+                        </a>
+                      ),
+                    },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-center justify-between gap-4 px-4 py-3">
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="m-0 min-w-0 truncate text-right font-medium">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
               </SettingsCard>
             ) : null
           ) : null}
         </section>
-      </main>
+          </div>
+        </AnimatedSidebarInset>
+      </AnimatedSidebarProvider>
       <HistoryDetailDialog
         item={selectedHistoryItem}
         isRetrying={Boolean(selectedHistoryItem && historyRetryingId === selectedHistoryItem.id)}

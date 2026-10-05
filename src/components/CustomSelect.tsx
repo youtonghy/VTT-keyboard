@@ -1,8 +1,11 @@
-import { HeroSelectControl } from "./HeroField";
+import { useMemo } from "react";
+import { SettingsSelect } from "@/components/premium/settings-pages/settings-shared";
+import type { SelectOption as BeuiSelectOption } from "@/components/premium/select/select";
 
 export interface SelectOption {
   value: string;
   label: string;
+  description?: string;
 }
 
 export interface SelectOptionGroup {
@@ -16,16 +19,40 @@ interface CustomSelectProps {
   groups?: SelectOptionGroup[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  ariaLabel?: string;
 }
 
-export function CustomSelect({ value, options, groups, onChange, disabled = false }: CustomSelectProps) {
+const toBeuiOption = (option: SelectOption, group?: string): BeuiSelectOption => ({
+  id: option.value,
+  label: option.label,
+  description: option.description,
+  group,
+});
+
+export function CustomSelect({
+  value,
+  options,
+  groups,
+  onChange,
+  disabled = false,
+  ariaLabel,
+}: CustomSelectProps) {
+  const beuiOptions = useMemo(
+    () =>
+      groups
+        ? groups.flatMap((group) => group.options.map((option) => toBeuiOption(option, group.label)))
+        : (options ?? []).map((option) => toBeuiOption(option)),
+    [groups, options],
+  );
+
   return (
-    <HeroSelectControl
+    <SettingsSelect
+      options={beuiOptions}
       value={value}
-      options={options}
-      groups={groups}
-      onChange={onChange}
+      onValueChange={onChange}
       disabled={disabled}
+      label={ariaLabel}
+      placeholder=""
     />
   );
 }

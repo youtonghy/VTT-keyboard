@@ -1,5 +1,4 @@
-
-import { Button } from "@heroui/react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs";
 
 export interface SegmentedControlOption {
   value: string;
@@ -10,27 +9,18 @@ interface SegmentedControlProps {
   value: string;
   options: SegmentedControlOption[];
   onChange: (value: string) => void;
-  disabled?: boolean;
 }
 
-export function SegmentedControl({ value, options, onChange, disabled }: SegmentedControlProps) {
+export function SegmentedControl({ value, options, onChange }: SegmentedControlProps) {
   return (
-    <div className={`segmented-control ${disabled ? "disabled" : ""}`}>
-      {options.map((option) => {
-        const isActive = option.value === value;
-        return (
-          <Button
-            key={option.value}
-            type="button"
-            className={`segmented-control-button ${isActive ? "active" : ""}`}
-            variant={isActive ? "primary" : "ghost"}
-            onPress={() => !disabled && onChange(option.value)}
-            isDisabled={disabled}
-          >
+    <Tabs value={value} onValueChange={onChange} variant="pill">
+      <TabsList className="border border-border">
+        {options.map((option) => (
+          <TabsTrigger key={option.value} value={option.value}>
             {option.label}
-          </Button>
-        );
-      })}
-    </div>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }
