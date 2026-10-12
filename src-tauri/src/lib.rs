@@ -1,5 +1,7 @@
 mod aliyun_realtime;
 mod audio_processing;
+#[cfg(target_os = "linux")]
+mod linux_input;
 mod openai;
 mod paste;
 mod permissions;
@@ -15,6 +17,8 @@ mod triggers;
 mod updater;
 mod util;
 mod volcengine;
+#[cfg(target_os = "linux")]
+mod wayland_shortcuts;
 
 use permissions::MacosPermissionStatus;
 use recorder::{
@@ -29,6 +33,7 @@ use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent, Wry};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 use transcription_dispatcher::TranscriptionDispatcher;
 use updater::UpdateManager;
 
@@ -465,27 +470,137 @@ fn retry_update_check(app: AppHandle, state: State<AppState>) -> Result<(), Stri
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformCapabilities {
+    /// Running in a Wayland session: global shortcuts go through the XDG portal.
+    wayland_session: bool,
+    /// The native status overlay is available; otherwise notifications are used.
+    status_overlay: bool,
+}
+
+#[tauri::command]
+fn get_platform_capabilities() -> PlatformCapabilities {
+    #[cfg(target_os = "linux")]
+    let wayland_session = linux_input::is_wayland_session();
+    #[cfg(not(target_os = "linux"))]
+    let wayland_session = false;
+    PlatformCapabilities {
+        wayland_session,
+        status_overlay: status_native::is_available(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn register_wayland_shortcut(
+    app: AppHandle,
+    accelerator: String,
+) -> Result<wayland_shortcuts::WaylandShortcutInfo, String> {
+    wayland_shortcuts::register(app, accelerator).await
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+async fn register_wayland_shortcut(_accelerator: String) -> Result<(), String> {
+    Err("Wayland shortcuts are only available on Linux".to_string())
+}
+
+#[tauri::command]
+async fn unregister_wayland_shortcut() {
+    #[cfg(target_os = "linux")]
+    wayland_shortcuts::unregister().await;
+}
+
+/// Command-line flag that toggles recording in the running instance. Lets users
+/// bind a desktop shortcut where the GlobalShortcuts portal is unavailable.
+const TOGGLE_RECORDING_ARG: &str = "--toggle-recording";
+
+fn handle_second_instance(app: &AppHandle, args: &[String]) {
+    if args.iter().any(|arg| arg == TOGGLE_RECORDING_ARG) {
+        // A press immediately followed by a release behaves like a short tap (toggle).
+        let _ = app.emit(
+            "recording-shortcut",
+            serde_json::json!({ "state": "Pressed" }),
+        );
+        let _ = app.emit(
+            "recording-shortcut",
+            serde_json::json!({ "state": "Released" }),
+        );
+        return;
+    }
+    // A duplicate autostart launch should stay in the background.
+    if args.iter().any(|arg| arg == "--autostart") {
+        return;
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[tauri::command]
 fn get_app_info() -> serde_json::Value {
     serde_json::json!({
         "buildDate": env!("BUILD_DATE"),
         "platform": std::env::consts::OS,
         "arch": std::env::consts::ARCH,
+        "toggleCommand": toggle_recording_command(),
     })
+}
+
+/// Shell command that toggles recording, for binding in desktop shortcut settings.
+/// AppImages run from a temporary mount, so prefer the stable `$APPIMAGE` path.
+fn toggle_recording_command() -> String {
+    let program = std::env::var_os("APPIMAGE")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_exe().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "vtt-keyboard".to_string());
+    let program = if program.contains(char::is_whitespace) {
+        format!("\"{program}\"")
+    } else {
+        program
+    };
+    format!("{program} {TOGGLE_RECORDING_ARG}")
+}
+
+/// Remember size/position/maximized only; visibility follows autostart and
+/// decorations are forced off at startup on non-macOS platforms.
+fn window_state_flags() -> StateFlags {
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Linux initializes the GTK overlay inside `setup`, once Tauri owns the GTK main thread.
+    #[cfg(not(target_os = "linux"))]
     if !status_native::init() {
         dev_eprintln!("warning: failed to initialize native status overlay");
     }
 
     tauri::Builder::default()
+        // Must be registered first so a second launch exits before initializing anything.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            handle_second_instance(app, &args);
+        }))
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(window_state_flags())
+                .build(),
+        )
         .setup(|app| {
+            // `setup` runs on the main thread, where GTK has already been initialized.
+            #[cfg(target_os = "linux")]
+            if !status_native::init() {
+                dev_eprintln!("warning: native status overlay unavailable, using notifications");
+            }
+
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())
@@ -500,6 +615,11 @@ pub fn run() {
             }
 
             let app_handle = app.handle();
+            status_native::set_notification_app(app_handle.clone());
+            #[cfg(target_os = "linux")]
+            if let Ok(dir) = app_handle.path().app_local_data_dir() {
+                linux_input::init(dir);
+            }
             let store = SettingsStore::new(app_handle.clone());
             let startup_settings = store.load().ok();
             if let Some(settings) = startup_settings.as_ref() {
@@ -568,6 +688,10 @@ pub fn run() {
                                 dev_eprintln!("failed to abort recording on window close: {_err}");
                             }
                         }
+                        // Hiding to tray never fires the plugin's exit-time save, so persist now.
+                        let _ = window_clone
+                            .app_handle()
+                            .save_window_state(window_state_flags());
                         let _ = window_clone.hide();
                     }
                 });
@@ -586,8 +710,7 @@ pub fn run() {
                 if settings.provider != TranscriptionProvider::Sensevoice {
                     return;
                 }
-                let model_ready =
-                    sensevoice::selected_model_ready(&startup_app, &startup_store);
+                let model_ready = sensevoice::selected_model_ready(&startup_app, &startup_store);
                 if !model_ready {
                     if !is_autostart_launch {
                         let _ = startup_app.emit("sensevoice-startup-download-required", ());
@@ -603,8 +726,7 @@ pub fn run() {
                     dev_eprintln!("failed to lock SenseVoice manager on startup");
                     return;
                 };
-                if let Err(_err) =
-                    manager.start_service_async(&startup_app, &state.settings_store)
+                if let Err(_err) = manager.start_service_async(&startup_app, &state.settings_store)
                 {
                     dev_eprintln!("failed to auto start SenseVoice on startup: {_err}");
                 }
@@ -641,7 +763,10 @@ pub fn run() {
             install_downloaded_update,
             dismiss_update_error,
             retry_update_check,
-            get_app_info
+            get_app_info,
+            get_platform_capabilities,
+            register_wayland_shortcut,
+            unregister_wayland_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

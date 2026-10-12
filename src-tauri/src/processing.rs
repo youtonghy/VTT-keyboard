@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 /// when hiding the status window after a delay.
 static STATUS_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+const COPIED_ONLY_STATUS: &str = "已复制，请手动粘贴";
+
 fn dev_log(_message: &str) {
     #[cfg(debug_assertions)]
     {
@@ -395,13 +397,20 @@ fn process_transcribed_text(
             }
         }
         dev_log("写入并粘贴处理后的文本");
-        if let Err(err) = paste::write_and_paste(&final_output) {
-            return post_trigger().build_error(
-                ProcessingFailureStage::Output,
-                format!("写入剪贴板失败: {err}"),
-            );
-        }
-        if options.report_status {
+        let outcome = match paste::write_and_paste(&final_output, settings.output.paste_shortcut) {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                return post_trigger().build_error(
+                    ProcessingFailureStage::Output,
+                    format!("写入剪贴板失败: {err}"),
+                );
+            }
+        };
+        if outcome == paste::PasteOutcome::CopiedOnly {
+            // No input backend could paste (e.g. Wayland without portal); always tell the user.
+            emit_status_detail("completed", COPIED_ONLY_STATUS);
+            status_native::notify_if_unavailable(COPIED_ONLY_STATUS);
+        } else if options.report_status {
             emit_status("completed");
         }
     }
@@ -438,6 +447,7 @@ pub fn emit_retryable_failure_status(error_text: &str, actions: StatusActionSet)
     let current_count = STATUS_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
     let text = failure_status(error_text);
     status_native::show_with_actions(StatusType::Error, &text, actions);
+    status_native::notify_if_unavailable(&text);
 
     if actions == StatusActionSet::None {
         thread::spawn(move || {
@@ -454,6 +464,9 @@ fn show_status(status_type: StatusType, text: &str) {
     let current_count = STATUS_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
 
     status_native::show(status_type, text);
+    if status_type == StatusType::Error {
+        status_native::notify_if_unavailable(text);
+    }
 
     // Auto-hide after 2 seconds for completed/error states
     // Only hide if no new status was shown during the delay

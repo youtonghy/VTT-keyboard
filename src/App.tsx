@@ -63,6 +63,7 @@ interface AppInfoPayload {
   buildDate: string;
   platform: string;
   arch: string;
+  toggleCommand: string;
 }
 
 const formatHistoryTime = (timestampMs: number) => {
@@ -115,6 +116,7 @@ function App() {
   const isMacOS = appInfo?.platform
     ? appInfo.platform === "macos"
     : navigator.userAgent.includes("Mac OS X");
+  const isLinux = appInfo?.platform === "linux";
   const showCustomTitleBar = !isMacOS;
 
   const { draft, updateDraft, handleImport, handleExport } = useSettingsSync({
@@ -190,7 +192,7 @@ function App() {
     return false;
   }, [isMacOS, refreshPermissions, t]);
 
-  const { isCapturing, setIsCapturing } = useShortcuts(
+  const { isCapturing, setIsCapturing, waylandStatus } = useShortcuts(
     draft?.shortcut.key,
     onShortcutCaptured,
     ensureMicrophonePermission
@@ -677,6 +679,30 @@ function App() {
               >
                 <HintIcon content={t("general.removeNewlinesHint")} />
               </ToggleField>
+              {isLinux ? (
+                <Field label={t("general.pasteShortcut")}>
+                  <div className="flex items-center gap-2">
+                    <SegmentedControl
+                      value={draft.output.pasteShortcut}
+                      onChange={(value) =>
+                        updateDraft((prev) => ({
+                          ...prev,
+                          output: {
+                            ...prev.output,
+                            pasteShortcut: value as Settings["output"]["pasteShortcut"],
+                          },
+                        }))
+                      }
+                      options={[
+                        { value: "ctrlV", label: "Ctrl+V" },
+                        { value: "ctrlShiftV", label: "Ctrl+Shift+V" },
+                        { value: "shiftInsert", label: "Shift+Insert" },
+                      ]}
+                    />
+                    <HintIcon content={t("general.pasteShortcutHint")} />
+                  </div>
+                </Field>
+              ) : null}
             </SettingsCard>
             <SettingsCard title={t("data.title")} description={t("data.description")}>
               <div className="flex flex-wrap gap-2">
@@ -717,6 +743,20 @@ function App() {
                 </Button>
                 <HintIcon content={t("shortcut.captureHint")} size={16} />
               </div>
+              {waylandStatus.kind === "registered" ? (
+                <p className="text-sm text-muted-foreground">
+                  {waylandStatus.trigger
+                    ? t("shortcut.waylandAssigned", { trigger: waylandStatus.trigger })
+                    : t("shortcut.waylandPending")}
+                </p>
+              ) : null}
+              {waylandStatus.kind === "unavailable" ? (
+                <p className="text-sm text-muted-foreground">
+                  {t("shortcut.waylandUnavailable", {
+                    command: appInfo?.toggleCommand ?? "vtt-keyboard --toggle-recording",
+                  })}
+                </p>
+              ) : null}
             </SettingsCard>
           ) : null}
 

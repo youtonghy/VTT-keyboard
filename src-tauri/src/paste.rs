@@ -1,7 +1,9 @@
 use crate::permissions;
+use crate::settings::PasteShortcut;
 use arboard::Clipboard;
 #[cfg(not(target_os = "macos"))]
-use enigo::{Enigo, Key, KeyboardControllable};
+use enigo::{Direction, Enigo, Key, Keyboard, Settings as EnigoSettings};
+use std::sync::{Mutex, OnceLock};
 use std::{thread, time::Duration};
 use thiserror::Error;
 
@@ -15,6 +17,11 @@ extern "C" {
     fn macos_send_paste_shortcut(prompt_for_accessibility: i32) -> i32;
 }
 
+/// Process-wide clipboard handle. On X11 the clipboard contents are served by
+/// this process, so dropping the handle right after writing can lose the text
+/// before the target app reads it (no clipboard manager on i3/sway etc.).
+static CLIPBOARD: OnceLock<Mutex<Option<Clipboard>>> = OnceLock::new();
+
 #[derive(Debug, Error)]
 pub enum PasteError {
     #[error("剪贴板写入失败: {0}")]
@@ -23,40 +30,135 @@ pub enum PasteError {
     Paste(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasteOutcome {
+    Pasted,
+    /// Text is on the clipboard but no input backend could send the paste keys
+    /// (e.g. Wayland without portal/wtype/ydotool). The user pastes manually.
+    CopiedOnly,
+}
+
 pub fn write_text(text: &str) -> Result<(), PasteError> {
-    let mut clipboard = Clipboard::new().map_err(|err| PasteError::Clipboard(err.to_string()))?;
+    write_text_with_primary(text, false)
+}
+
+fn write_text_with_primary(text: &str, also_primary: bool) -> Result<(), PasteError> {
+    let lock = CLIPBOARD.get_or_init(|| Mutex::new(None));
+    let mut guard = lock
+        .lock()
+        .map_err(|err| PasteError::Clipboard(err.to_string()))?;
+
+    let mut last_error = String::new();
+    // Retry once with a fresh handle in case the cached connection went stale.
+    for _ in 0..2 {
+        if guard.is_none() {
+            match Clipboard::new() {
+                Ok(clipboard) => *guard = Some(clipboard),
+                Err(err) => return Err(PasteError::Clipboard(err.to_string())),
+            }
+        }
+        let clipboard = guard.as_mut().expect("clipboard initialized above");
+        match set_clipboard_text(clipboard, text, also_primary) {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                last_error = err;
+                *guard = None;
+            }
+        }
+    }
+    Err(PasteError::Clipboard(last_error))
+}
+
+fn set_clipboard_text(
+    clipboard: &mut Clipboard,
+    text: &str,
+    also_primary: bool,
+) -> Result<(), String> {
     clipboard
         .set_text(text.to_string())
-        .map_err(|err| PasteError::Clipboard(err.to_string()))?;
+        .map_err(|err| err.to_string())?;
+    #[cfg(target_os = "linux")]
+    if also_primary {
+        use arboard::{LinuxClipboardKind, SetExtLinux};
+        clipboard
+            .set()
+            .clipboard(LinuxClipboardKind::Primary)
+            .text(text.to_string())
+            .map_err(|err| err.to_string())?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = also_primary;
     Ok(())
 }
 
-pub fn write_and_paste(text: &str) -> Result<(), PasteError> {
-    write_text(text)?;
+pub fn write_and_paste(text: &str, shortcut: PasteShortcut) -> Result<PasteOutcome, PasteError> {
+    let shortcut = effective_shortcut(shortcut);
+    write_text_with_primary(text, shortcut == PasteShortcut::ShiftInsert)?;
     if let Some(message) = permissions::missing_accessibility_permission_message() {
         return Err(PasteError::Paste(message));
     }
     thread::sleep(PASTEBOARD_SETTLE_DELAY);
-    send_paste_shortcut().map_err(|err| PasteError::Paste(err.to_string()))?;
-    Ok(())
+    send_paste_shortcut(shortcut).map_err(PasteError::Paste)
 }
 
-fn send_paste_shortcut() -> Result<(), String> {
+/// The paste key setting only applies on Linux; other platforms keep Ctrl/Cmd+V.
+fn effective_shortcut(shortcut: PasteShortcut) -> PasteShortcut {
+    if cfg!(target_os = "linux") {
+        shortcut
+    } else {
+        PasteShortcut::CtrlV
+    }
+}
+
+fn send_paste_shortcut(shortcut: PasteShortcut) -> Result<PasteOutcome, String> {
     #[cfg(target_os = "macos")]
     {
+        let _ = shortcut;
         let status = unsafe { macos_send_paste_shortcut(0) };
         if status == 0 {
-            return Ok(());
+            return Ok(PasteOutcome::Pasted);
         }
         return Err(describe_macos_paste_shortcut_status(status));
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let mut enigo = Enigo::new();
-        enigo.key_down(Key::Control);
-        enigo.key_click(Key::Layout('v'));
-        enigo.key_up(Key::Control);
-        Ok(())
+        #[cfg(target_os = "linux")]
+        if crate::linux_input::is_wayland_session() {
+            return Ok(crate::linux_input::send_paste_wayland(shortcut));
+        }
+        send_paste_with_enigo(shortcut).map(|()| PasteOutcome::Pasted)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn send_paste_with_enigo(shortcut: PasteShortcut) -> Result<(), String> {
+    let mut enigo = Enigo::new(&EnigoSettings::default()).map_err(|err| err.to_string())?;
+    let (modifiers, key) = enigo_combo(shortcut);
+    for modifier in modifiers {
+        enigo
+            .key(*modifier, Direction::Press)
+            .map_err(|err| err.to_string())?;
+    }
+    let click = enigo.key(key, Direction::Click);
+    // Always release modifiers, even if the main key failed.
+    for modifier in modifiers.iter().rev() {
+        let _ = enigo.key(*modifier, Direction::Release);
+    }
+    click.map_err(|err| err.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn enigo_combo(shortcut: PasteShortcut) -> (&'static [Key], Key) {
+    // Windows needs the virtual key; Unicode input does not combine with Ctrl.
+    #[cfg(target_os = "windows")]
+    let v_key = Key::V;
+    #[cfg(not(target_os = "windows"))]
+    let v_key = Key::Unicode('v');
+
+    match shortcut {
+        PasteShortcut::CtrlV => (&[Key::Control], v_key),
+        PasteShortcut::CtrlShiftV => (&[Key::Control, Key::Shift], v_key),
+        PasteShortcut::ShiftInsert => (&[Key::Shift], Key::Insert),
     }
 }
 
@@ -92,5 +194,33 @@ mod tests {
         let message = describe_macos_paste_shortcut_status(42);
 
         assert!(message.contains("42"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_respects_configured_paste_shortcut() {
+        use super::effective_shortcut;
+        use crate::settings::PasteShortcut;
+
+        assert_eq!(
+            effective_shortcut(PasteShortcut::ShiftInsert),
+            PasteShortcut::ShiftInsert
+        );
+        assert_eq!(
+            effective_shortcut(PasteShortcut::CtrlShiftV),
+            PasteShortcut::CtrlShiftV
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn shift_insert_uses_shift_modifier_only() {
+        use super::enigo_combo;
+        use crate::settings::PasteShortcut;
+        use enigo::Key;
+
+        let (modifiers, key) = enigo_combo(PasteShortcut::ShiftInsert);
+        assert_eq!(modifiers, &[Key::Shift]);
+        assert_eq!(key, Key::Insert);
     }
 }

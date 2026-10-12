@@ -146,7 +146,13 @@ impl SenseVoiceManager {
         let app_handle = app.clone();
         let store_clone = store.clone();
         thread::spawn(move || {
-            run_prepare_task(app_handle, store_clone, prepare_flag, local_model, models_root);
+            run_prepare_task(
+                app_handle,
+                store_clone,
+                prepare_flag,
+                local_model,
+                models_root,
+            );
         });
         self.status(app, store)
     }
@@ -192,7 +198,14 @@ impl SenseVoiceManager {
         let local_model = spec.model_key.to_string();
         let language = sensevoice.language;
         thread::spawn(move || {
-            run_load_task(app_handle, store_clone, cancel_flag, local_model, language, models_root);
+            run_load_task(
+                app_handle,
+                store_clone,
+                cancel_flag,
+                local_model,
+                language,
+                models_root,
+            );
         });
         self.status(app, store)
     }
@@ -379,8 +392,7 @@ fn run_prepare_task(
                 let still_selected =
                     normalize_local_model(&current.local_model) == local_model.as_str();
                 if still_selected {
-                    let _ =
-                        update_state_in_store(&store, "ready", "", Some(true), Some(true));
+                    let _ = update_state_in_store(&store, "ready", "", Some(true), Some(true));
                 } else {
                     let spec = spec_for_local_model(&current.local_model);
                     let ready = sherpa::model_is_ready(&models_root, spec);
@@ -434,12 +446,19 @@ fn run_load_task(
     })();
 
     if let Err(err) = result {
-        let cancelled =
-            is_start_cancelled_error(&err) || cancel_flag.load(Ordering::Relaxed);
+        let cancelled = is_start_cancelled_error(&err) || cancel_flag.load(Ordering::Relaxed);
         if cancelled {
             // 取消加载：模型文件仍在，回到 ready
             let _ = update_state_in_store(&store, "ready", "", None, None);
-            emit_progress_payload(&app, "stopped", "Model load cancelled", None, None, None, None);
+            emit_progress_payload(
+                &app,
+                "stopped",
+                "Model load cancelled",
+                None,
+                None,
+                None,
+                None,
+            );
         } else {
             let message = err.to_string();
             let _ = update_state_in_store(&store, "error", &message, None, None);

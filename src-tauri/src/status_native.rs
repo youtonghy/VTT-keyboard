@@ -6,8 +6,40 @@
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 use std::ffi::{c_char, CString};
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 use std::sync::{mpsc, Mutex, OnceLock};
+
+static OVERLAY_AVAILABLE: AtomicBool = AtomicBool::new(false);
+static NOTIFY_APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// Whether the native overlay initialized successfully. When false (e.g. GNOME
+/// Wayland without layer-shell), callers fall back to desktop notifications.
+pub fn is_available() -> bool {
+    OVERLAY_AVAILABLE.load(Ordering::Relaxed)
+}
+
+/// Registers the app handle used for desktop notification fallbacks.
+pub fn set_notification_app(app: tauri::AppHandle) {
+    let _ = NOTIFY_APP.set(app);
+}
+
+/// Shows a desktop notification when the native overlay is unavailable, so
+/// important states (errors, copy-only paste) are still visible to the user.
+pub fn notify_if_unavailable(text: &str) {
+    if is_available() {
+        return;
+    }
+    if let Some(app) = NOTIFY_APP.get() {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app
+            .notification()
+            .builder()
+            .title("VTT Keyboard")
+            .body(text)
+            .show();
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,10 +106,13 @@ extern "C" fn handle_overlay_action(action: StatusOverlayAction) {
 
 /// Initialize the native status overlay.
 /// Returns true on success, false on failure.
-/// Should be called once at application startup.
+/// Should be called once at application startup. On Linux this must run on the
+/// GTK main thread after the Tauri event loop has initialized GTK.
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 pub fn init() -> bool {
-    unsafe { status_overlay_init() == 0 }
+    let ok = unsafe { status_overlay_init() == 0 };
+    OVERLAY_AVAILABLE.store(ok, Ordering::Relaxed);
+    ok
 }
 
 /// Show the status overlay with the given status and text.

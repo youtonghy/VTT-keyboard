@@ -63,9 +63,8 @@ pub fn transcribe_wav(
     language: &str,
     audio_path: &Path,
 ) -> Result<NativeRuntimeTranscription, SenseVoiceError> {
-    let models_root = get_models_root().ok_or_else(|| {
-        SenseVoiceError::Config("本地模型目录尚未初始化".to_string())
-    })?;
+    let models_root = get_models_root()
+        .ok_or_else(|| SenseVoiceError::Config("本地模型目录尚未初始化".to_string()))?;
     let result = sherpa::transcribe_wav(&models_root, local_model, language, audio_path)?;
     Ok(NativeRuntimeTranscription {
         text: result.text,

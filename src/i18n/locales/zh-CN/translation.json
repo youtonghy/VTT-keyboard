@@ -34,6 +34,8 @@
                     "launchOnBootHint":  "系统登录后自动在后台启动，并默认隐藏到托盘。",
                     "removeNewlines":  "移除换行",
                     "removeNewlinesHint":  "启用后会删除转写和触发结果中的全部换行，确保输出始终为单行。",
+                    "pasteShortcut":  "粘贴组合键",
+                    "pasteShortcutHint":  "识别结果写入剪贴板后发送的按键。终端通常需要 Ctrl+Shift+V；Shift+Insert 在终端和大多数应用中都可用，会同时写入鼠标中键粘贴的选区。",
                     "launchOnBootSyncError":  "开机自启同步失败：{{error}}",
                     "autoCheckUpdates":  "自动检查更新",
                     "autoCheckUpdatesHint":  "应用启动后自动检查 GitHub Release 更新，并在发现新版本时提示你手动安装。"
@@ -61,7 +63,10 @@
                      "unregisterError":  "快捷键卸载失败，请检查权限",
                      "conflict":  "快捷键冲突：{{shortcut}}",
                      "startError":  "开始录音失败：{{error}}",
-                     "stopError":  "结束录音失败：{{error}}"
+                     "stopError":  "结束录音失败：{{error}}",
+                     "waylandAssigned":  "系统分配的快捷键：{{trigger}}",
+                     "waylandPending":  "快捷键已提交给系统，请在系统弹出的对话框或系统设置中确认组合键。",
+                     "waylandUnavailable":  "当前桌面不支持应用注册全局快捷键。请在系统设置中为命令 {{command}} 绑定快捷键（仅支持短按切换录音）。"
                  },
     "recording":  {
                       "title":  "录音设置",
@@ -155,10 +160,22 @@
                },
     "sensevoice":  {
                        "localModel":  "本地模型",
-                       "localModelSenseVoice":  "SenseVoice-Small（中/英/日/韩/粤，约 158MB）",
-                       "localModelParaformer":  "Paraformer-zh-small（中文轻量，约 74MB）",
-                       "localModelFireRed":  "FireRedASR2-CTC（中英+方言，约 497MB）",
-                       "localModelFunasrNano":  "Fun-ASR-Nano（最新中文模型，约 803MB，较慢）",
+                       "localModelSenseVoice":  "SenseVoice（中/英/日/韩/粤）",
+                       "localModelParaformer":  "Paraformer（中文）",
+                       "localModelFireRed":  "FireRedASR（中英+方言）",
+                       "localModelFunasrNano":  "Fun-ASR-Nano（最新中文模型，较慢）",
+                       "localModelSize":  "模型规模",
+                       "modelSize":  {
+                           "senseVoiceInt8":  "Small · int8（约 155MB，推荐）",
+                           "senseVoiceFp32":  "Small · fp32（约 1GB，全精度）",
+                           "paraformerSmall":  "Small（约 74MB）",
+                           "paraformerLargeInt8":  "Large · int8（约 217MB）",
+                           "paraformerLarge":  "Large · fp32（约 784MB）",
+                           "fireRedCtc":  "ASR2-CTC · int8（约 497MB）",
+                           "fireRedLarge":  "Large AED · int8（约 1.4GB，较慢）",
+                           "funasrNanoInt8":  "int8（约 803MB）",
+                           "funasrNanoFp32":  "fp32（约 1.3GB）"
+                       },
                        "language":  "识别语言",
                        "languageAuto":  "自动",
                        "languageZh":  "中文",

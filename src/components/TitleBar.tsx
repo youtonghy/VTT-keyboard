@@ -140,7 +140,7 @@ export function TitleBar({
   return (
     <div className="titlebar">
       <div className="titlebar-drag-region" data-tauri-drag-region>
-        <div className="titlebar-title">VTT Keyboard</div>
+        <div className="titlebar-title" data-tauri-drag-region>VTT Keyboard</div>
       </div>
       <div className="titlebar-controls">
         <UpdateStatusControl

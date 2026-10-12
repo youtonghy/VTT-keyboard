@@ -1,11 +1,17 @@
 /**
  * Native status overlay for Linux using GTK3 + Cairo.
  * Creates a floating, transparent, click-through window at the bottom center of the screen.
+ *
+ * X11: override-redirect popup window positioned manually.
+ * Wayland: requires gtk-layer-shell (loaded at runtime via dlopen) so the compositor
+ * places the surface on the overlay layer without stealing keyboard focus. Compositors
+ * without layer-shell support (e.g. GNOME) make init fail so the caller can fall back.
  */
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
 #include <cairo.h>
+#include <dlfcn.h>
 #include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
@@ -47,7 +53,26 @@ static char *g_currentText = NULL;
 static StatusOverlayActionCallback g_actionCallback = NULL;
 static gboolean g_initialized = FALSE;
 static gboolean g_visible = FALSE;
+static gboolean g_use_layer_shell = FALSE;
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// gtk-layer-shell enums (stable ABI since 0.1)
+#define LAYER_SHELL_LAYER_OVERLAY 3
+#define LAYER_SHELL_EDGE_BOTTOM 3
+#define LAYER_SHELL_KEYBOARD_MODE_NONE 0
+
+typedef struct {
+    gboolean (*is_supported)(void);
+    void (*init_for_window)(GtkWindow *window);
+    void (*set_namespace)(GtkWindow *window, const char *name_space);
+    void (*set_layer)(GtkWindow *window, int layer);
+    void (*set_anchor)(GtkWindow *window, int edge, gboolean anchor_to_edge);
+    void (*set_margin)(GtkWindow *window, int edge, int margin_size);
+    void (*set_keyboard_mode)(GtkWindow *window, int mode);
+    void (*set_keyboard_interactivity)(GtkWindow *window, gboolean interactivity);
+} LayerShellApi;
+
+static LayerShellApi g_layer_shell;
 
 typedef struct {
     StatusOverlayAction action;
@@ -362,8 +387,10 @@ static gboolean show_window_callback(gpointer data) {
         gtk_window_resize(GTK_WINDOW(g_window), window_width, WINDOW_HEIGHT);
         gtk_window_set_keep_above(GTK_WINDOW(g_window), TRUE);
         update_input_shape(window_width);
-        calculate_window_position(window_width, &x, &y);
-        gtk_window_move(GTK_WINDOW(g_window), x, y);
+        if (!g_use_layer_shell) {
+            calculate_window_position(window_width, &x, &y);
+            gtk_window_move(GTK_WINDOW(g_window), x, y);
+        }
         gtk_widget_show_all(g_window);
         gtk_window_present(GTK_WINDOW(g_window));
         g_visible = TRUE;
@@ -381,19 +408,63 @@ static gboolean hide_window_callback(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 
-// Initialize callback for main thread
-static gboolean init_window_callback(gpointer data) {
-    gboolean *result = (gboolean *)data;
-    
-    // Create popup window
-    g_window = gtk_window_new(GTK_WINDOW_POPUP);
+static gboolean is_wayland_display(GdkDisplay *display) {
+    return display && g_strcmp0(G_OBJECT_TYPE_NAME(display), "GdkWaylandDisplay") == 0;
+}
+
+static gboolean load_layer_shell(void) {
+    void *handle = dlopen("libgtk-layer-shell.so.0", RTLD_NOW | RTLD_LOCAL);
+    if (!handle) {
+        return FALSE;
+    }
+    g_layer_shell.is_supported = dlsym(handle, "gtk_layer_is_supported");
+    g_layer_shell.init_for_window = dlsym(handle, "gtk_layer_init_for_window");
+    g_layer_shell.set_namespace = dlsym(handle, "gtk_layer_set_namespace");
+    g_layer_shell.set_layer = dlsym(handle, "gtk_layer_set_layer");
+    g_layer_shell.set_anchor = dlsym(handle, "gtk_layer_set_anchor");
+    g_layer_shell.set_margin = dlsym(handle, "gtk_layer_set_margin");
+    g_layer_shell.set_keyboard_mode = dlsym(handle, "gtk_layer_set_keyboard_mode");
+    g_layer_shell.set_keyboard_interactivity = dlsym(handle, "gtk_layer_set_keyboard_interactivity");
+    if (!g_layer_shell.init_for_window || !g_layer_shell.set_layer ||
+        !g_layer_shell.set_anchor || !g_layer_shell.set_margin) {
+        return FALSE;
+    }
+    // gtk_layer_is_supported only exists since 0.6; older versions assume support.
+    return g_layer_shell.is_supported ? g_layer_shell.is_supported() : TRUE;
+}
+
+static void setup_layer_shell(GtkWindow *window) {
+    g_layer_shell.init_for_window(window);
+    if (g_layer_shell.set_namespace) {
+        g_layer_shell.set_namespace(window, "vtt-keyboard-status");
+    }
+    g_layer_shell.set_layer(window, LAYER_SHELL_LAYER_OVERLAY);
+    g_layer_shell.set_anchor(window, LAYER_SHELL_EDGE_BOTTOM, TRUE);
+    g_layer_shell.set_margin(window, LAYER_SHELL_EDGE_BOTTOM, BOTTOM_MARGIN);
+    if (g_layer_shell.set_keyboard_mode) {
+        g_layer_shell.set_keyboard_mode(window, LAYER_SHELL_KEYBOARD_MODE_NONE);
+    } else if (g_layer_shell.set_keyboard_interactivity) {
+        g_layer_shell.set_keyboard_interactivity(window, FALSE);
+    }
+}
+
+// Create the overlay window. Must run on the GTK main thread.
+static void create_window(void) {
+    // Layer-shell surfaces must start as toplevels; Wayland cannot map parentless popups.
+    g_window = gtk_window_new(g_use_layer_shell ? GTK_WINDOW_TOPLEVEL : GTK_WINDOW_POPUP);
     gtk_window_set_default_size(GTK_WINDOW(g_window), MAX_WINDOW_WIDTH, WINDOW_HEIGHT);
     gtk_window_set_resizable(GTK_WINDOW(g_window), FALSE);
     gtk_window_set_decorated(GTK_WINDOW(g_window), FALSE);
     gtk_window_set_skip_taskbar_hint(GTK_WINDOW(g_window), TRUE);
     gtk_window_set_skip_pager_hint(GTK_WINDOW(g_window), TRUE);
+    gtk_window_set_accept_focus(GTK_WINDOW(g_window), FALSE);
+    gtk_window_set_focus_on_map(GTK_WINDOW(g_window), FALSE);
     gtk_window_set_keep_above(GTK_WINDOW(g_window), TRUE);
     gtk_widget_set_app_paintable(g_window, TRUE);
+
+    if (g_use_layer_shell) {
+        setup_layer_shell(GTK_WINDOW(g_window));
+    }
     
     // Enable transparency
     setup_visual(g_window);
@@ -406,18 +477,17 @@ static gboolean init_window_callback(gpointer data) {
     gtk_widget_add_events(g_window, GDK_BUTTON_RELEASE_MASK);
     g_signal_connect(g_window, "button-release-event", G_CALLBACK(on_button_release), NULL);
     
-    // Set initial position
-    int x, y;
-    calculate_window_position(MAX_WINDOW_WIDTH, &x, &y);
-    gtk_window_move(GTK_WINDOW(g_window), x, y);
+    // Set initial position (layer-shell anchors handle placement on Wayland)
+    if (!g_use_layer_shell) {
+        int x, y;
+        calculate_window_position(MAX_WINDOW_WIDTH, &x, &y);
+        gtk_window_move(GTK_WINDOW(g_window), x, y);
+    }
     
     // Realize window but don't show yet
     gtk_widget_realize(g_window);
     
     update_input_shape(MAX_WINDOW_WIDTH);
-    
-    *result = (g_window != NULL);
-    return G_SOURCE_REMOVE;
 }
 
 // Cleanup callback for main thread
@@ -432,28 +502,25 @@ static gboolean cleanup_window_callback(gpointer data) {
 
 // Public API implementations
 
+// Must be called on the GTK main thread after GTK is initialized by the host app.
+// The window is created synchronously; show/hide may be called from any thread.
 int status_overlay_init(void) {
     if (g_initialized) return 0;
     
-    // Initialize GTK if needed
     if (!gtk_init_check(NULL, NULL)) {
         return -1;
     }
-    
-    gboolean result = FALSE;
-    
-    // Create window on main thread
-    if (g_main_context_is_owner(g_main_context_default())) {
-        init_window_callback(&result);
-    } else {
-        g_idle_add(init_window_callback, &result);
-        // Wait a bit for initialization
-        g_usleep(100000);  // 100ms
-        result = (g_window != NULL);
+
+    if (is_wayland_display(gdk_display_get_default())) {
+        if (!load_layer_shell()) {
+            return -1;
+        }
+        g_use_layer_shell = TRUE;
     }
     
-    g_initialized = result;
-    return result ? 0 : -1;
+    create_window();
+    g_initialized = g_window != NULL;
+    return g_initialized ? 0 : -1;
 }
 
 void status_overlay_show_actions(StatusType status, const char* text, StatusActionSet actions) {

@@ -91,7 +91,7 @@ const createDefaultSettings = (): Settings => ({
       variables: ["spoken style"],
     },
   ],
-  output: { removeNewlines: false },
+  output: { removeNewlines: false, pasteShortcut: "ctrlV" },
   appearance: { theme: "system" },
   startup: {
     launchOnBoot: false,
@@ -222,6 +222,7 @@ export async function setupDevTauriMocks() {
             buildDate: "dev-browser",
             platform: "macos",
             arch: "aarch64",
+            toggleCommand: "vtt-keyboard --toggle-recording",
           };
         case "list_audio_input_devices":
           return [
@@ -360,6 +361,12 @@ export async function setupDevTauriMocks() {
           return null;
         case "plugin:autostart|disable":
           mockAutostartEnabled = false;
+          return null;
+        case "get_platform_capabilities":
+          return { waylandSession: false, statusOverlay: true };
+        case "register_wayland_shortcut":
+          return { trigger: null };
+        case "unregister_wayland_shortcut":
           return null;
         case "plugin:global-shortcut|register":
         case "plugin:global-shortcut|unregister":

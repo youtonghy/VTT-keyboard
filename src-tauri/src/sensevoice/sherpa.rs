@@ -4,8 +4,9 @@ use crate::settings::TranscriptionAlignment;
 use bzip2::read::BzDecoder;
 use reqwest::blocking::Client;
 use sherpa_onnx::{
-    OfflineFireRedAsrCtcModelConfig, OfflineFunASRNanoModelConfig, OfflineParaformerModelConfig,
-    OfflineRecognizer, OfflineRecognizerConfig, OfflineSenseVoiceModelConfig,
+    OfflineFireRedAsrCtcModelConfig, OfflineFireRedAsrModelConfig, OfflineFunASRNanoModelConfig,
+    OfflineParaformerModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
+    OfflineSenseVoiceModelConfig,
 };
 use std::fs::{self, File};
 use std::io::{BufWriter, Read, Write};
@@ -86,9 +87,7 @@ where
     let _ = fs::remove_file(&archive_path);
 
     if !model_is_ready(models_root, spec) {
-        return Err(SenseVoiceError::Io(
-            "模型文件解压后不完整".to_string(),
-        ));
+        return Err(SenseVoiceError::Io("模型文件解压后不完整".to_string()));
     }
     Ok(())
 }
@@ -156,8 +155,7 @@ pub fn transcribe_wav(
 ) -> Result<SherpaResult, SenseVoiceError> {
     load_runtime(models_root, local_model, language)?;
     let spec = spec_for_local_model(local_model);
-    let samples = read_wav_as_f32(audio_path)?;
-    let sample_rate = read_sample_rate(audio_path)?;
+    let (samples, sample_rate) = read_wav_as_mono_f32(audio_path)?;
 
     let runtime = runtime_slot()
         .lock()
@@ -170,9 +168,9 @@ pub fn transcribe_wav(
     let stream = recognizer.create_stream();
     stream.accept_waveform(sample_rate as i32, &samples);
     recognizer.decode(&stream);
-    let result = stream.get_result().ok_or_else(|| {
-        SenseVoiceError::Parse("Sherpa recognition result is empty".to_string())
-    })?;
+    let result = stream
+        .get_result()
+        .ok_or_else(|| SenseVoiceError::Parse("Sherpa recognition result is empty".to_string()))?;
     let alignment = result
         .timestamps
         .as_ref()
@@ -202,66 +200,50 @@ fn create_recognizer(
     language: &str,
 ) -> Result<OfflineRecognizer, SenseVoiceError> {
     let mut config = OfflineRecognizerConfig::default();
-    let model_path = model_dir
-        .join("model.int8.onnx")
-        .to_string_lossy()
-        .to_string();
+    let model_file = |index: usize| -> Option<String> {
+        spec.model_files
+            .get(index)
+            .map(|name| model_dir.join(name).to_string_lossy().to_string())
+    };
+    let tokens_path = Some(
+        model_dir
+            .join(TOKENS_FILE_NAME)
+            .to_string_lossy()
+            .to_string(),
+    );
     match spec.kind {
         LocalModelKind::SenseVoice => {
             config.model_config.sense_voice = OfflineSenseVoiceModelConfig {
-                model: Some(model_path),
+                model: model_file(0),
                 language: Some(language.to_string()),
                 use_itn: true,
             };
-            config.model_config.tokens = Some(
-                model_dir
-                    .join(TOKENS_FILE_NAME)
-                    .to_string_lossy()
-                    .to_string(),
-            );
+            config.model_config.tokens = tokens_path;
         }
         LocalModelKind::Paraformer => {
             config.model_config.paraformer = OfflineParaformerModelConfig {
-                model: Some(model_path),
+                model: model_file(0),
             };
-            config.model_config.tokens = Some(
-                model_dir
-                    .join(TOKENS_FILE_NAME)
-                    .to_string_lossy()
-                    .to_string(),
-            );
+            config.model_config.tokens = tokens_path;
         }
         LocalModelKind::FireRedAsrCtc => {
             config.model_config.fire_red_asr_ctc = OfflineFireRedAsrCtcModelConfig {
-                model: Some(model_path),
+                model: model_file(0),
             };
-            config.model_config.tokens = Some(
-                model_dir
-                    .join(TOKENS_FILE_NAME)
-                    .to_string_lossy()
-                    .to_string(),
-            );
+            config.model_config.tokens = tokens_path;
+        }
+        LocalModelKind::FireRedAsr => {
+            config.model_config.fire_red_asr = OfflineFireRedAsrModelConfig {
+                encoder: model_file(0),
+                decoder: model_file(1),
+            };
+            config.model_config.tokens = tokens_path;
         }
         LocalModelKind::FunAsrNano => {
             config.model_config.funasr_nano = OfflineFunASRNanoModelConfig {
-                encoder_adaptor: Some(
-                    model_dir
-                        .join("encoder_adaptor.int8.onnx")
-                        .to_string_lossy()
-                        .to_string(),
-                ),
-                llm: Some(
-                    model_dir
-                        .join("llm.int8.onnx")
-                        .to_string_lossy()
-                        .to_string(),
-                ),
-                embedding: Some(
-                    model_dir
-                        .join("embedding.int8.onnx")
-                        .to_string_lossy()
-                        .to_string(),
-                ),
+                encoder_adaptor: model_file(0),
+                llm: model_file(1),
+                embedding: model_file(2),
                 tokenizer: Some(
                     model_dir
                         .join(FUNASR_NANO_TOKENIZER_DIR)
@@ -286,10 +268,7 @@ fn create_recognizer(
     }
     config.model_config.num_threads = 2;
     OfflineRecognizer::create(&config).ok_or_else(|| {
-        SenseVoiceError::Process(format!(
-            "failed to create {} recognizer",
-            spec.display_name
-        ))
+        SenseVoiceError::Process(format!("failed to create {} recognizer", spec.display_name))
     })
 }
 
@@ -428,21 +407,45 @@ fn extract_archive(archive_path: &Path, models_root: &Path) -> Result<(), SenseV
     Ok(())
 }
 
-fn read_wav_as_f32(audio_path: &Path) -> Result<Vec<f32>, SenseVoiceError> {
+/// 读取 WAV 并下混为单声道；sherpa-onnx 的 accept_waveform 只接受单声道样本，
+/// 直接传入交错的多声道数据会被当成双倍时长的音频，导致识别结果完全错误。
+fn read_wav_as_mono_f32(audio_path: &Path) -> Result<(Vec<f32>, u32), SenseVoiceError> {
     let mut reader =
         hound::WavReader::open(audio_path).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    reader
+    let spec = reader.spec();
+    let channels = usize::from(spec.channels.max(1));
+    let samples = reader
         .samples::<i16>()
         .map(|sample| {
             sample
                 .map(|value| f32::from(value) / f32::from(i16::MAX))
                 .map_err(|err| SenseVoiceError::Io(err.to_string()))
         })
+        .collect::<Result<Vec<f32>, _>>()?;
+    Ok((downmix_to_mono(samples, channels), spec.sample_rate))
+}
+
+fn downmix_to_mono(samples: Vec<f32>, channels: usize) -> Vec<f32> {
+    if channels <= 1 {
+        return samples;
+    }
+    samples
+        .chunks_exact(channels)
+        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
         .collect()
 }
 
-fn read_sample_rate(audio_path: &Path) -> Result<u32, SenseVoiceError> {
-    let reader =
-        hound::WavReader::open(audio_path).map_err(|err| SenseVoiceError::Io(err.to_string()))?;
-    Ok(reader.spec().sample_rate)
+#[cfg(test)]
+mod tests {
+    use super::downmix_to_mono;
+
+    #[test]
+    fn downmix_averages_interleaved_frames() {
+        assert_eq!(
+            downmix_to_mono(vec![0.2, 0.4, -1.0, 1.0], 2),
+            vec![0.3, 0.0]
+        );
+        assert_eq!(downmix_to_mono(vec![0.5, -0.5], 1), vec![0.5, -0.5]);
+    }
 }
+

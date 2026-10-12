@@ -25,10 +25,12 @@ Local mode runs ONNX models in-process via sherpa-onnx. Docker and a Python runt
 
 All local models are pre-packaged ONNX archives published by the sherpa-onnx project (GitHub Releases, with a ModelScope mirror fallback):
 
-- `SenseVoice-Small int8` (default, ~158MB) — Chinese, English, Japanese, Korean, Cantonese
-- `Paraformer-zh-small` (~74MB) — lightest Chinese-focused model
-- `FireRedASR2-CTC` (~497MB) — Chinese/English with dialect support
-- `Fun-ASR-Nano` (~803MB) — newest high-quality Chinese model, slower on CPU
+- `SenseVoice-Small` — Chinese, English, Japanese, Korean, Cantonese, with punctuation and inverse text normalization. Sizes: int8 (default, ~155MB) / fp32 (~1GB)
+- `Paraformer-zh` — Chinese-focused. Sizes: small (~74MB) / large int8 (~217MB) / large fp32 (~784MB)
+- `FireRedASR` — Chinese/English with dialect support. Sizes: ASR2-CTC int8 (~497MB) / Large AED int8 (~1.4GB, slower)
+- `Fun-ASR-Nano` — newest high-quality Chinese model, slower on CPU. Sizes: int8 (~803MB) / fp32 (~1.3GB)
+
+Pick the model family first, then its size; each size is downloaded separately.
 
 Downloads are stored under the app local data `sensevoice/models` directory. Switching back to a previously downloaded model reuses the local files without re-downloading.
 
@@ -58,6 +60,22 @@ If a local build hits upstream GitHub release instability, you can reuse the sam
 - Or set `SHERPA_ONNX_LIB_DIR` to an already extracted `lib` directory for that target.
 
 The app links Sherpa-ONNX statically on supported desktop targets, so Windows installers do not need to ship `sherpa-onnx-c-api.dll` separately at runtime.
+
+## Linux Support
+
+| Desktop | Global shortcut | Auto paste | Status overlay |
+|---|---|---|---|
+| X11 (any) | ✅ | ✅ | ✅ |
+| KDE Plasma 6 (Wayland) | ✅ portal | ✅ portal | ✅ needs `gtk-layer-shell` |
+| GNOME 48+ (Wayland) | ✅ portal | ✅ portal | notifications |
+| GNOME ≤47 (Wayland) | `--toggle-recording` | ✅ portal | notifications |
+| Hyprland / sway | `--toggle-recording` | needs `wtype` or `ydotool` | ✅ needs `gtk-layer-shell` |
+
+- On Wayland, shortcuts and key simulation go through XDG Desktop Portals. The first auto paste asks for remote-input permission once; the grant is remembered.
+- If the desktop cannot register app shortcuts, bind `vtt-keyboard --toggle-recording` to a key in the system settings or compositor config (tap-to-toggle only). For AppImage installs use the AppImage path instead of `vtt-keyboard`; the Shortcut page shows the exact command.
+- If no paste backend is available, the result stays on the clipboard and a notification asks you to paste manually.
+- `General > Paste shortcut` (Linux only) selects Ctrl+V, Ctrl+Shift+V or Shift+Insert. Shift+Insert works in terminals and also fills the middle-click selection.
+- Optional runtime packages: `gtk-layer-shell` (Wayland overlay), `wtype` or `ydotool` (paste on wlroots compositors).
 
 ## Runtime Notes
 
@@ -131,10 +149,12 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 
 所有本地模型均为 sherpa-onnx 项目官方预打包的 ONNX 归档（主用 GitHub Releases，失败时回退 ModelScope 镜像）：
 
-- `SenseVoice-Small int8`（默认，约 158MB）——支持中/英/日/韩/粤语
-- `Paraformer-zh-small`（约 74MB）——最轻量的中文模型
-- `FireRedASR2-CTC`（约 497MB）——中英文并支持多种方言
-- `Fun-ASR-Nano`（约 803MB）——最新的高质量中文模型，CPU 上较慢
+- `SenseVoice-Small`——支持中/英/日/韩/粤语，自带标点与数字规范化。规模：int8（默认，约 155MB）/ fp32（约 1GB）
+- `Paraformer-zh`——中文模型。规模：small（约 74MB）/ large int8（约 217MB）/ large fp32（约 784MB）
+- `FireRedASR`——中英文并支持多种方言。规模：ASR2-CTC int8（约 497MB）/ Large AED int8（约 1.4GB，较慢）
+- `Fun-ASR-Nano`——最新的高质量中文模型，CPU 上较慢。规模：int8（约 803MB）/ fp32（约 1.3GB）
+
+先选择模型系列，再选择规模；每个规模单独下载。
 
 模型下载后存放在应用本地数据目录的 `sensevoice/models` 下。切换回已下载过的模型会直接复用本地文件，无需重新下载。
 
@@ -164,6 +184,22 @@ GitHub Actions 发布构建需要配置更新器签名密钥：
 - 或者将 `SHERPA_ONNX_LIB_DIR` 设置为已经解压好的目标平台 `lib` 目录。
 
 应用会在受支持的桌面平台上静态链接 Sherpa-ONNX，因此 Windows 安装包运行时不需要额外携带 `sherpa-onnx-c-api.dll`。
+
+## Linux 支持
+
+| 桌面环境 | 全局快捷键 | 自动粘贴 | 状态浮窗 |
+|---|---|---|---|
+| X11（任意） | ✅ | ✅ | ✅ |
+| KDE Plasma 6（Wayland） | ✅ Portal | ✅ Portal | ✅ 需要 `gtk-layer-shell` |
+| GNOME 48+（Wayland） | ✅ Portal | ✅ Portal | 系统通知 |
+| GNOME ≤47（Wayland） | `--toggle-recording` | ✅ Portal | 系统通知 |
+| Hyprland / sway | `--toggle-recording` | 需要 `wtype` 或 `ydotool` | ✅ 需要 `gtk-layer-shell` |
+
+- Wayland 下快捷键和按键模拟都通过 XDG Desktop Portal 实现。首次自动粘贴时系统会请求一次远程输入授权，之后会记住。
+- 如果桌面不支持应用注册快捷键，请在系统设置或合成器配置中为 `vtt-keyboard --toggle-recording` 绑定按键（仅支持短按切换）。AppImage 安装时请把 `vtt-keyboard` 换成 AppImage 的完整路径，快捷键页面会显示具体命令。
+- 没有可用的粘贴方式时，结果会保留在剪贴板中，并通过通知提示手动粘贴。
+- “常规 > 粘贴组合键”（仅 Linux）可选 Ctrl+V、Ctrl+Shift+V 或 Shift+Insert。Shift+Insert 适用于终端，并会同时写入鼠标中键选区。
+- 可选运行时依赖：`gtk-layer-shell`（Wayland 浮窗）、`wtype` 或 `ydotool`（wlroots 合成器下粘贴）。
 
 ## 运行时说明
 

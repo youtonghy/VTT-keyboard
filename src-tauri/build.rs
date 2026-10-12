@@ -1,5 +1,8 @@
+#[cfg(target_os = "macos")]
 use std::env;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 fn main() {
@@ -60,6 +63,8 @@ fn main() {
         for lib in &gtk.libs {
             println!("cargo:rustc-link-lib={}", lib);
         }
+        // gtk-layer-shell is loaded at runtime via dlopen (optional dependency).
+        println!("cargo:rustc-link-lib=dl");
     }
 }
 

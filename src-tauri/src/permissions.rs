@@ -67,30 +67,21 @@ pub fn request_macos_permission(permission_id: &str) -> MacosPermissionStatus {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub fn missing_recording_permission_message() -> Option<String> {
-    #[cfg(target_os = "macos")]
-    {
-        let item = microphone_permission_item(false);
-        if is_approved(item.status) {
-            return None;
+    let item = microphone_permission_item(false);
+    if is_approved(item.status) {
+        return None;
+    }
+    Some(match item.status {
+        "notDetermined" => {
+            "麦克风权限尚未批准，请先在 macOS 权限页面允许麦克风访问后再开始录音".to_string()
         }
-        return Some(match item.status {
-            "notDetermined" => {
-                "麦克风权限尚未批准，请先在 macOS 权限页面允许麦克风访问后再开始录音".to_string()
-            }
-            "restricted" => "macOS 当前限制了麦克风访问，无法开始录音".to_string(),
-            "denied" => {
-                "麦克风权限未批准，请在“系统设置 > 隐私与安全性 > 麦克风”中允许 VTT Keyboard"
-                    .to_string()
-            }
-            _ => "无法确认麦克风权限状态，请先检查 macOS 权限页面".to_string(),
-        });
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        None
-    }
+        "restricted" => "macOS 当前限制了麦克风访问，无法开始录音".to_string(),
+        "denied" => "麦克风权限未批准，请在“系统设置 > 隐私与安全性 > 麦克风”中允许 VTT Keyboard"
+            .to_string(),
+        _ => "无法确认麦克风权限状态，请先检查 macOS 权限页面".to_string(),
+    })
 }
 
 pub fn missing_accessibility_permission_message() -> Option<String> {
@@ -112,6 +103,7 @@ pub fn missing_accessibility_permission_message() -> Option<String> {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn is_approved(status: &str) -> bool {
     status == "authorized" || status == "approved"
 }

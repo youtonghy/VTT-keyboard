@@ -255,14 +255,29 @@ pub struct TriggerCard {
 #[serde(rename_all = "camelCase")]
 pub struct OutputSettings {
     pub remove_newlines: bool,
+    /// Key combination used to paste on Linux. Ignored on Windows and macOS.
+    #[serde(default)]
+    pub paste_shortcut: PasteShortcut,
 }
 
 impl Default for OutputSettings {
     fn default() -> Self {
         Self {
             remove_newlines: false,
+            paste_shortcut: PasteShortcut::default(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PasteShortcut {
+    #[default]
+    CtrlV,
+    CtrlShiftV,
+    /// Also writes the PRIMARY selection so terminals that paste PRIMARY on
+    /// Shift+Insert (xterm, Konsole) receive the same text.
+    ShiftInsert,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -34,6 +34,8 @@
     "launchOnBootHint": "Auto start in background after login and keep the window hidden to tray.",
     "removeNewlines": "Remove line breaks",
     "removeNewlinesHint": "When enabled, all line breaks are removed from transcription and trigger results so output always stays on one line.",
+    "pasteShortcut": "Paste shortcut",
+    "pasteShortcutHint": "Keys sent after the result is copied. Terminals usually need Ctrl+Shift+V; Shift+Insert works in terminals and most apps and also fills the middle-click selection.",
     "launchOnBootSyncError": "Failed to sync launch on boot: {{error}}",
     "autoCheckUpdates": "Automatically check for updates",
     "autoCheckUpdatesHint": "Check GitHub Release updates on startup and notify you when a new version is available."
@@ -61,7 +63,10 @@
     "unregisterError": "Failed to unregister shortcut",
     "conflict": "Shortcut conflict: {{shortcut}}",
     "startError": "Failed to start recording: {{error}}",
-    "stopError": "Failed to stop recording: {{error}}"
+    "stopError": "Failed to stop recording: {{error}}",
+    "waylandAssigned": "Shortcut assigned by the system: {{trigger}}",
+    "waylandPending": "Shortcut submitted to the system. Confirm the key combination in the system dialog or settings.",
+    "waylandUnavailable": "This desktop does not let apps register global shortcuts. Bind {{command}} to a key in your system settings (tap-to-toggle only)."
   },
   "recording": {
     "title": "Recording",
@@ -155,10 +160,22 @@
   },
   "sensevoice": {
     "localModel": "Local Model",
-    "localModelSenseVoice": "SenseVoice-Small (zh/en/ja/ko/yue, ~158MB)",
-    "localModelParaformer": "Paraformer-zh-small (Chinese, ~74MB)",
-    "localModelFireRed": "FireRedASR2-CTC (zh/en + dialects, ~497MB)",
-    "localModelFunasrNano": "Fun-ASR-Nano (latest zh model, ~803MB, slower)",
+    "localModelSenseVoice": "SenseVoice (zh/en/ja/ko/yue)",
+    "localModelParaformer": "Paraformer (Chinese)",
+    "localModelFireRed": "FireRedASR (zh/en + dialects)",
+    "localModelFunasrNano": "Fun-ASR-Nano (latest zh model, slower)",
+    "localModelSize": "Model Size",
+    "modelSize": {
+      "senseVoiceInt8": "Small · int8 (~155MB, recommended)",
+      "senseVoiceFp32": "Small · fp32 (~1GB, full precision)",
+      "paraformerSmall": "Small (~74MB)",
+      "paraformerLargeInt8": "Large · int8 (~217MB)",
+      "paraformerLarge": "Large · fp32 (~784MB)",
+      "fireRedCtc": "ASR2-CTC · int8 (~497MB)",
+      "fireRedLarge": "Large AED · int8 (~1.4GB, slower)",
+      "funasrNanoInt8": "int8 (~803MB)",
+      "funasrNanoFp32": "fp32 (~1.3GB)"
+    },
     "language": "Recognition Language",
     "languageAuto": "Auto",
     "languageZh": "Chinese",

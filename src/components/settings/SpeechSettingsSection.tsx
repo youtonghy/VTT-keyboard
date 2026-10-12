@@ -9,7 +9,9 @@ import type { SenseVoiceProgress, SenseVoiceStatus } from "../../hooks/useSenseV
 import type { Settings } from "../../types/settings";
 import { parseList, listToString, normalizeAliyunRegion } from "../../utils";
 import {
-  LOCAL_MODELS,
+  LOCAL_MODEL_FAMILIES,
+  modelSizesFor,
+  specForLocalModel,
   LANGUAGE_OPTIONS,
   normalizeLocalModel,
   normalizeSenseVoiceLanguage,
@@ -85,9 +87,9 @@ export function SpeechSettingsSection({
           options: [{ value: "sensevoice", label: t("speech.sensevoice") }],
         },
       ];
-  const localModelOptions = LOCAL_MODELS.map((spec) => ({
-    value: spec.key,
-    label: t(spec.labelKey),
+  const localModelFamilyOptions = LOCAL_MODEL_FAMILIES.map((family) => ({
+    value: family.key,
+    label: t(family.labelKey),
   }));
 
   return (
@@ -537,6 +539,38 @@ export function SpeechSettingsSection({
               progressStage === "download" ||
               progressStage === "loading";
             const selectedLocalModel = normalizeLocalModel(draft.sensevoice.localModel);
+            const selectedSpec = specForLocalModel(selectedLocalModel);
+            const sizeOptions = modelSizesFor(selectedSpec.family).map((spec) => ({
+              value: spec.key,
+              label: t(spec.sizeLabelKey),
+            }));
+            // 系列 key 即该系列默认规模的 key，因此切换系列与切换规模共用同一逻辑
+            const selectLocalModel = (value: string) => {
+              const nextLocalModel = normalizeLocalModel(value);
+              if (nextLocalModel === selectedLocalModel) {
+                return;
+              }
+              const nextLanguage = normalizeSenseVoiceLanguage(
+                draft.sensevoice.language,
+                nextLocalModel
+              );
+              const nextModelId = getDefaultModelId(nextLocalModel);
+              updateDraft((prev) => ({
+                ...prev,
+                sensevoice: {
+                  ...prev.sensevoice,
+                  localModel: nextLocalModel,
+                  modelId: nextModelId,
+                  language: nextLanguage,
+                },
+              }));
+              // 点击选择后下载：切换模型后立即保存配置并按需下载
+              void handleSenseVoiceConfigSave({
+                localModel: nextLocalModel,
+                modelId: nextModelId,
+                language: nextLanguage,
+              });
+            };
             const languageValues = languageOptionsFor(selectedLocalModel);
             const languageOptions = LANGUAGE_OPTIONS.filter((option) =>
               languageValues.includes(option.value)
@@ -560,33 +594,20 @@ export function SpeechSettingsSection({
                 </div>
 
                 <Field label={t("sensevoice.localModel")}><CustomSelect
-                    value={selectedLocalModel}
+                    value={selectedSpec.family}
                     disabled={busy}
-                    onChange={(value) => {
-                      const nextLocalModel = normalizeLocalModel(value);
-                      const nextLanguage = normalizeSenseVoiceLanguage(
-                        draft.sensevoice.language,
-                        nextLocalModel
-                      );
-                      const nextModelId = getDefaultModelId(nextLocalModel);
-                      updateDraft((prev) => ({
-                        ...prev,
-                        sensevoice: {
-                          ...prev.sensevoice,
-                          localModel: nextLocalModel,
-                          modelId: nextModelId,
-                          language: nextLanguage,
-                        },
-                      }));
-                      // 点击选择后下载：切换模型后立即保存配置并按需下载
-                      void handleSenseVoiceConfigSave({
-                        localModel: nextLocalModel,
-                        modelId: nextModelId,
-                        language: nextLanguage,
-                      });
-                    }}
-                    options={localModelOptions}
+                    onChange={(value) => selectLocalModel(value)}
+                    options={localModelFamilyOptions}
                    /></Field>
+
+                {sizeOptions.length > 1 ? (
+                  <Field label={t("sensevoice.localModelSize")}><CustomSelect
+                      value={selectedLocalModel}
+                      disabled={busy}
+                      onChange={(value) => selectLocalModel(value)}
+                      options={sizeOptions}
+                     /></Field>
+                ) : null}
 
                 {languageOptions.length > 0 ? (
                   <Field label={t("sensevoice.language")}><CustomSelect

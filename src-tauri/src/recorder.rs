@@ -5,6 +5,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
 
+#[cfg(target_os = "macos")]
 use crate::permissions;
 
 #[cfg(target_os = "macos")]
@@ -29,6 +30,7 @@ pub enum RecorderError {
     Config(String),
     #[error("无法启动录音: {0}")]
     Stream(String),
+    #[cfg(target_os = "macos")]
     #[error("麦克风权限未授权: {0}")]
     Permission(String),
     #[error("录音尚未开始")]
@@ -451,6 +453,7 @@ fn macos_microphone_permission_status() -> String {
     permission_status_from_code(unsafe { macos_microphone_permission_status_code() }).to_string()
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn permission_status_from_code(status: i32) -> &'static str {
     match status {
         0 => "notDetermined",

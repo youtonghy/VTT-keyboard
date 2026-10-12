@@ -86,8 +86,12 @@ export interface TriggerCard {
   variables: string[];
 }
 
+export type PasteShortcut = "ctrlV" | "ctrlShiftV" | "shiftInsert";
+
 export interface OutputSettings {
   removeNewlines: boolean;
+  /** Linux only: key combination used to paste the result. */
+  pasteShortcut: PasteShortcut;
 }
 
 export interface AppearanceSettings {
