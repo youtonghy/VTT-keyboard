@@ -808,6 +808,15 @@ mod native_status_overlay_tests {
     }
 
     #[test]
+    fn macos_overlay_follows_active_space() {
+        assert!(MACOS_OVERLAY.contains(".canJoinAllSpaces"));
+        assert!(MACOS_OVERLAY.contains("isOnActiveSpace"));
+        assert!(MACOS_OVERLAY.contains("activeSpaceDidChangeNotification"));
+        assert!(MACOS_OVERLAY.contains("removeObserver"));
+        assert!(MACOS_OVERLAY.contains("NSEvent.mouseLocation"));
+    }
+
+    #[test]
     fn native_overlay_topmost_behavior_is_reapplied_on_show() {
         assert!(MACOS_OVERLAY.contains("NSWindow.Level.statusBar"));
         assert!(MACOS_OVERLAY.contains(".fullScreenAuxiliary"));

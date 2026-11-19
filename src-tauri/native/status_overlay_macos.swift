@@ -225,6 +225,7 @@ private final class StatusOverlayController {
     private var overlayView: StatusOverlayView?
     private var visible = false
     private var lastFrame = NSRect.zero
+    private var spaceObserver: NSObjectProtocol?
 
     private let maxWidth: CGFloat = 420.0
     private let maxActionWidth: CGFloat = 560.0
@@ -248,16 +249,10 @@ private final class StatusOverlayController {
     private let retryLabel = "重试"
     private let cancelLabel = "取消"
 
+    /// 面板延迟到首次 show 时创建：init 发生在 Tauri 完成 NSApplication 启动
+    /// 和激活策略设置之前，过早创建的窗口可能被系统固定在某一个 Space 上。
     func initialize() -> Bool {
-        if Thread.isMainThread {
-            return createPanelIfNeeded()
-        }
-
-        var initialized = false
-        DispatchQueue.main.sync {
-            initialized = createPanelIfNeeded()
-        }
-        return initialized
+        true
     }
 
     func show(status: Int32, text: String, actions: Int32 = 0) {
@@ -278,6 +273,7 @@ private final class StatusOverlayController {
             guard self.createPanelIfNeeded() else {
                 return
             }
+            self.observeSpaceChangesIfNeeded()
             self.panel?.ignoresMouseEvents = nextActions == .none
             self.updatePanelFrame(display: changed)
             if changed {
@@ -300,6 +296,10 @@ private final class StatusOverlayController {
 
     func cleanup() {
         performOnMain {
+            if let observer = self.spaceObserver {
+                NSWorkspace.shared.notificationCenter.removeObserver(observer)
+                self.spaceObserver = nil
+            }
             self.panel?.close()
             self.panel = nil
             self.overlayView = nil
@@ -327,7 +327,7 @@ private final class StatusOverlayController {
             return true
         }
 
-        NSApplication.shared
+        _ = NSApplication.shared
 
         let frame = frameForCurrentText()
         let newPanel = NSPanel(
@@ -365,6 +365,7 @@ private final class StatusOverlayController {
         panel.collectionBehavior = collectionBehavior
         panel.orderFrontRegardless()
         panel.displayIfNeeded()
+        ensurePanelOnActiveSpace()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             guard let self, self.visible, let panel = self.panel else {
@@ -375,6 +376,43 @@ private final class StatusOverlayController {
             panel.collectionBehavior = self.collectionBehavior
             panel.orderFrontRegardless()
             panel.displayIfNeeded()
+            self.ensurePanelOnActiveSpace()
+        }
+    }
+
+    /// 即使设置了 canJoinAllSpaces，已存在的窗口仍可能被系统固定在旧 Space 上
+    /// （重复赋值相同的 collectionBehavior 不会触发 WindowServer 更新）。
+    /// 发现不在当前 Space 时，丢弃旧面板并按当前配置重建一次。
+    private func ensurePanelOnActiveSpace() {
+        guard let panel, !panel.isOnActiveSpace else {
+            return
+        }
+        panel.orderOut(nil)
+        panel.close()
+        self.panel = nil
+        overlayView = nil
+        guard createPanelIfNeeded(), let rebuilt = self.panel else {
+            return
+        }
+        rebuilt.ignoresMouseEvents = snapshot().actions == .none
+        rebuilt.orderFrontRegardless()
+        rebuilt.displayIfNeeded()
+    }
+
+    private func observeSpaceChangesIfNeeded() {
+        guard spaceObserver == nil else {
+            return
+        }
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.visible else {
+                return
+            }
+            self.updatePanelFrame(display: true)
+            self.presentPanel()
         }
     }
 
@@ -392,12 +430,18 @@ private final class StatusOverlayController {
 
     private func frameForCurrentText() -> NSRect {
         let size = CGSize(width: widthForCurrentText(), height: height)
-        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0.0, y: 0.0, width: 1440.0, height: 900.0)
+        let screenFrame = activeScreen()?.visibleFrame ?? NSRect(x: 0.0, y: 0.0, width: 1440.0, height: 900.0)
         let origin = CGPoint(
             x: screenFrame.origin.x + (screenFrame.width - size.width) / 2.0,
             y: screenFrame.origin.y + bottomMargin
         )
         return NSRect(origin: origin, size: size)
+    }
+
+    /// 用户正在操作的屏幕：鼠标所在屏幕优先，取不到时回退到 NSScreen.main。
+    private func activeScreen() -> NSScreen? {
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main
     }
 
     private func widthForCurrentText() -> CGFloat {
