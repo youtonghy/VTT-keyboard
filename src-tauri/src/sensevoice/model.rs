@@ -1,7 +1,7 @@
 /// sherpa-onnx 本地模型描述表。
 ///
 /// 本地转写仅通过 sherpa-onnx Rust crate 加载官方预打包 ONNX 模型
-/// （GitHub Releases / ModelScope 单包分发，无需 Docker）。
+/// （GitHub Releases / ModelScope 单包分发）。
 /// 模型系列 key；同时是各系列默认规模的持久化 key（兼容旧配置）。
 pub const LOCAL_MODEL_SENSEVOICE: &str = "sherpa-onnx-sensevoice";
 pub const LOCAL_MODEL_PARAFORMER: &str = "sherpa-onnx-paraformer";
@@ -209,12 +209,8 @@ pub const LOCAL_MODELS: [LocalModelSpec; 9] = [
     SPEC_FUNASR_NANO_FP32,
 ];
 
-/// 已移除的 Docker 本地模型 key（用于旧配置迁移识别）
-#[cfg(test)]
-const LEGACY_DOCKER_MODEL_KEYS: [&str; 3] = ["sensevoice", "voxtral", "qwen3-asr"];
-
 /// 解析 local_model 为模型描述符。
-/// 未识别值（包括已移除的 Docker 模型 key）一律回落到默认 SenseVoice。
+/// 未识别的值一律回落到默认 SenseVoice。
 pub fn spec_for_local_model(value: &str) -> &'static LocalModelSpec {
     for spec in LOCAL_MODELS.iter() {
         if value.eq_ignore_ascii_case(spec.model_key) {
@@ -295,13 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_and_legacy_docker_models_fall_back_to_default() {
-        for legacy in LEGACY_DOCKER_MODEL_KEYS {
-            assert_eq!(
-                spec_for_local_model(legacy).model_key,
-                LOCAL_MODEL_SENSEVOICE
-            );
-        }
+    fn unknown_models_fall_back_to_default() {
         assert_eq!(
             spec_for_local_model("no-such-model").model_key,
             LOCAL_MODEL_SENSEVOICE
@@ -311,7 +301,10 @@ mod tests {
 
     #[test]
     fn normalize_local_model_returns_canonical_key() {
-        assert_eq!(normalize_local_model("sensevoice"), LOCAL_MODEL_SENSEVOICE);
+        assert_eq!(
+            normalize_local_model("Sherpa-ONNX-SenseVoice"),
+            LOCAL_MODEL_SENSEVOICE
+        );
         assert_eq!(
             normalize_local_model("sherpa-onnx-firered"),
             LOCAL_MODEL_FIRERED

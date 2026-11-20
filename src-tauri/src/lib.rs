@@ -720,7 +720,7 @@ pub fn run() {
                 if !settings.sensevoice.enabled {
                     return;
                 }
-                // 原生模型一次调用即可触发后台加载，无需 Docker 时代的重试循环
+                // 一次调用即可触发模型后台加载
                 let state = startup_app.state::<AppState>();
                 let Ok(mut manager) = state.sensevoice_manager.lock() else {
                     dev_eprintln!("failed to lock SenseVoice manager on startup");

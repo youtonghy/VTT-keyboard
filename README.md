@@ -15,7 +15,7 @@ VTT Keyboard is a desktop voice-to-text keyboard tool built with Tauri. It combi
 
 ## Local Speech Recognition (sherpa-onnx)
 
-Local mode runs ONNX models in-process via sherpa-onnx. Docker and a Python runtime are not required.
+Local mode runs ONNX models in-process via sherpa-onnx, with no external runtime required.
 
 1. Open the app settings and choose `SenseVoice (Local)` as the provider.
 2. Pick a model in the `Local Model` dropdown — the model package is downloaded automatically after selection.
@@ -33,15 +33,6 @@ All local models are pre-packaged ONNX archives published by the sherpa-onnx pro
 Pick the model family first, then its size; each size is downloaded separately.
 
 Downloads are stored under the app local data `sensevoice/models` directory. Switching back to a previously downloaded model reuses the local files without re-downloading.
-
-### Upgrading from the Docker-based version
-
-Older releases ran local models inside Docker containers. The runtime is now fully native, and leftover Docker resources are not removed automatically. You can clean them up manually:
-
-```bash
-docker rm -f vtt-docker-service vtt-sensevoice-service
-docker rmi vtt-sensevoice:local vllm/vllm-openai:nightly
-```
 
 ## Release and Updater Signing
 
@@ -139,7 +130,7 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 
 ## 本地语音识别（sherpa-onnx）
 
-本地模式通过 sherpa-onnx 在进程内运行 ONNX 模型，不再需要 Docker 或 Python 运行时。
+本地模式通过 sherpa-onnx 在进程内运行 ONNX 模型，无需任何外部运行时。
 
 1. 打开应用设置，将转写引擎切换为 `SenseVoice (Local)`。
 2. 在“本地模型”下拉中选择模型 —— 选中后会自动下载对应的模型包。
@@ -157,15 +148,6 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 先选择模型系列，再选择规模；每个规模单独下载。
 
 模型下载后存放在应用本地数据目录的 `sensevoice/models` 下。切换回已下载过的模型会直接复用本地文件，无需重新下载。
-
-### 从 Docker 版本升级
-
-旧版本通过 Docker 容器运行本地模型，现已完全改为原生推理。遗留的 Docker 资源不会自动清理，如有需要可手动删除：
-
-```bash
-docker rm -f vtt-docker-service vtt-sensevoice-service
-docker rmi vtt-sensevoice:local vllm/vllm-openai:nightly
-```
 
 ## 发布与更新器签名
 
