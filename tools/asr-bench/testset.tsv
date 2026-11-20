@@ -1,0 +1,22 @@
+# id	group	voice	reference
+zh01	zh	Tingting	今天下午我们在会议室讨论新版本的发布计划
+zh02	zh	Tingting	请帮我把这段文字整理成一封正式的邮件
+zh03	zh	Tingting	这个功能需要在下周之前完成测试并提交
+zh04	zh	Tingting	我觉得这个方案的成本太高了需要重新评估
+zh05	zh	Tingting	明天早上记得提醒我给客户回个电话
+zh06	zh	Eddy (中文（中国大陆）)	今天下午我们在会议室讨论新版本的发布计划
+zh07	zh	Eddy (中文（中国大陆）)	请帮我把这段文字整理成一封正式的邮件
+zh08	zh	Eddy (中文（中国大陆）)	我觉得这个方案的成本太高了需要重新评估
+mix01	mix	Tingting	帮我打开 GitHub 上的 pull request 看一下
+mix02	mix	Tingting	这个 bug 是因为 React 组件重复渲染导致的
+mix03	mix	Tingting	我们在 Kubernetes 上部署了一个 Redis 缓存服务
+mix04	mix	Eddy (中文（中国大陆）)	帮我打开 GitHub 上的 pull request 看一下
+mix05	mix	Eddy (中文（中国大陆）)	这个 bug 是因为 React 组件重复渲染导致的
+en01	en	Samantha	Please schedule a meeting with the design team for tomorrow afternoon
+en02	en	Samantha	The quarterly report shows a significant increase in user engagement
+en03	en	Samantha	Can you summarize the main points of this document in a short paragraph
+en04	en	Samantha	I think we should refactor the authentication module before the next release
+en05	en	Samantha	Remember to send the invoice to the client by the end of the week
+en06	en	Eddy (英语（美国）)	Please schedule a meeting with the design team for tomorrow afternoon
+en07	en	Eddy (英语（美国）)	I think we should refactor the authentication module before the next release
+en08	en	Eddy (英语（美国）)	Remember to send the invoice to the client by the end of the week

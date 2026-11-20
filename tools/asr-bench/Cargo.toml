@@ -1,0 +1,15 @@
+[package]
+name = "asr-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Local sherpa-onnx ASR engine benchmark for VTT Keyboard"
+
+# 独立于 src-tauri 的工具 crate，不参与应用构建。
+[workspace]
+
+[dependencies]
+# 与 src-tauri/Cargo.toml 保持同一版本，保证测得的是应用实际使用的运行时。
+sherpa-onnx = { version = "1.13.8", default-features = false, features = ["static"] }
+hound = "3.5"
+libc = "0.2"
