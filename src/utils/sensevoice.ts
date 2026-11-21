@@ -3,6 +3,9 @@ export const LOCAL_MODEL_SENSEVOICE = "sherpa-onnx-sensevoice";
 export const LOCAL_MODEL_PARAFORMER = "sherpa-onnx-paraformer";
 export const LOCAL_MODEL_FIRERED = "sherpa-onnx-firered";
 export const LOCAL_MODEL_FUNASR_NANO = "sherpa-onnx-funasr-nano";
+export const LOCAL_MODEL_PARAKEET = "sherpa-onnx-parakeet";
+export const LOCAL_MODEL_MOONSHINE = "sherpa-onnx-moonshine";
+export const LOCAL_MODEL_NEMOTRON = "sherpa-onnx-nemotron";
 
 export interface LocalModelSpec {
   /** 持久化在设置里的模型 key（与后端一致，每个规模一个） */
@@ -33,6 +36,9 @@ export const LOCAL_MODEL_FAMILIES: readonly LocalModelFamily[] = [
   { key: LOCAL_MODEL_PARAFORMER, labelKey: "sensevoice.localModelParaformer" },
   { key: LOCAL_MODEL_FIRERED, labelKey: "sensevoice.localModelFireRed" },
   { key: LOCAL_MODEL_FUNASR_NANO, labelKey: "sensevoice.localModelFunasrNano" },
+  { key: LOCAL_MODEL_PARAKEET, labelKey: "sensevoice.localModelParakeet" },
+  { key: LOCAL_MODEL_MOONSHINE, labelKey: "sensevoice.localModelMoonshine" },
+  { key: LOCAL_MODEL_NEMOTRON, labelKey: "sensevoice.localModelNemotron" },
 ];
 
 /** 全部可选的本地模型（同系列按规模从小到大） */
@@ -109,6 +115,46 @@ export const LOCAL_MODELS: readonly LocalModelSpec[] = [
     sizeLabelKey: "sensevoice.modelSize.funasrNanoFp32",
     supportedLanguages: FUNASR_NANO_LANGUAGES,
   },
+  {
+    key: LOCAL_MODEL_PARAKEET,
+    family: LOCAL_MODEL_PARAKEET,
+    displayName: "Parakeet-TDT-0.6B-v3",
+    modelId: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+    sizeLabelKey: "sensevoice.modelSize.parakeetV3",
+    supportedLanguages: [],
+  },
+  {
+    key: LOCAL_MODEL_MOONSHINE,
+    family: LOCAL_MODEL_MOONSHINE,
+    displayName: "Moonshine-tiny-en",
+    modelId: "sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27",
+    sizeLabelKey: "sensevoice.modelSize.moonshineTiny",
+    supportedLanguages: [],
+  },
+  {
+    key: "sherpa-onnx-moonshine-base",
+    family: LOCAL_MODEL_MOONSHINE,
+    displayName: "Moonshine-base-en",
+    modelId: "sherpa-onnx-moonshine-base-en-quantized-2026-02-27",
+    sizeLabelKey: "sensevoice.modelSize.moonshineBase",
+    supportedLanguages: [],
+  },
+  {
+    key: LOCAL_MODEL_NEMOTRON,
+    family: LOCAL_MODEL_NEMOTRON,
+    displayName: "Nemotron-Streaming-EN-0.6B",
+    modelId: "sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25",
+    sizeLabelKey: "sensevoice.modelSize.nemotronEn",
+    supportedLanguages: [],
+  },
+  {
+    key: "sherpa-onnx-nemotron-multilingual",
+    family: LOCAL_MODEL_NEMOTRON,
+    displayName: "Nemotron-3.5-Streaming-0.6B",
+    modelId: "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11",
+    sizeLabelKey: "sensevoice.modelSize.nemotronMultilingual",
+    supportedLanguages: [],
+  },
 ];
 
 const DEFAULT_MODEL = LOCAL_MODELS[0];
@@ -121,6 +167,10 @@ export const LANGUAGE_OPTIONS = [
   { value: "ko", labelKey: "sensevoice.languageKo" },
   { value: "yue", labelKey: "sensevoice.languageYue" },
 ] as const;
+
+/** 是否为流式模型（录音时在状态浮窗实时显示文字） */
+export const isStreamingLocalModel = (value: string | undefined): boolean =>
+  specForLocalModel(value).family === LOCAL_MODEL_NEMOTRON;
 
 export const specForLocalModel = (value: string | undefined): LocalModelSpec =>
   LOCAL_MODELS.find((spec) => spec.key === value) ?? DEFAULT_MODEL;

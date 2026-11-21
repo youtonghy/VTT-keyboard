@@ -12,6 +12,7 @@ import {
   LOCAL_MODEL_FAMILIES,
   modelSizesFor,
   specForLocalModel,
+  isStreamingLocalModel,
   LANGUAGE_OPTIONS,
   normalizeLocalModel,
   normalizeSenseVoiceLanguage,
@@ -634,6 +635,9 @@ export function SpeechSettingsSection({
                 ) : null}
 
                 <div className="text-muted-foreground text-xs leading-5">{t("sensevoice.nativeCpuHint")}</div>
+                {isStreamingLocalModel(selectedSpec.key) ? (
+                  <div className="text-muted-foreground text-xs leading-5">{t("sensevoice.streamingHint")}</div>
+                ) : null}
 
                 {showProgressBar ? (
                   <div className="flex items-center justify-between gap-3 rounded-2xl bg-muted px-4 py-3 text-sm">

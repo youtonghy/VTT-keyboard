@@ -70,6 +70,11 @@ pub trait TranscriptionEngine {
 
     /// 返回引擎运行环境分类
     fn environment(&self) -> EngineEnvironment;
+
+    /// 单段音频的最长秒数；None 表示沿用用户设置的分段秒数
+    fn max_chunk_seconds(&self) -> Option<u64> {
+        None
+    }
 }
 
 // ── OpenAI 引擎 ───────────────────────────────────────────────
@@ -212,6 +217,12 @@ impl TranscriptionEngine for SenseVoiceEngine {
 
     fn environment(&self) -> EngineEnvironment {
         EngineEnvironment::Local
+    }
+
+    fn max_chunk_seconds(&self) -> Option<u64> {
+        spec_for_local_model(&self.settings.sensevoice.local_model)
+            .kind
+            .max_chunk_seconds()
     }
 }
 

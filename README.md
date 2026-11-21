@@ -17,7 +17,7 @@ VTT Keyboard is a desktop voice-to-text keyboard tool built with Tauri. It combi
 
 Local mode runs ONNX models in-process via sherpa-onnx, with no external runtime required.
 
-1. Open the app settings and choose `SenseVoice (Local)` as the provider.
+1. Open the app settings and choose `Local Model` as the provider.
 2. Pick a model in the `Local Model` dropdown — the model package is downloaded automatically after selection.
 3. Click `Load Model` to load it into memory, or just start recording: the model is loaded on demand.
 
@@ -29,8 +29,12 @@ All local models are pre-packaged ONNX archives published by the sherpa-onnx pro
 - `Paraformer-zh` — Chinese-focused. Sizes: small (~74MB) / large int8 (~217MB) / large fp32 (~784MB)
 - `FireRedASR` — Chinese/English with dialect support. Sizes: ASR2-CTC int8 (~497MB) / Large AED int8 (~1.4GB, slower)
 - `Fun-ASR-Nano` — newest high-quality Chinese model, slower on CPU. Sizes: int8 (~803MB) / fp32 (~1.3GB)
+- `Parakeet TDT` — NVIDIA Parakeet TDT 0.6B v3, high accuracy for English and 25 European languages; no Chinese. Size: int8 (~465MB, about 2GB RAM while loaded)
+- `Moonshine` — English only, very fast and small. Sizes: tiny (~28MB) / base (~106MB). Long recordings are split into segments of at most 20s.
 
 Pick the model family first, then its size; each size is downloaded separately.
+
+Recordings longer than the segment length (Settings → Recording, at most 20s for Moonshine) are split at the quietest point before the limit, so words are not cut in half.
 
 Downloads are stored under the app local data `sensevoice/models` directory. Switching back to a previously downloaded model reuses the local files without re-downloading.
 
@@ -132,7 +136,7 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 
 本地模式通过 sherpa-onnx 在进程内运行 ONNX 模型，无需任何外部运行时。
 
-1. 打开应用设置，将转写引擎切换为 `SenseVoice (Local)`。
+1. 打开应用设置，将转写引擎切换为“本地模型”。
 2. 在“本地模型”下拉中选择模型 —— 选中后会自动下载对应的模型包。
 3. 点击“加载模型”将其载入内存，或直接开始录音：模型会按需自动加载。
 
@@ -144,8 +148,12 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 - `Paraformer-zh`——中文模型。规模：small（约 74MB）/ large int8（约 217MB）/ large fp32（约 784MB）
 - `FireRedASR`——中英文并支持多种方言。规模：ASR2-CTC int8（约 497MB）/ Large AED int8（约 1.4GB，较慢）
 - `Fun-ASR-Nano`——最新的高质量中文模型，CPU 上较慢。规模：int8（约 803MB）/ fp32（约 1.3GB）
+- `Parakeet TDT`——NVIDIA Parakeet TDT 0.6B v3，英文和 25 种欧洲语言准确率高，不支持中文。规模：int8（约 465MB，加载后内存约 2GB）
+- `Moonshine`——仅英文，体积小、速度极快。规模：tiny（约 28MB）/ base（约 106MB）。长录音会切成不超过 20 秒的段。
 
 先选择模型系列，再选择规模；每个规模单独下载。
+
+超过分段时长（录音设置中的分段秒数，Moonshine 最多 20 秒）的录音会在上限前最安静的位置切开，避免把一个字切成两半。
 
 模型下载后存放在应用本地数据目录的 `sensevoice/models` 下。切换回已下载过的模型会直接复用本地文件，无需重新下载。
 

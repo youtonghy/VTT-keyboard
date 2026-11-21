@@ -164,6 +164,9 @@
                        "localModelParaformer":  "Paraformer（中文）",
                        "localModelFireRed":  "FireRedASR（中英+方言）",
                        "localModelFunasrNano":  "Fun-ASR-Nano（最新中文模型，较慢）",
+                       "localModelParakeet":  "Parakeet TDT（英文+25 种欧洲语言，不支持中文）",
+                       "localModelMoonshine":  "Moonshine（英文，极快）",
+                       "localModelNemotron":  "Nemotron（流式，边说边出字）",
                        "localModelSize":  "模型规模",
                        "modelSize":  {
                            "senseVoiceInt8":  "Small · int8（约 155MB，推荐）",
@@ -174,7 +177,12 @@
                            "fireRedCtc":  "ASR2-CTC · int8（约 497MB）",
                            "fireRedLarge":  "Large AED · int8（约 1.4GB，较慢）",
                            "funasrNanoInt8":  "int8（约 803MB）",
-                           "funasrNanoFp32":  "fp32（约 1.3GB）"
+                           "funasrNanoFp32":  "fp32（约 1.3GB）",
+                           "parakeetV3":  "0.6B v3 · int8（约 465MB，内存约 2GB）",
+                           "moonshineTiny":  "Tiny · 英文（约 28MB）",
+                           "moonshineBase":  "Base · 英文（约 106MB）",
+                           "nemotronEn":  "英文 0.6B · int8（约 442MB）",
+                           "nemotronMultilingual":  "3.5 多语言 0.6B · int8（约 453MB，含中文）"
                        },
                        "language":  "识别语言",
                        "languageAuto":  "自动",
@@ -184,6 +192,7 @@
                        "languageKo":  "韩语",
                        "languageYue":  "粤语",
                        "nativeCpuHint":  "本地模型通过 sherpa-onnx 在进程内以 CPU 运行，选择模型后才会开始下载。",
+                       "streamingHint":  "流式模型在你说话时会在状态浮窗中实时显示识别文字。",
                        "prepare":  "下载并启用",
                        "load":  "加载模型",
                        "unload":  "卸载模型",

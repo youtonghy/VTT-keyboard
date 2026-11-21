@@ -227,13 +227,16 @@ pub fn handle_recording_with_options(
         return base().build();
     }
     let transcription_started = Instant::now();
-    let segment_seconds = settings.recording.segment_seconds.max(1);
+    let segment_seconds = effective_segment_seconds(
+        settings.recording.segment_seconds,
+        engine.max_chunk_seconds(),
+    );
     dev_log(&format!(
         "开始转写，采样 {}，分段秒数 {}",
         recording.samples.len(),
         segment_seconds
     ));
-    let paths = match audio_processing::write_segments(&recording, segment_seconds) {
+    let segments = match audio_processing::write_segments(&recording, segment_seconds) {
         Ok(value) => value,
         Err(err) => {
             return base()
@@ -244,6 +247,10 @@ pub fn handle_recording_with_options(
                 );
         }
     };
+    let paths: Vec<std::path::PathBuf> = segments
+        .iter()
+        .map(|segment| segment.path.clone())
+        .collect();
     dev_log(&format!("生成 {} 段录音", paths.len()));
     if options.report_status {
         emit_status_detail(
@@ -256,7 +263,8 @@ pub fn handle_recording_with_options(
     let mut alignment_tokens = Vec::new();
     let mut alignment_timestamps_ms = Vec::new();
     let mut alignment_durations_ms = Vec::new();
-    for (index, path) in paths.iter().enumerate() {
+    for (index, segment) in segments.iter().enumerate() {
+        let path = &segment.path;
         let segment_index = index + 1;
         dev_log(&format!("开始请求转写段落 {}", segment_index));
         if options.report_status {
@@ -279,7 +287,7 @@ pub fn handle_recording_with_options(
         };
         let text = transcription.text;
         if let Some(alignment) = transcription.alignment {
-            let segment_offset_ms = index as u64 * segment_seconds * 1000;
+            let segment_offset_ms = segment.start_ms;
             alignment_tokens.extend(alignment.tokens);
             alignment_timestamps_ms.extend(
                 alignment
@@ -316,6 +324,12 @@ pub fn handle_recording_with_options(
     };
 
     process_transcribed_text(&settings, combined, post, options)
+}
+
+/// 实际分段秒数：用户设置与模型上限取较小值，至少 1 秒
+fn effective_segment_seconds(user_seconds: u64, model_limit: Option<u64>) -> u64 {
+    let user_seconds = user_seconds.max(1);
+    model_limit.map_or(user_seconds, |limit| user_seconds.min(limit.max(1)))
 }
 
 pub fn handle_transcribed_text_with_options(
@@ -539,9 +553,18 @@ fn trigger_prompt_status(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        calculate_recording_duration_ms, failure_status, remove_line_breaks,
-        transcription_segment_status, trigger_prompt_status, ProcessingOutcome,
+        calculate_recording_duration_ms, effective_segment_seconds, failure_status,
+        remove_line_breaks, transcription_segment_status, trigger_prompt_status, ProcessingOutcome,
     };
+
+    #[test]
+    fn segment_seconds_respects_model_limit() {
+        assert_eq!(effective_segment_seconds(60, None), 60);
+        assert_eq!(effective_segment_seconds(60, Some(20)), 20);
+        assert_eq!(effective_segment_seconds(10, Some(20)), 10);
+        assert_eq!(effective_segment_seconds(0, None), 1);
+        assert_eq!(effective_segment_seconds(60, Some(0)), 1);
+    }
     use crate::recorder::RecordedAudio;
     use crate::settings::ProcessingFailureStage;
 

@@ -164,6 +164,9 @@
     "localModelParaformer": "Paraformer (Chinese)",
     "localModelFireRed": "FireRedASR (zh/en + dialects)",
     "localModelFunasrNano": "Fun-ASR-Nano (latest zh model, slower)",
+    "localModelParakeet": "Parakeet TDT (English + 25 European languages, no Chinese)",
+    "localModelMoonshine": "Moonshine (English, very fast)",
+    "localModelNemotron": "Nemotron (streaming, live text while speaking)",
     "localModelSize": "Model Size",
     "modelSize": {
       "senseVoiceInt8": "Small · int8 (~155MB, recommended)",
@@ -174,7 +177,12 @@
       "fireRedCtc": "ASR2-CTC · int8 (~497MB)",
       "fireRedLarge": "Large AED · int8 (~1.4GB, slower)",
       "funasrNanoInt8": "int8 (~803MB)",
-      "funasrNanoFp32": "fp32 (~1.3GB)"
+      "funasrNanoFp32": "fp32 (~1.3GB)",
+      "parakeetV3": "0.6B v3 · int8 (~465MB, ~2GB RAM)",
+      "moonshineTiny": "Tiny · English (~28MB)",
+      "moonshineBase": "Base · English (~106MB)",
+      "nemotronEn": "English 0.6B · int8 (~442MB)",
+      "nemotronMultilingual": "3.5 multilingual 0.6B · int8 (~453MB, includes Chinese)"
     },
     "language": "Recognition Language",
     "languageAuto": "Auto",
@@ -184,6 +192,7 @@
     "languageKo": "Korean",
     "languageYue": "Cantonese",
     "nativeCpuHint": "Local models run in-process via sherpa-onnx on CPU. The model is downloaded only after you select it.",
+    "streamingHint": "Streaming models show recognized text in the status overlay while you speak.",
     "prepare": "Download & Enable",
     "load": "Load Model",
     "unload": "Unload Model",

@@ -5,21 +5,30 @@ use bzip2::read::BzDecoder;
 use reqwest::blocking::Client;
 use sherpa_onnx::{
     OfflineFireRedAsrCtcModelConfig, OfflineFireRedAsrModelConfig, OfflineFunASRNanoModelConfig,
-    OfflineParaformerModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
-    OfflineSenseVoiceModelConfig,
+    OfflineMoonshineModelConfig, OfflineParaformerModelConfig, OfflineRecognizer,
+    OfflineRecognizerConfig, OfflineSenseVoiceModelConfig, OfflineTransducerModelConfig,
+    OnlineRecognizer, OnlineRecognizerConfig, OnlineStream, OnlineTransducerModelConfig,
 };
 use std::fs::{self, File};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tar::Archive;
 
 const TOKENS_FILE_NAME: &str = "tokens.txt";
 const FUNASR_NANO_TOKENIZER_DIR: &str = "Qwen3-0.6B";
+const RECOGNIZER_THREADS: i32 = 2;
+
+/// 流式模型在开头补的静音秒数：音频零前导静音时 Nemotron 会丢掉第一个词
+pub const ONLINE_LEAD_SILENCE_SECONDS: f32 = 0.3;
+/// 流式模型在输入结束后补的静音秒数，保证最后一个分块被完整解码
+const ONLINE_TAIL_PADDING_SECONDS: f32 = 0.6;
 
 struct SherpaRuntime {
     model_dir: PathBuf,
     language: String,
+    /// 流式模型的识别器常驻内存；离线模型每次转写时重建
+    online: Option<Arc<OnlineRecognizer>>,
 }
 
 static SHERPA_RUNTIME: OnceLock<Mutex<Option<SherpaRuntime>>> = OnceLock::new();
@@ -117,13 +126,69 @@ pub fn load_runtime(
         return Ok(());
     }
 
-    let _ = create_recognizer(&model_dir, spec, &normalized_language)?;
+    let online = if spec.kind.is_streaming() {
+        Some(Arc::new(create_online_recognizer(&model_dir, spec)?))
+    } else {
+        let _ = create_recognizer(&model_dir, spec, &normalized_language)?;
+        None
+    };
 
     *runtime = Some(SherpaRuntime {
         model_dir,
         language: normalized_language,
+        online,
     });
     Ok(())
+}
+
+/// 加载（如需要）并返回流式模型的常驻识别器
+pub fn online_recognizer(
+    models_root: &Path,
+    local_model: &str,
+) -> Result<Arc<OnlineRecognizer>, SenseVoiceError> {
+    load_runtime(models_root, local_model, "auto")?;
+    let runtime = runtime_slot()
+        .lock()
+        .map_err(|_| SenseVoiceError::Process("failed to lock Sherpa runtime".to_string()))?;
+    runtime
+        .as_ref()
+        .and_then(|rt| rt.online.clone())
+        .ok_or_else(|| SenseVoiceError::Process("流式识别器尚未加载".to_string()))
+}
+
+/// 一段静音样本
+pub fn silence(sample_rate: i32, seconds: f32) -> Vec<f32> {
+    vec![0.0; (sample_rate as f32 * seconds).max(0.0) as usize]
+}
+
+/// 解码流中已就绪的全部分块
+pub fn decode_ready(recognizer: &OnlineRecognizer, stream: &OnlineStream) {
+    while recognizer.is_ready(stream) {
+        recognizer.decode(stream);
+    }
+}
+
+/// 当前已识别出的文字
+pub fn online_text(recognizer: &OnlineRecognizer, stream: &OnlineStream) -> String {
+    recognizer
+        .get_result(stream)
+        .map(|result| result.text)
+        .unwrap_or_default()
+}
+
+/// 结束输入：补尾部静音、解码剩余分块并返回最终文字
+pub fn finish_online_stream(
+    recognizer: &OnlineRecognizer,
+    stream: &OnlineStream,
+    sample_rate: i32,
+) -> String {
+    stream.accept_waveform(
+        sample_rate,
+        &silence(sample_rate, ONLINE_TAIL_PADDING_SECONDS),
+    );
+    stream.input_finished();
+    decode_ready(recognizer, stream);
+    online_text(recognizer, stream)
 }
 
 pub fn unload_runtime() {
@@ -153,8 +218,23 @@ pub fn transcribe_wav(
     language: &str,
     audio_path: &Path,
 ) -> Result<SherpaResult, SenseVoiceError> {
-    load_runtime(models_root, local_model, language)?;
     let spec = spec_for_local_model(local_model);
+    if spec.kind.is_streaming() {
+        // 历史重试或流式会话失败时的兜底：把整段录音一次性送入流式识别器
+        let recognizer = online_recognizer(models_root, local_model)?;
+        let (samples, sample_rate) = read_wav_as_mono_f32(audio_path)?;
+        let rate = sample_rate as i32;
+        let stream = recognizer.create_stream();
+        stream.accept_waveform(rate, &silence(rate, ONLINE_LEAD_SILENCE_SECONDS));
+        stream.accept_waveform(rate, &samples);
+        decode_ready(&recognizer, &stream);
+        let text = finish_online_stream(&recognizer, &stream, rate);
+        return Ok(SherpaResult {
+            text,
+            alignment: None,
+        });
+    }
+    load_runtime(models_root, local_model, language)?;
     let (samples, sample_rate) = read_wav_as_mono_f32(audio_path)?;
 
     let runtime = runtime_slot()
@@ -265,9 +345,59 @@ fn create_recognizer(
                 hotwords: None,
             };
         }
+        LocalModelKind::NemoTransducer => {
+            config.model_config.transducer = OfflineTransducerModelConfig {
+                encoder: model_file(0),
+                decoder: model_file(1),
+                joiner: model_file(2),
+            };
+            config.model_config.model_type = Some("nemo_transducer".to_string());
+            config.model_config.tokens = tokens_path;
+        }
+        LocalModelKind::MoonshineV2 => {
+            config.model_config.moonshine = OfflineMoonshineModelConfig {
+                encoder: model_file(0),
+                merged_decoder: model_file(1),
+                ..Default::default()
+            };
+            config.model_config.tokens = tokens_path;
+        }
+        LocalModelKind::OnlineTransducer => {
+            return Err(SenseVoiceError::Config(format!(
+                "{} 是流式模型，不能用离线识别器加载",
+                spec.display_name
+            )));
+        }
     }
-    config.model_config.num_threads = 2;
+    config.model_config.num_threads = RECOGNIZER_THREADS;
     OfflineRecognizer::create(&config).ok_or_else(|| {
+        SenseVoiceError::Process(format!("failed to create {} recognizer", spec.display_name))
+    })
+}
+
+fn create_online_recognizer(
+    model_dir: &Path,
+    spec: &LocalModelSpec,
+) -> Result<OnlineRecognizer, SenseVoiceError> {
+    let model_file = |index: usize| -> Option<String> {
+        spec.model_files
+            .get(index)
+            .map(|name| model_dir.join(name).to_string_lossy().to_string())
+    };
+    let mut config = OnlineRecognizerConfig::default();
+    config.model_config.transducer = OnlineTransducerModelConfig {
+        encoder: model_file(0),
+        decoder: model_file(1),
+        joiner: model_file(2),
+    };
+    config.model_config.tokens = Some(
+        model_dir
+            .join(TOKENS_FILE_NAME)
+            .to_string_lossy()
+            .to_string(),
+    );
+    config.model_config.num_threads = RECOGNIZER_THREADS;
+    OnlineRecognizer::create(&config).ok_or_else(|| {
         SenseVoiceError::Process(format!("failed to create {} recognizer", spec.display_name))
     })
 }
@@ -425,7 +555,7 @@ fn read_wav_as_mono_f32(audio_path: &Path) -> Result<(Vec<f32>, u32), SenseVoice
     Ok((downmix_to_mono(samples, channels), spec.sample_rate))
 }
 
-fn downmix_to_mono(samples: Vec<f32>, channels: usize) -> Vec<f32> {
+pub(crate) fn downmix_to_mono(samples: Vec<f32>, channels: usize) -> Vec<f32> {
     if channels <= 1 {
         return samples;
     }
@@ -439,6 +569,83 @@ fn downmix_to_mono(samples: Vec<f32>, channels: usize) -> Vec<f32> {
 mod tests {
     use super::downmix_to_mono;
 
+    /// 用本地已下载的模型跑真实推理（默认忽略）：
+    /// VTT_MODELS_ROOT=<模型目录> VTT_TEST_WAV=<16-bit WAV> cargo test --lib -- --ignored --nocapture
+    /// 只测目录中已存在的模型。
+    #[test]
+    #[ignore]
+    fn transcribe_with_downloaded_models() {
+        use super::{model_is_ready, transcribe_wav};
+        use crate::sensevoice::model::LOCAL_MODELS;
+        let root = std::path::PathBuf::from(
+            std::env::var("VTT_MODELS_ROOT").expect("set VTT_MODELS_ROOT"),
+        );
+        let wav =
+            std::path::PathBuf::from(std::env::var("VTT_TEST_WAV").expect("set VTT_TEST_WAV"));
+        let mut tested = 0;
+        for spec in LOCAL_MODELS.iter() {
+            if !model_is_ready(&root, spec) {
+                continue;
+            }
+            let result = transcribe_wav(&root, spec.model_key, "auto", &wav)
+                .unwrap_or_else(|err| panic!("{}: {err}", spec.model_key));
+            println!("{}: {}", spec.model_key, result.text);
+            assert!(
+                !result.text.trim().is_empty(),
+                "{} returned empty text",
+                spec.model_key
+            );
+            tested += 1;
+        }
+        assert!(tested > 0, "no downloaded models found");
+    }
+
+    /// 长录音按模型上限切段后逐段转写（默认忽略）：
+    /// VTT_MODELS_ROOT=<模型目录> VTT_TEST_LONG_WAV=<长 WAV> VTT_TEST_MODEL=<model key>
+    /// cargo test --lib -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn transcribe_long_recording_in_segments() {
+        use super::transcribe_wav;
+        use crate::audio_processing::write_segments;
+        use crate::recorder::RecordedAudio;
+        use crate::sensevoice::model::spec_for_local_model;
+        let root = std::path::PathBuf::from(
+            std::env::var("VTT_MODELS_ROOT").expect("set VTT_MODELS_ROOT"),
+        );
+        let wav = std::env::var("VTT_TEST_LONG_WAV").expect("set VTT_TEST_LONG_WAV");
+        let model = std::env::var("VTT_TEST_MODEL").expect("set VTT_TEST_MODEL");
+        let mut reader = hound::WavReader::open(&wav).expect("open wav");
+        let spec = reader.spec();
+        let samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
+        let audio = RecordedAudio {
+            samples,
+            sample_rate: spec.sample_rate,
+            channels: spec.channels,
+        };
+        let limit = spec_for_local_model(&model)
+            .kind
+            .max_chunk_seconds()
+            .unwrap_or(60);
+        let segments = write_segments(&audio, limit).expect("write segments");
+        let mut words = Vec::new();
+        for segment in &segments {
+            let text = transcribe_wav(&root, &model, "auto", &segment.path)
+                .expect("transcribe")
+                .text;
+            println!("[{}ms] {}", segment.start_ms, text);
+            words.extend(text.split_whitespace().map(str::to_lowercase));
+        }
+        // 重复输出（hallucination）时同一个词会连续出现很多次
+        let longest_run = words
+            .chunk_by(|a, b| a == b)
+            .map(|run| run.len())
+            .max()
+            .unwrap_or(0);
+        assert!(!words.is_empty());
+        assert!(longest_run < 4, "repeated word run of {longest_run}");
+    }
+
     #[test]
     fn downmix_averages_interleaved_frames() {
         assert_eq!(
@@ -448,4 +655,3 @@ mod tests {
         assert_eq!(downmix_to_mono(vec![0.5, -0.5], 1), vec![0.5, -0.5]);
     }
 }
-
