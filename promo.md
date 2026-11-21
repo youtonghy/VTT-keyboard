@@ -15,7 +15,8 @@ VTT Keyboard 是一款基于 Rust (Tauri) 与 React 构建的跨平台桌面语�
 VTT Keyboard 内置了对多种业界顶级语音识别引擎的支持：
 - **OpenAI Whisper**：提供极高准确率的语音识别体验。
 - **火山引擎 (Volcengine)**：来自字节跳动的商业级语音服务，支持流式极速响应。
-- **SenseVoice (本地私有化部署)**：完全免费、断网可用，极速且隐私绝对安全。
+- **本地模型（sherpa-onnx）**：SenseVoice、Paraformer、FireRedASR、Fun-ASR-Nano、Parakeet、Moonshine 等，完全免费、断网可用，隐私绝对安全。
+- **Nemotron 流式识别（本地）**：边说边在状态浮窗里实时出字，松开快捷键约 0.2 秒即可上屏。
 
 ### 3. 🤖 AI 智能触发卡片 (Smart Trigger Cards) - *杀手级特性！*
 这不仅仅是打字机，而是你的**语音指令助理**。
@@ -41,8 +42,8 @@ VTT Keyboard 内置了对多种业界顶级语音识别引擎的支持：
 
 ### 🧩 3. sherpa-onnx 原生推理，本地大模型开箱即用
 本地运行大模型通常意味着让用户陷入 Python 环境、CUDA 依赖的“配置地狱”。
-**巧思在于**：VTT Keyboard 通过 sherpa-onnx 直接在进程内运行 ONNX 模型，完全不需要 Docker 或 Python 环境！
-用户只需在设置里挑选模型——包括 SenseVoice-Small、Paraformer-zh-small、FireRedASR2-CTC、Fun-ASR-Nano 等多款针对中文优化的预打包模型——选中后自动下载，一键加载即可获得完全离线、隐私安全的本地语音引擎。
+**巧思在于**：VTT Keyboard 通过 sherpa-onnx 直接在进程内运行 ONNX 模型，不需要安装任何额外的运行环境！
+用户只需在设置里挑选模型——包括 SenseVoice-Small、Paraformer-zh-small、FireRedASR2-CTC、Fun-ASR-Nano 等中文模型，以及英文和欧洲语言的 Parakeet、轻量的 Moonshine、流式的 Nemotron——选中后自动下载，一键加载即可获得完全离线、隐私安全的本地语音引擎。
 
 ### ✂️ 4. 智能键鼠模拟，兼容一切输入框
 文本获取后如何输入到目标软件？如果使用传统的剪贴板容易覆盖用户原有的复制内容，或者在某些不支持粘贴的软件里失效。
