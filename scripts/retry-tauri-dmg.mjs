@@ -37,32 +37,32 @@ await rm(outputDmg, { force: true });
 const appSizeBytes = (await stat(appPath)).size;
 const diskImageSizeMb = Math.max(512, Math.ceil(appSizeBytes / 1024 / 1024) + 160);
 
-const args = [
+const dmgConfig = tauriConfig.bundle?.macOS?.dmg ?? {};
+const baseArgs = [
   script,
   "--volname",
   productName,
   "--volicon",
   icon,
-  "--icon",
-  appName,
-  "128",
-  "128",
-  "--app-drop-link",
-  "372",
-  "128",
   "--disk-image-size",
   String(diskImageSizeMb),
-  "--skip-jenkins",
-  outputDmg,
-  macosDir,
 ];
+const iconArgs = dmgIconArgs(dmgConfig);
 
-console.warn(
-  `Retrying DMG bundling with ${basename(script)} --disk-image-size ${diskImageSizeMb} --skip-jenkins`,
+// First try with the configured window layout (needs Finder AppleScript access);
+// fall back to an unstyled DMG so the build still produces an installer.
+let code = await runBundleDmg(
+  [...baseArgs, ...iconArgs, ...dmgWindowArgs(dmgConfig)],
+  "with DMG window layout",
 );
-
-const child = spawn("bash", args, { cwd: rootDir, stdio: "inherit" });
-const code = await new Promise((resolveCode) => child.on("close", resolveCode));
+if (code !== 0) {
+  await rm(outputDmg, { force: true });
+  detachMountedImage(outputDmg);
+  code = await runBundleDmg(
+    [...baseArgs, ...iconArgs, "--skip-jenkins"],
+    "without DMG window layout (--skip-jenkins)",
+  );
+}
 if (code !== 0) {
   process.exit(code ?? 1);
 }
@@ -74,6 +74,36 @@ if (!(await hasValidDmg(outputDmg))) {
 
 console.warn(`DMG retry succeeded: ${outputDmg}`);
 process.exit(0);
+
+async function runBundleDmg(scriptArgs, label) {
+  console.warn(
+    `Retrying DMG bundling with ${basename(script)} --disk-image-size ${diskImageSizeMb} ${label}`,
+  );
+  const child = spawn("bash", [...scriptArgs, outputDmg, macosDir], { cwd: rootDir, stdio: "inherit" });
+  return new Promise((resolveCode) => child.on("close", resolveCode));
+}
+
+function dmgIconArgs(dmg) {
+  const app = dmg.appPosition ?? { x: 180, y: 170 };
+  const folder = dmg.applicationFolderPosition ?? { x: 480, y: 170 };
+  return ["--icon", appName, String(app.x), String(app.y), "--app-drop-link", String(folder.x), String(folder.y)];
+}
+
+function dmgWindowArgs(dmg) {
+  const size = dmg.windowSize ?? { width: 660, height: 400 };
+  const args = [
+    "--window-size",
+    String(size.width),
+    String(size.height),
+  ];
+  if (dmg.windowPosition) {
+    args.push("--window-pos", String(dmg.windowPosition.x), String(dmg.windowPosition.y));
+  }
+  if (dmg.background) {
+    args.push("--background", resolve(rootDir, "src-tauri", dmg.background));
+  }
+  return args;
+}
 
 function detachMountedImage(imagePath) {
   const info = spawnSync("hdiutil", ["info"], { encoding: "utf8" });

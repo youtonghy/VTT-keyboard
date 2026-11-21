@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="400" viewBox="0 0 660 400">
+  <!-- DMG installer background. Icon centers: app (180, 190), Applications (480, 190).
+       Regenerate background.tiff with scripts/build-dmg-background.sh after editing. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8FAFD"/>
+      <stop offset="1" stop-color="#E9EFF8"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.18" cy="0.1" r="0.6">
+      <stop offset="0" stop-color="#CFE0FA" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#CFE0FA" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.92" cy="0.95" r="0.55">
+      <stop offset="0" stop-color="#D6E4F7" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#D6E4F7" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6E9BE6" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#6E9BE6" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#6E9BE6" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="660" height="400" fill="url(#bg)"/>
+  <rect width="660" height="400" fill="url(#glowA)"/>
+  <rect width="660" height="400" fill="url(#glowB)"/>
+
+  <!-- Soft sound waves echoing the app icon -->
+  <g fill="none" stroke="url(#wave)" stroke-width="1.5">
+    <path d="M0 300 C 110 270, 220 330, 330 300 S 550 270, 660 300"/>
+    <path d="M0 314 C 120 288, 210 342, 330 314 S 540 286, 660 316"/>
+    <path d="M0 328 C 100 304, 230 352, 330 328 S 560 302, 660 330"/>
+  </g>
+
+  <!-- Title -->
+  <text x="330" y="58" text-anchor="middle"
+        font-family="SF Pro Display, PingFang SC, Helvetica Neue, sans-serif"
+        font-size="22" font-weight="600" fill="#1E2B45" letter-spacing="0.2">VTT Keyboard</text>
+  <text x="330" y="82" text-anchor="middle"
+        font-family="SF Pro Text, PingFang SC, Helvetica Neue, sans-serif"
+        font-size="12" fill="#6B7A93">Voice to Text Keyboard</text>
+
+  <!-- Drag arrow between the two icons -->
+  <g fill="none" stroke="#4A7BD8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M268 190 C 305 172, 355 172, 388 188" stroke-width="2.5" stroke-dasharray="1 8" opacity="0.85"/>
+    <path d="M385 178 L 392 190 L 378 192" stroke-width="2.5" opacity="0.85"/>
+  </g>
+
+  <!-- Install hint -->
+  <text x="330" y="330" text-anchor="middle"
+        font-family="PingFang SC, SF Pro Text, Helvetica Neue, sans-serif"
+        font-size="13" font-weight="500" fill="#33425E">将 VTT Keyboard 拖到 Applications 文件夹完成安装</text>
+  <text x="330" y="350" text-anchor="middle"
+        font-family="SF Pro Text, PingFang SC, Helvetica Neue, sans-serif"
+        font-size="11" fill="#7A879D">Drag VTT Keyboard to Applications to install</text>
+</svg>

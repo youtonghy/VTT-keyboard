@@ -177,6 +177,8 @@ jobs:
           SHERPA_ONNX_ARCHIVE_DIR: ${{ env.SHERPA_ONNX_ARCHIVE_DIR }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Tauri skips the DMG window styling (background, icon layout) when CI=true; force it on.
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         with:
           args: --target ${{ matrix.target }} --config .ci-tauri-version.json
 

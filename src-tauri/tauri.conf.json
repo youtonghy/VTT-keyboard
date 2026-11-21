@@ -37,7 +37,22 @@
     ],
     "macOS": {
       "bundleName": "VTT Keyboard",
-      "entitlements": "./Entitlements.plist"
+      "entitlements": "./Entitlements.plist",
+      "dmg": {
+        "background": "./dmg/background.tiff",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 190
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 190
+        }
+      }
     }
   },
   "plugins": {
