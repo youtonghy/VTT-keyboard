@@ -1,6 +1,6 @@
 # asr-bench
 
-用应用同版本的 sherpa-onnx（`=1.13.8`，静态链接）横向对比本地 ASR 引擎的准确率、速度、松键延迟和内存。独立 crate，不参与应用构建。
+用应用同版本的 sherpa-onnx（`=2.0.2`，静态链接）横向对比本地 ASR 引擎的准确率、速度、松键延迟和内存。独立 crate，不参与应用构建。
 
 ## 用法
 
@@ -13,7 +13,7 @@ curl -fL https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sher
 cd -
 
 # 2. 构建（已构建过应用时可复用其预编译库，避免重复下载）
-SHERPA_ONNX_LIB_DIR=../../src-tauri/target/sherpa-onnx-prebuilt/sherpa-onnx-v1.13.8-osx-arm64-static-lib/lib \
+SHERPA_ONNX_LIB_DIR=../../src-tauri/target/sherpa-onnx-prebuilt/sherpa-onnx-v2.0.2-osx-arm64-static-lib/lib \
   cargo build --release
 
 # 3. 用 macOS `say` 合成测试集；可追加真实录音（只测速度）
@@ -38,7 +38,7 @@ SHERPA_ONNX_LIB_DIR=../../src-tauri/target/sherpa-onnx-prebuilt/sherpa-onnx-v1.1
 
 ## 参考结果
 
-2026-11-20，Apple M5 Pro，2 线程，前导静音 0.3s。测试集：zh 8 条、中英混合 5 条、en 8 条（TTS），另有 5 条中文录音（含一条 92s 长音频，只测速度）。
+2026-11-20，Apple M5 Pro，2 线程，前导静音 0.3s，sherpa-onnx 1.13.8；升级到 2.0.2 后重跑，各引擎错误率不变，耗时差异在 10% 以内。测试集：zh 8 条、中英混合 5 条、en 8 条（TTS），另有 5 条中文录音（含一条 92s 长音频，只测速度）。
 
 | 引擎 | zh | mix | en | RTF | 松键延迟 p50 | 峰值内存 | 包体 |
 |---|---|---|---|---|---|---|---|
@@ -53,6 +53,6 @@ SHERPA_ONNX_LIB_DIR=../../src-tauri/target/sherpa-onnx-prebuilt/sherpa-onnx-v1.1
 已知问题：
 
 - 流式模型（Nemotron）在音频零前导静音时会丢掉第一个词，应用接入时需要在录音前补静音。
-- Moonshine v2 在 92s 长音频上 onnxruntime 报错并返回空结果，需要先用 VAD 切段；base-zh 的输出有时在每个汉字间插入空格，需要后处理。
+- Moonshine v2 不能直接处理长音频：1.13.8 在 92s 音频上报错返回空结果，2.0.2 不再报错但输出大量重复词，需要先切成短段；base-zh 的输出有时在每个汉字间插入空格，需要后处理。
 - Nemotron 3.5 指定 `--language zh` 并不比 `auto` 更准（zh 11.5%、mix 31.0%）。
 - Moonshine Streaming 目前没有 sherpa-onnx 预打包模型，未纳入测试。

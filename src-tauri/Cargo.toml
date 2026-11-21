@@ -50,7 +50,7 @@ arboard = { version = "3", features = ["wayland-data-control"] }
 tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
 url = "2"
 
-sherpa-onnx = { version = "1.13.8", default-features = false, features = ["static"] }
+sherpa-onnx = { version = "2.0.2", default-features = false, features = ["static"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts", "remote_desktop", "screencast"] }
