@@ -39,6 +39,10 @@ Recordings longer than the segment length (Settings → Recording, at most 20s f
 
 Downloads are stored under the app local data `sensevoice/models` directory. Switching back to a previously downloaded model reuses the local files without re-downloading.
 
+## Desktop app icons
+
+Desktop packages use the light icon by default. To package the dark icon, run `bun tauri build --config src-tauri/tauri.dark-icon.conf.json`. The desktop variant is selected at build time, and the browser tab icon follows the system appearance. The 1024 × 1024 masters are in `src-tauri/icons/source/`.
+
 ## Release and Updater Signing
 
 GitHub Actions release builds require updater signing secrets:
@@ -158,6 +162,10 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 超过分段时长（录音设置中的分段秒数，Moonshine 最多 20 秒）的录音会在上限前最安静的位置切开，避免把一个字切成两半。
 
 模型下载后存放在应用本地数据目录的 `sensevoice/models` 下。切换回已下载过的模型会直接复用本地文件，无需重新下载。
+
+## 桌面应用图标
+
+桌面安装包默认使用白色图标。运行 `bun tauri build --config src-tauri/tauri.dark-icon.conf.json` 可打包深色版本。桌面图标在打包时选定，浏览器标签图标跟随系统外观。两款 1024 × 1024 母版位于 `src-tauri/icons/source/`。
 
 ## 发布与更新器签名
 
