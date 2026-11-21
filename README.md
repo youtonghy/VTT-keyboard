@@ -31,6 +31,7 @@ All local models are pre-packaged ONNX archives published by the sherpa-onnx pro
 - `Fun-ASR-Nano` — newest high-quality Chinese model, slower on CPU. Sizes: int8 (~803MB) / fp32 (~1.3GB)
 - `Parakeet TDT` — NVIDIA Parakeet TDT 0.6B v3, high accuracy for English and 25 European languages; no Chinese. Size: int8 (~465MB, about 2GB RAM while loaded)
 - `Moonshine` — English only, very fast and small. Sizes: tiny (~28MB) / base (~106MB). Long recordings are split into segments of at most 20s.
+- `Nemotron` — NVIDIA Nemotron Speech Streaming 0.6B. Streaming: while you hold the shortcut, recognized text appears live in the status overlay, and the final text is ready about 0.2s after release. Sizes: English (~442MB) / 3.5 multilingual including Chinese (~453MB). Live text needs the model to be loaded before recording starts; otherwise the recording is transcribed after release.
 
 Pick the model family first, then its size; each size is downloaded separately.
 
@@ -150,6 +151,7 @@ VTT Keyboard 是一款桌面语音转文字键盘工具，基于 Tauri 构建。
 - `Fun-ASR-Nano`——最新的高质量中文模型，CPU 上较慢。规模：int8（约 803MB）/ fp32（约 1.3GB）
 - `Parakeet TDT`——NVIDIA Parakeet TDT 0.6B v3，英文和 25 种欧洲语言准确率高，不支持中文。规模：int8（约 465MB，加载后内存约 2GB）
 - `Moonshine`——仅英文，体积小、速度极快。规模：tiny（约 28MB）/ base（约 106MB）。长录音会切成不超过 20 秒的段。
+- `Nemotron`——NVIDIA Nemotron Speech Streaming 0.6B，流式模型：按住快捷键说话时，识别文字会实时显示在状态浮窗中，松开后约 0.2 秒得到最终结果。规模：英文（约 442MB）/ 3.5 多语言含中文（约 453MB）。实时显示要求录音开始前模型已加载，否则松开后再整段识别。
 
 先选择模型系列，再选择规模；每个规模单独下载。
 

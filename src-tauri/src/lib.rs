@@ -62,6 +62,8 @@ struct TrayState {
 
 pub(crate) struct AppState {
     recorder: RecorderService,
+    /// 当前录音对应的流式识别会话（仅在使用已加载的流式本地模型时存在）
+    streaming_session: Mutex<Option<sensevoice::streaming::StreamingSession>>,
     transcription_dispatcher: TranscriptionDispatcher,
     settings_store: SettingsStore,
     sensevoice_manager: Mutex<SenseVoiceManager>,
@@ -207,12 +209,28 @@ fn start_recording(state: State<AppState>) -> Result<(), String> {
     let input_device_name = if settings.recording.input_device_name.trim().is_empty() {
         None
     } else {
-        Some(settings.recording.input_device_name)
+        Some(settings.recording.input_device_name.clone())
+    };
+    let mut session_slot = state
+        .streaming_session
+        .lock()
+        .map_err(|_| "流式识别状态不可用".to_string())?;
+    // 已有会话说明录音仍在进行（重复触发开始），保持原会话不变
+    let (tap, session) = if session_slot.is_some() {
+        (None, None)
+    } else {
+        match sensevoice::streaming::try_start(&settings) {
+            Some((tap, session)) => (Some(tap), Some(session)),
+            None => (None, None),
+        }
     };
     state
         .recorder
-        .start(input_device_name)
+        .start(input_device_name, tap)
         .map_err(|err| err.to_string())?;
+    if session.is_some() {
+        *session_slot = session;
+    }
     processing::emit_status("recording");
     Ok(())
 }
@@ -257,19 +275,35 @@ fn test_audio_input_device(
 
 #[tauri::command]
 fn stop_recording(state: State<AppState>) -> Result<(), String> {
+    let streaming = take_streaming_session(&state);
+    if let Some(session) = streaming.as_ref() {
+        session.mark_stopped();
+    }
     let audio = state.recorder.stop().map_err(|err| err.to_string())?;
     processing::emit_status("transcribing");
-    state.transcription_dispatcher.enqueue(audio)?;
+    state.transcription_dispatcher.enqueue(audio, streaming)?;
     Ok(())
 }
 
 #[tauri::command]
 fn abort_recording(state: State<AppState>) -> Result<bool, String> {
+    // 丢弃会话即取消：后台识别线程不再刷新浮窗，也不会产出文字
+    drop(take_streaming_session(&state));
     let was_recording = state.recorder.abort().map_err(|err| err.to_string())?;
     if was_recording {
         status_native::hide();
     }
     Ok(was_recording)
+}
+
+fn take_streaming_session(
+    state: &State<AppState>,
+) -> Option<sensevoice::streaming::StreamingSession> {
+    state
+        .streaming_session
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take())
 }
 
 #[tauri::command]
@@ -636,6 +670,7 @@ pub fn run() {
 
             app.manage(AppState {
                 recorder: RecorderService::new(),
+                streaming_session: Mutex::new(None),
                 transcription_dispatcher: TranscriptionDispatcher::new(
                     app_handle.clone(),
                     store.clone(),
@@ -681,6 +716,9 @@ pub fn run() {
                         api.prevent_close();
                         dev_eprintln!("close requested, hiding window to tray instead");
                         let state = window_clone.app_handle().state::<AppState>();
+                        if let Ok(mut slot) = state.streaming_session.lock() {
+                            drop(slot.take());
+                        }
                         match state.recorder.abort() {
                             Ok(true) => status_native::hide(),
                             Ok(false) => {}

@@ -3,6 +3,7 @@ pub mod manager;
 pub mod model;
 pub mod native_runtime;
 pub mod sherpa;
+pub mod streaming;
 
 pub use manager::{
     ensure_service_ready_blocking, selected_model_ready, SenseVoiceManager, SenseVoiceStatus,

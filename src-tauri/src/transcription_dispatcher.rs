@@ -1,6 +1,7 @@
 use crate::processing;
 use crate::recorder::RecordedAudio;
 use crate::sensevoice::ensure_service_ready_blocking;
+use crate::sensevoice::streaming::StreamingSession;
 use crate::settings::{
     ProcessingFailureStage, SettingsStore, TranscriptionAlignment, TranscriptionHistoryItem,
     TranscriptionHistoryStatus,
@@ -18,7 +19,11 @@ const SENSEVOICE_READY_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const RETRY_SOURCE_CACHE_LIMIT: usize = 20;
 
 enum DispatchMessage {
-    Process(RecordedAudio),
+    Process {
+        recording: RecordedAudio,
+        /// 录音期间已在运行的流式识别会话；为空时按整段录音转写
+        streaming: Option<StreamingSession>,
+    },
     RetryActive,
     RetryHistory {
         history_id: String,
@@ -72,9 +77,13 @@ impl TranscriptionDispatcher {
 
             while let Ok(message) = receiver.recv() {
                 match message {
-                    DispatchMessage::Process(recording) => {
+                    DispatchMessage::Process {
+                        recording,
+                        streaming,
+                    } => {
                         active_retry = None;
                         let recording_for_retry = recording.clone();
+                        let streamed = streaming.and_then(finish_streaming_session);
                         // 在真正调用转写引擎前，若当前使用的是本地模型，
                         // 自动检查模型是否已加载并按需加载。
                         // 这样可以在应用重启后自动恢复，无需用户手动点击"加载模型"。
@@ -83,7 +92,12 @@ impl TranscriptionDispatcher {
                             #[cfg(debug_assertions)]
                             eprintln!("SenseVoice 运行时自动恢复失败: {_err}");
                         }
-                        let outcome = processing::handle_recording(&store, recording);
+                        let outcome = match streamed {
+                            Some((text, elapsed_ms)) => processing::handle_streamed_recording(
+                                &store, recording, text, elapsed_ms,
+                            ),
+                            None => processing::handle_recording(&store, recording),
+                        };
                         if !outcome.is_success() {
                             #[cfg(debug_assertions)]
                             {
@@ -238,9 +252,17 @@ impl TranscriptionDispatcher {
         }
     }
 
-    pub fn enqueue(&self, recording: RecordedAudio) -> Result<(), String> {
+    /// 提交一段录音；`streaming` 为录音期间运行的流式识别会话（录音器须已停止）
+    pub fn enqueue(
+        &self,
+        recording: RecordedAudio,
+        streaming: Option<StreamingSession>,
+    ) -> Result<(), String> {
         self.sender
-            .send(DispatchMessage::Process(recording))
+            .send(DispatchMessage::Process {
+                recording,
+                streaming,
+            })
             .map_err(|_| "转写任务线程不可用".to_string())
     }
 
@@ -566,10 +588,22 @@ impl Drop for TranscriptionDispatcher {
     }
 }
 
-/// 当前转写提供方为 SenseVoice 时，同步确保本地服务就绪。
-/// - 若服务已运行且 HTTP 健康：立即返回。
-/// - 否则自动触发 start_service_async（按需新建容器 / unpause / start / 重建镜像），
-///   然后轮询等待 `download_state == "ready"` 或 HTTP /health 正常。
+/// 取流式会话的最终文字；失败时返回 None，由调用方退回整段录音转写
+fn finish_streaming_session(session: StreamingSession) -> Option<(String, u64)> {
+    let started = std::time::Instant::now();
+    match session.finish() {
+        Ok(text) => Some((text, started.elapsed().as_millis() as u64)),
+        Err(_err) => {
+            #[cfg(debug_assertions)]
+            eprintln!("流式识别失败，改为整段转写: {_err}");
+            None
+        }
+    }
+}
+
+/// 当前转写提供方为本地模型时，同步确保所选模型已加载到内存。
+/// - 模型已加载：立即返回。
+/// - 否则触发后台加载并等待完成（最长 `SENSEVOICE_READY_TIMEOUT`）。
 /// - 其他转写提供方（云端 API）不做任何处理。
 fn ensure_sensevoice_runtime_ready(app: &AppHandle, store: &SettingsStore) -> Result<(), String> {
     let settings = store.load().map_err(|err| err.to_string())?;

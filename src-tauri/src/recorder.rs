@@ -79,9 +79,19 @@ pub struct RecorderService {
     sender: mpsc::Sender<RecorderCommand>,
 }
 
+/// 录音旁路消息：开始时先发一次音频格式，之后持续发送交错的 i16 样本。
+/// 录音停止或取消时旁路发送端被释放，接收端据此得知音频结束。
+pub enum TapMessage {
+    Format { sample_rate: u32, channels: u16 },
+    Samples(Vec<i16>),
+}
+
+pub type AudioTap = mpsc::Sender<TapMessage>;
+
 enum RecorderCommand {
     Start {
         input_device_name: Option<String>,
+        tap: Option<AudioTap>,
         reply: mpsc::Sender<Result<(), RecorderError>>,
     },
     Stop(mpsc::Sender<Result<RecordedAudio, RecorderError>>),
@@ -97,9 +107,10 @@ impl RecorderService {
                 match receiver.recv() {
                     Ok(RecorderCommand::Start {
                         input_device_name,
+                        tap,
                         reply,
                     }) => {
-                        let result = recorder.start(input_device_name.as_deref());
+                        let result = recorder.start(input_device_name.as_deref(), tap);
                         let _ = reply.send(result);
                     }
                     Ok(RecorderCommand::Stop(reply)) => {
@@ -117,10 +128,16 @@ impl RecorderService {
         Self { sender }
     }
 
-    pub fn start(&self, input_device_name: Option<String>) -> Result<(), RecorderError> {
+    /// 开始录音；`tap` 不为空时，录音期间的样本会同时实时发送给它
+    pub fn start(
+        &self,
+        input_device_name: Option<String>,
+        tap: Option<AudioTap>,
+    ) -> Result<(), RecorderError> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let _ = self.sender.send(RecorderCommand::Start {
             input_device_name,
+            tap,
             reply: reply_tx,
         });
         reply_rx.recv().unwrap_or(Err(RecorderError::NotRecording))
@@ -150,7 +167,11 @@ impl Recorder {
         }
     }
 
-    pub fn start(&self, input_device_name: Option<&str>) -> Result<(), RecorderError> {
+    pub fn start(
+        &self,
+        input_device_name: Option<&str>,
+        tap: Option<AudioTap>,
+    ) -> Result<(), RecorderError> {
         ensure_microphone_permission_already_authorized()?;
 
         let inner = self.inner.lock().map_err(|_| RecorderError::LockPoisoned)?;
@@ -168,6 +189,12 @@ impl Recorder {
 
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let buffer_clone = buffer.clone();
+        if let Some(tap) = tap.as_ref() {
+            let _ = tap.send(TapMessage::Format {
+                sample_rate: config.sample_rate.0,
+                channels: config.channels,
+            });
+        }
         let err_fn = |_err| {
             #[cfg(debug_assertions)]
             eprintln!("录音流错误: {_err}");
@@ -178,7 +205,13 @@ impl Recorder {
                 device
                     .build_input_stream(
                         &config,
-                        move |data: &[$sample_type], _| push_samples(data, &buffer_clone),
+                        {
+                            let buffer = buffer_clone.clone();
+                            let tap = tap.clone();
+                            move |data: &[$sample_type], _| {
+                                push_samples(data, &buffer, tap.as_ref())
+                            }
+                        },
                         err_fn,
                         None,
                     )
@@ -251,13 +284,21 @@ pub struct RecordedAudio {
     pub channels: u16,
 }
 
-fn push_samples<T>(data: &[T], buffer: &Arc<Mutex<Vec<i16>>>)
+fn push_samples<T>(data: &[T], buffer: &Arc<Mutex<Vec<i16>>>, tap: Option<&AudioTap>)
 where
     T: Sample,
     i16: FromSample<T>,
 {
+    let converted: Vec<i16> = data
+        .iter()
+        .map(|sample| i16::from_sample(*sample))
+        .collect();
     if let Ok(mut guard) = buffer.lock() {
-        guard.extend(data.iter().map(|sample| i16::from_sample(*sample)));
+        guard.extend_from_slice(&converted);
+    }
+    if let Some(tap) = tap {
+        // 无界通道，发送不会阻塞音频回调；接收端已退出时忽略错误
+        let _ = tap.send(TapMessage::Samples(converted));
     }
 }
 
@@ -352,7 +393,7 @@ pub fn test_input_device(
             device
                 .build_input_stream(
                     &config,
-                    move |data: &[$sample_type], _| push_samples(data, &buffer_clone),
+                    move |data: &[$sample_type], _| push_samples(data, &buffer_clone, None),
                     err_fn,
                     None,
                 )

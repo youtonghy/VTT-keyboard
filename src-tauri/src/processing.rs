@@ -192,6 +192,31 @@ pub fn handle_recording_with_options(
     recording: RecordedAudio,
     options: ProcessingOptions,
 ) -> ProcessingOutcome {
+    handle_recording_inner(store, recording, options, None)
+}
+
+/// 录音期间已由流式本地模型得到文字：跳过分段转写，直接进入触发词与输出流程。
+/// `transcription_elapsed_ms` 为松开快捷键后等待最终结果的耗时。
+pub fn handle_streamed_recording(
+    store: &SettingsStore,
+    recording: RecordedAudio,
+    text: String,
+    transcription_elapsed_ms: u64,
+) -> ProcessingOutcome {
+    handle_recording_inner(
+        store,
+        recording,
+        ProcessingOptions::default(),
+        Some((text, transcription_elapsed_ms)),
+    )
+}
+
+fn handle_recording_inner(
+    store: &SettingsStore,
+    recording: RecordedAudio,
+    options: ProcessingOptions,
+    streamed: Option<(String, u64)>,
+) -> ProcessingOutcome {
     let settings = match store.load() {
         Ok(value) => value,
         Err(err) => {
@@ -225,6 +250,14 @@ pub fn handle_recording_with_options(
             emit_status("completed");
         }
         return base().build();
+    }
+    if let Some((text, elapsed_ms)) = streamed {
+        let combined = normalize_text_for_output(&text, remove_newlines);
+        dev_log(&format!("流式转写结果: {}", combined));
+        let post = base()
+            .transcription_text(combined.clone())
+            .transcription_elapsed_ms(elapsed_ms);
+        return process_transcribed_text(&settings, combined, post, options);
     }
     let transcription_started = Instant::now();
     let segment_seconds = effective_segment_seconds(
